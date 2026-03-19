@@ -1,0 +1,7 @@
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+pydicom==2.4.4
+torchxrayvision==1.2.1
+numpy==1.26.4
+scikit-image==0.22.0

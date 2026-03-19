@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Diagnostic Results — PACS Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 860px;
+      margin-bottom: 1.8rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #58a6ff;
+      margin-bottom: 0.25rem;
+    }
+
+    header p.sub {
+      font-size: 0.85rem;
+      color: #8b949e;
+      word-break: break-all;
+    }
+
+    #status {
+      font-size: 1rem;
+      color: #8b949e;
+      margin-bottom: 1rem;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 860px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .top3-banner {
+      display: flex;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: #1a1f29;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .top3-item {
+      flex: 1;
+      background: #21262d;
+      border: 1px solid #da3633;
+      border-radius: 6px;
+      padding: 0.65rem 0.9rem;
+    }
+
+    .top3-item .rank {
+      font-size: 0.7rem;
+      color: #f85149;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .top3-item .name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-top: 0.2rem;
+    }
+
+    .top3-item .prob {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #f85149;
+      margin-top: 0.15rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead tr {
+      background: #21262d;
+    }
+
+    thead th {
+      padding: 0.65rem 1.25rem;
+      text-align: left;
+      font-weight: 600;
+      color: #8b949e;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid #30363d;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #21262d;
+      transition: background 0.12s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover      { background: #1c2128; }
+    tbody tr.top3-row   { background: #1e1316; }
+    tbody tr.top3-row:hover { background: #251418; }
+
+    td {
+      padding: 0.6rem 1.25rem;
+    }
+
+    td.pathology { font-weight: 500; }
+    td.pathology.top3-cell { color: #f85149; }
+
+    .bar-cell { width: 40%; }
+
+    .bar-wrap {
+      background: #21262d;
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: #388bfd;
+      transition: width 0.4s ease;
+    }
+
+    .bar-fill.top3-fill { background: #f85149; }
+
+    td.prob-val {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #8b949e;
+      width: 6rem;
+    }
+
+    td.prob-val.top3-val { color: #f85149; font-weight: 600; }
+
+    #error-box {
+      display: none;
+      background: #21130f;
+      border: 1px solid #da3633;
+      border-radius: 8px;
+      padding: 1.25rem;
+      max-width: 860px;
+      width: 100%;
+      color: #f85149;
+    }
+
+    footer {
+      margin-top: 2rem;
+      font-size: 0.78rem;
+      color: #484f58;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔬 AI Diagnostic Results</h1>
+    <p class="sub" id="instance-label">Loading…</p>
+  </header>
+
+  <p id="status">Fetching AI results…</p>
+
+  <div id="error-box"></div>
+
+  <div class="card" id="card" style="display:none">
+    <div class="top3-banner" id="top3-banner"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>Pathology</th>
+          <th class="bar-cell">Confidence</th>
+          <th style="text-align:right">Score</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <footer>PACS Demo — AI model: DenseNet121 (TorchXRayVision densenet121-res224-all)</footer>
+
+  <script>
+    (function () {
+      const params     = new URLSearchParams(window.location.search);
+      const instanceId = params.get("instanceId") || "";
+      const label      = document.getElementById("instance-label");
+      const status     = document.getElementById("status");
+      const errorBox   = document.getElementById("error-box");
+      const card       = document.getElementById("card");
+      const top3Banner = document.getElementById("top3-banner");
+      const tableBody  = document.getElementById("table-body");
+
+      if (!instanceId) {
+        label.textContent = "No instanceId provided in URL.";
+        status.textContent = "Usage: ai-panel.html?instanceId=<orthanc-instance-id>";
+        return;
+      }
+
+      label.textContent = "Instance: " + instanceId;
+
+      const metaUrl = "/orthanc/instances/" + instanceId + "/metadata/9999";
+
+      fetch(metaUrl)
+        .then(function (res) {
+          if (!res.ok) {
+            throw new Error(
+              "HTTP " + res.status + " — AI metadata not found. " +
+              "Ensure the instance is CR/DX modality and the AI service processed it."
+            );
+          }
+          return res.text();
+        })
+        .then(function (text) {
+          var data;
+          try { data = JSON.parse(text); }
+          catch (e) { throw new Error("Could not parse metadata JSON: " + e.message); }
+
+          var predictions = data.predictions || {};
+          var top3        = data.top3        || [];
+
+          // Sort all pathologies descending
+          var sorted = Object.entries(predictions)
+            .sort(function (a, b) { return b[1] - a[1]; });
+
+          var top3Names = top3.map(function (t) { return t.pathology; });
+
+          // Top-3 banner
+          top3.forEach(function (item, i) {
+            var div = document.createElement("div");
+            div.className = "top3-item";
+            div.innerHTML =
+              '<div class="rank">#' + (i + 1) + ' Finding</div>' +
+              '<div class="name">' + escHtml(item.pathology) + '</div>' +
+              '<div class="prob">' + (item.probability * 100).toFixed(2) + '%</div>';
+            top3Banner.appendChild(div);
+          });
+
+          // Table rows
+          sorted.forEach(function (entry) {
+            var name  = entry[0];
+            var prob  = entry[1];
+            var isTop = top3Names.indexOf(name) !== -1;
+
+            var tr = document.createElement("tr");
+            if (isTop) tr.className = "top3-row";
+
+            var pct = Math.max(0, Math.min(100, prob * 100)).toFixed(2);
+
+            tr.innerHTML =
+              '<td class="pathology' + (isTop ? " top3-cell" : "") + '">' +
+                escHtml(name) +
+              '</td>' +
+              '<td class="bar-cell">' +
+                '<div class="bar-wrap">' +
+                  '<div class="bar-fill' + (isTop ? " top3-fill" : "") + '" ' +
+                       'style="width:' + pct + '%"></div>' +
+                '</div>' +
+              '</td>' +
+              '<td class="prob-val' + (isTop ? " top3-val" : "") + '">' +
+                (prob * 100).toFixed(2) + '%' +
+              '</td>';
+
+            tableBody.appendChild(tr);
+          });
+
+          status.style.display = "none";
+          card.style.display   = "block";
+        })
+        .catch(function (err) {
+          status.style.display   = "none";
+          errorBox.style.display = "block";
+          errorBox.textContent   = "Error: " + err.message;
+        });
+
+      function escHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+    })();
+  </script>
+</body>
+</html>
