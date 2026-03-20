@@ -1,8 +1,8 @@
-# PACS Demo
+# PACS Demo — Full-Stack Radiology Platform
 
-A self-contained, Dockerized medical imaging stack featuring DICOM storage (Orthanc),
-a web viewer (OHIF v3), and an automatic X-ray AI inference pipeline powered by
-TorchXRayVision. Designed for healthcare startup demos and proof-of-concept deployments.
+A self-contained, Docker-based radiology demo stack including a DICOM server,
+acquisition simulator, RIS, AI analysis service, and OHIF viewer — all wired
+together and accessible through a single nginx reverse proxy.
 
 ---
 
@@ -12,269 +12,311 @@ TorchXRayVision. Designed for healthcare startup demos and proof-of-concept depl
 Browser
   │
   ▼
-nginx:80  ──/──────────────────▶  OHIF Viewer   (ohif:80)
-          ──/orthanc/───────────▶  Orthanc REST  (orthanc:8042)
-          ──/ai/────────────────▶  AI FastAPI    (ai-service:8000)
-          ──/ai-panel.html──────▶  Static HTML   (served by nginx)
-
-Orthanc ──on CR/DX stored──────▶  AI Service   (internal HTTP)
-           ◀──predictions JSON──┘
-           └──stored in metadata slot 9999
-
-Orthanc ──index──▶  PostgreSQL 15  (postgres:5432)
-
-Scanner / DICOM node ──▶  Orthanc DICOM port (0.0.0.0:4242)
+┌─────────────────────────────────────────────────────────┐
+│                     nginx  :80                          │
+│   /          → OHIF Viewer                              │
+│   /orthanc/  → Orthanc DICOM server                     │
+│   /simulator/→ Acquisition Simulator                    │
+│   /ris/      → Radiology Information System             │
+│   /ai/       → AI Analysis Service                      │
+│   /ai-panel.html → AI Results Panel                     │
+└───┬──────────┬──────────┬──────────┬────────────────────┘
+    │          │          │          │
+    ▼          ▼          ▼          ▼
+  OHIF      Orthanc   Simulator    RIS          AI Service
+  :80        :8042      :8001      :8002          :8000
+               │                                   ▲
+               │  OnStoredInstance                 │
+               └───────────── plugin.py ───────────┘
+               │
+               ▼
+           PostgreSQL
+              :5432
 ```
 
-| Service      | Image                     | Exposed port      |
-|--------------|---------------------------|-------------------|
-| nginx        | nginx:alpine              | **80** (HTTP)     |
-| orthanc      | orthancteam/orthanc       | **4242** (DICOM)  |
-| postgres     | postgres:15               | internal only     |
-| ai-service   | custom (python:3.11-slim) | internal only     |
-| ohif         | ohif/app:v3.9.2           | internal only     |
+---
+
+## Services at a Glance
+
+| URL | Service | Description |
+|-----|---------|-------------|
+| `http://localhost/` | **OHIF Viewer** | Zero-footprint DICOM viewer (v3.9) |
+| `http://localhost/orthanc/` | **Orthanc** | DICOM server + REST API + Explorer UI |
+| `http://localhost/simulator/` | **Simulator** | Generate & send synthetic DICOMs |
+| `http://localhost/ris/` | **RIS** | Worklist · Orders · Reports |
+| `http://localhost/ai/health` | **AI Service** | Analysis API health check |
+| `http://localhost/ai-panel.html?instanceId=<id>` | **AI Panel** | Per-instance AI results |
+
+DICOM C-STORE (for real modalities): **port 4242**
 
 ---
 
 ## Prerequisites
 
-| Tool           | Minimum version |
-|----------------|-----------------|
-| Docker Engine  | 24.x            |
-| Docker Compose | v2.x (`docker compose`) |
-| Free disk      | ~5 GB (PyTorch CPU wheels + model weights) |
-| RAM            | 4 GB recommended |
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 24 or Docker Engine + Compose v2
+- 4 GB RAM recommended (Orthanc + OHIF + AI service)
+- Ports **80** and **4242** free on localhost
 
 ---
 
 ## Quick Start
 
-### 1 — Clone and build
-
 ```bash
-git clone <your-repo-url> pacs-demo
+# 1. Clone / unzip the project
 cd pacs-demo
+
+# 2. Build and start all services
 docker compose up --build -d
+
+# 3. Wait ~30 s for Orthanc and OHIF to become ready
+docker compose ps          # all should show "healthy" or "running"
+
+# 4. Open the portal
+open http://localhost/
 ```
 
-The first build downloads ~2 GB of PyTorch CPU wheels and the DenseNet121 model
-weights. Subsequent starts are fast.
-
-### 2 — Wait for the AI service to be ready
-
-```bash
-docker compose logs -f ai-service
-# Wait until you see: "Model loaded — pathologies: [...]"
-```
-
-### 3 — Place a sample DICOM
-
-```bash
-# Option A: let the test script auto-download a public CR DICOM
-bash scripts/test_phase0.sh
-
-# Option B: use your own file
-cp /path/to/chest_xray.dcm scripts/sample.dcm
-```
-
-### 4 — Run the end-to-end AI pipeline test
-
-```bash
-bash scripts/test_phase1.sh
-```
+> **First boot note:** PostgreSQL initialises its data directory on first run.
+> If Orthanc starts before Postgres is ready it will restart once automatically —
+> this is expected and handled by the `depends_on: condition: service_healthy` rule.
 
 ---
 
-## URLs
+## End-to-End Workflow
 
-| Endpoint                              | Description                        |
-|---------------------------------------|------------------------------------|
-| `http://localhost/`                   | OHIF DICOM viewer                  |
-| `http://localhost/orthanc/app/explorer.html` | Orthanc web console         |
-| `http://localhost/orthanc/`           | Orthanc REST API                   |
-| `http://localhost/ai/health`          | AI service health check            |
-| `http://localhost/ai/predict`         | AI inference endpoint (POST)       |
-| `http://localhost/ai-panel.html?instanceId=<ID>` | AI results panel      |
+### 1 — Generate a synthetic DICOM
 
----
+1. Open **`http://localhost/simulator/`**
+2. Click a modality card (e.g. **CT**)
+3. Set Body Part → `CHEST`, Priority → `ROUTINE`
+4. Fill in patient details (or leave defaults)
+5. Click **⚡ Generate & Send to Orthanc**
 
-## File Tree
+The simulator builds a valid DICOM with synthetic pixel data and POSTs it
+directly to Orthanc. A result card appears with three links:
 
-```
-pacs-demo/
-├── docker-compose.yml        # All services, volumes, networks
-├── nginx/
-│   └── nginx.conf            # Reverse proxy + static file serving
-├── orthanc/
-│   ├── orthanc.json          # Orthanc base configuration
-│   └── plugin.py             # Python plugin: triggers AI on CR/DX storage
-├── ai-service/
-│   ├── Dockerfile            # python:3.11-slim + PyTorch CPU + app
-│   ├── requirements.txt      # FastAPI, pydicom, torchxrayvision, etc.
-│   ├── main.py               # FastAPI app: /health + /predict
-│   └── inference.py          # TorchXRayVision DenseNet121 inference logic
-├── ohif/
-│   ├── app-config.js         # OHIF v3 DICOMweb data source config
-│   └── ai-panel.html         # Standalone AI results viewer (vanilla JS)
-└── scripts/
-    ├── test_phase0.sh        # Upload test + connectivity check
-    └── test_phase1.sh        # Full AI pipeline test with result display
-```
+| Link | Destination |
+|------|-------------|
+| **Open in OHIF →** | Launches the study in the viewer |
+| **AI Results →** | Opens the AI analysis panel for this instance |
+| **Orthanc Explorer ↗** | Raw instance view in Orthanc |
 
 ---
 
-## AI Pipeline
+### 2 — Review AI Analysis
 
-1. A DICOM instance is stored in Orthanc (via REST POST or DICOM C-STORE).
-2. `plugin.py` fires `OnStoredInstanceCallback`.
-3. If `Modality` tag is `CR` or `DX`, the raw DICOM bytes are POSTed to the AI
-   service at `http://ai-service:8000/predict` using `http.client` (no external
-   libraries — compatible with Orthanc's Python sandbox).
-4. `inference.py` reads the pixel array with pydicom, normalises it to
-   `[-1024, 1024]`, resizes to 224×224, and runs a forward pass through
-   DenseNet121 (`densenet121-res224-all` weights).
-5. The service returns `{ predictions: {...}, top3: [...] }`.
-6. The plugin stores the JSON in Orthanc metadata slot `9999` and logs the top-3
-   findings.
-7. Open `http://localhost/ai-panel.html?instanceId=<ID>` to view results.
+The Orthanc plugin fires automatically on every stored instance.
+By the time you click **AI Results →** the analysis is usually already done.
 
-> **Safety**: all AI logic in the plugin is wrapped in `try/except`. An AI
-> failure never crashes Orthanc.
+The **AI Panel** (`/ai-panel.html?instanceId=...`) shows:
+
+- Patient / modality / body-part info bar
+- Colour-coded **impression** (green = normal, orange = abnormal, red = critical)
+- **Findings list** — each finding has a severity icon, type tags, optional
+  measurements, and an animated confidence bar
+- **Push to RIS Report** button — creates a pre-filled DRAFT report in the RIS
+  using the AI findings as a starting point
+
+---
+
+### 3 — Manage the Worklist (RIS)
+
+Open **`http://localhost/ris/`**
+
+#### Import patients from Orthanc
+1. Click the **Patients** tab
+2. Click **⟳ Sync from Orthanc** — all patients stored in Orthanc are imported
+
+#### Create an imaging order
+1. Click **+ New Order** (Worklist tab)
+2. Select a patient, modality, body part, priority
+3. Click **Create Order** — the order appears in the worklist table
+
+#### Write a radiology report
+1. Find the order row → click **📄 Report**
+2. Fill in Technique · Findings · Impression · Recommendation
+3. Workflow buttons:
+
+| Button | Status transition |
+|--------|-------------------|
+| **💾 Save Draft** | Saves as `DRAFT` |
+| **📋 Preliminary** | Promotes to `PRELIMINARY` |
+| **✅ Finalize** | Locks to `FINAL`, marks order `COMPLETED`, sets `finalized_at` |
+| **＋ Save Addendum** | Appends dated note (only on `FINAL` reports) |
+| **🖨 Print** | Opens browser print dialog with clean serif layout |
+
+> **Tip:** After clicking **Push to RIS Report** in the AI panel, the draft is
+> already pre-filled — just review and finalize.
+
+---
+
+### 4 — View in OHIF
+
+Open **`http://localhost/`** — all studies stored in Orthanc appear automatically
+via DICOMweb (WADO-RS). Click any study to open it in the viewer.
+
+---
+
+## Supported Modalities
+
+| Modality | SOP Class | Pixel Engine | AI Findings Pool |
+|----------|-----------|--------------|-----------------|
+| **CR** | Computed Radiography | 12-bit X-ray (body-part aware) | Chest: opacity, nodule, effusion, cardiomegaly, PTX |
+| **DX** | Digital X-ray | 12-bit X-ray (body-part aware) | Same as CR |
+| **CT** | CT Image | 16-bit HU axial slices × N | Chest / Head / Abdomen pools |
+| **MR** | MR Image | 12-bit T1/T2 slices × N | Brain / Spine / Knee pools |
+| **US** | Ultrasound | 8-bit B-mode fan | Abdomen / Thyroid pools |
+
+CT and MR generate one DICOM instance **per slice** — all sharing the same
+`StudyInstanceUID` and `SeriesInstanceUID`.
 
 ---
 
 ## API Reference
 
-### `GET /ai/health`
+### AI Service (`/ai/`)
 
-```json
-{ "status": "ok", "model": "densenet121-res224-all" }
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/ai/health` | Service status + cached result count |
+| `POST` | `/ai/analyze` | Queue analysis `{"instance_id":"..."}` |
+| `GET` | `/ai/results` | List all cached results, newest first (used by all-patients view) |
+| `GET` | `/ai/results/{id}` | Get result for one instance |
+| `DELETE` | `/ai/results/{id}` | Clear cached result (forces re-analysis) |
+
+### RIS (`/ris/api/`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/worklist` | Filtered orders + patient + report status |
+| `POST` | `/orders` | Create imaging order |
+| `GET/PUT` | `/orders/{id}` | Read / update order |
+| `GET` | `/patients` | List patients |
+| `POST` | `/patients/sync` | Import patients from Orthanc |
+| `GET` | `/reports` | List reports (filter by `?status=`) |
+| `GET` | `/reports/order/{id}` | Get report for an order |
+| `POST` | `/reports` | Create report |
+| `PUT` | `/reports/{id}` | Update / finalize report |
+
+### Orthanc REST API (`/orthanc/`)
+
+Full Orthanc REST API is proxied at `/orthanc/` — see
+[Orthanc REST API docs](https://orthanc.uclouvain.be/api/) for the complete
+reference. Commonly used endpoints:
+
 ```
-
-### `POST /ai/predict`
-
-| Field  | Type              | Description              |
-|--------|-------------------|--------------------------|
-| `file` | multipart/form-data | Raw DICOM file bytes   |
-
-**Response 200**
-
-```json
-{
-  "predictions": {
-    "Atelectasis": 0.2341,
-    "Cardiomegaly": 0.1823,
-    "Effusion": 0.4102,
-    ...
-  },
-  "top3": [
-    { "pathology": "Effusion",     "probability": 0.4102 },
-    { "pathology": "Atelectasis",  "probability": 0.2341 },
-    { "pathology": "Cardiomegaly", "probability": 0.1823 }
-  ]
-}
+GET  /orthanc/patients          → list all patients
+GET  /orthanc/instances/{id}    → instance metadata
+GET  /orthanc/instances/{id}/file → raw DICOM bytes
+POST /orthanc/instances         → upload DICOM (Content-Type: application/dicom)
 ```
-
-**Response 422** — file is not valid DICOM.
 
 ---
 
-## Sending DICOM from a Scanner / PACS Node
+## Data Persistence
 
-Orthanc listens on port 4242 with AET `ORTHANC`. Configure your modality:
+| Volume | Mount | Contents |
+|--------|-------|----------|
+| `pg-data` | postgres:/var/lib/postgresql | Orthanc index |
+| `orthanc-data` | orthanc:/var/lib/orthanc/db | DICOM pixel data |
+| `ris-data` | ris:/data/ris.db | SQLite RIS database |
 
-| Setting   | Value     |
-|-----------|-----------|
-| AET       | `ORTHANC` |
-| Host/IP   | `<host-ip>` |
-| Port      | `4242`    |
-
-Or upload via REST:
-
+**Reset everything:**
 ```bash
-curl -X POST http://localhost/orthanc/instances \
-     --data-binary @image.dcm \
-     -H "Content-Type: application/dicom"
+docker compose down -v   # removes all volumes — full clean slate
+docker compose up -d
 ```
 
----
-
-## Configuration
-
-### Environment variables (docker-compose.yml)
-
-| Variable                        | Default          | Description              |
-|---------------------------------|------------------|--------------------------|
-| `ORTHANC__POSTGRESQL__HOST`     | `postgres`       | PostgreSQL hostname      |
-| `ORTHANC__POSTGRESQL__DATABASE` | `orthanc`        | Database name            |
-| `ORTHANC__POSTGRESQL__USERNAME` | `orthanc`        | Database user            |
-| `ORTHANC__POSTGRESQL__PASSWORD` | `orthanc`        | Database password        |
-| `ORTHANC__PYTHON_SCRIPT`        | `/etc/orthanc/plugin.py` | Plugin path    |
-| `AI_SERVICE_URL`                | `http://ai-service:8000` | AI endpoint   |
-
-### Changing the AI model
-
-Edit `inference.py` and update `MODEL_NAME`. Available TorchXRayVision weights:
-
-- `densenet121-res224-all` (default — trained on all datasets)
-- `densenet121-res224-chex`
-- `densenet121-res224-nih`
-- `densenet121-res224-rsna`
+**Keep data, restart services:**
+```bash
+docker compose restart
+```
 
 ---
 
 ## Useful Commands
 
 ```bash
-# View all logs
-docker compose logs -f
+# Live logs for a specific service
+docker compose logs -f ai-service
+docker compose logs -f ris
+docker compose logs -f orthanc
 
-# View only AI plugin activity in Orthanc
-docker compose logs -f orthanc | grep AI-Plugin
+# Rebuild a single service after code change
+docker compose up --build -d simulator
 
-# Restart only the AI service (e.g. after code change)
-docker compose up -d --build ai-service
+# Restart without rebuild (Python/HTML file changes only)
+docker compose restart ris
+docker compose restart simulator
 
-# Stop everything (keeps volumes)
-docker compose down
+# Open a shell inside the AI service
+docker compose exec ai-service bash
 
-# Stop and wipe all data (destructive)
-docker compose down -v
+# Query the RIS database directly
+docker compose exec ris sqlite3 /data/ris.db ".tables"
+docker compose exec ris sqlite3 /data/ris.db "SELECT * FROM orders;"
 
-# Query stored studies
-curl -s http://localhost/orthanc/studies | python3 -m json.tool
-
-# Fetch AI result for a known instance
-curl http://localhost/orthanc/instances/<INSTANCE_ID>/metadata/9999
+# Check Orthanc plugin loaded correctly
+docker compose logs orthanc | grep "AI analysis plugin"
 ```
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| AI panel shows "metadata not found" | Check the file is CR or DX modality; check `docker compose logs orthanc \| grep AI-Plugin` |
-| `ai-service` unhealthy after 2 min | Model weights still downloading; wait and recheck with `docker compose ps` |
-| OHIF shows blank study list | Ensure DICOMweb QIDO path resolves: `curl http://localhost/orthanc/dicom-web/studies` |
-| Port 80 already in use | Change nginx host port in `docker-compose.yml`: `"8080:80"` |
-| Port 4242 already in use | Change orthanc DICOM host port: `"4243:4242"` |
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `/ris/` returns 502 | RIS container not ready | `docker compose restart ris` |
+| AI Results shows "processing" forever | AI service unreachable | Check `docker compose logs ai-service` |
+| OHIF shows no studies | Orthanc not healthy | `docker compose logs orthanc` — wait for Postgres |
+| Simulator "Orthanc unreachable" dot | Orthanc still starting | Wait 20 s, reload |
+| Port 80 already in use | Another web server running | Stop it or change nginx port in `docker-compose.yml` |
+| Port 4242 in use | Another DICOM listener | Change `"4242:4242"` mapping |
 
 ---
 
-## Security Notice
+## Project Structure
 
-Authentication is **disabled** for demo purposes. Before any production or
-patient-data use:
-
-- Enable Orthanc authentication (`AuthenticationEnabled: true` in `orthanc.json`)
-- Add TLS termination in nginx
-- Restrict DICOM port 4242 to trusted network segments
-- Replace hardcoded PostgreSQL credentials with Docker secrets
+```
+pacs-demo/
+├── docker-compose.yml
+├── nginx/
+│   └── nginx.conf
+├── orthanc/
+│   ├── orthanc.json          # Orthanc configuration
+│   └── plugin.py             # AI webhook (OnStoredInstance)
+├── simulator/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── main.py               # FastAPI — POST /api/generate
+│   ├── presets.py            # Modality configurations
+│   ├── dicom_factory.py      # Pixel generators (CR/DX/CT/MR/US)
+│   └── static/index.html     # Simulator UI
+├── ris/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── main.py               # FastAPI app
+│   ├── database.py           # SQLite schema + helpers
+│   ├── routers/
+│   │   ├── patients.py       # GET /patients, POST /patients/sync
+│   │   ├── orders.py         # Worklist + CRUD
+│   │   └── reports.py        # Report editor + finalization
+│   └── static/index.html     # RIS UI (Worklist · Patients · Reports)
+├── ai-service/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── main.py               # FastAPI — /analyze, /results
+│   └── analyzers/
+│       ├── __init__.py       # Dispatch + pydicom parsing
+│       ├── xray.py           # CR / DX findings
+│       ├── ct.py             # CT findings (chest/head/abdomen)
+│       ├── mr.py             # MR findings (brain/spine/knee)
+│       └── us.py             # US findings (abdomen/thyroid)
+└── ohif/
+    ├── app-config.js         # OHIF DICOMweb config
+    └── ai-panel.html         # AI Results Panel (all-patients + per-instance)
+```
 
 ---
 
-## License
-
-This project is provided as a demo scaffold. TorchXRayVision is released under
-the MIT License. Orthanc is licensed under GPLv3. OHIF is licensed under MIT.
+*Built step by step — Step 1 (infrastructure) → Step 2 (simulator) →
+Step 3 (RIS) → Step 4 (AI service + all-patients diagnostic panel).*

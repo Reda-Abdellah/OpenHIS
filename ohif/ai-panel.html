@@ -1,304 +1,503 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Diagnostic Results — PACS Demo</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>AI Analysis Results</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem;
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--bg-card:#161b22;--bg-hover:#1c2128;--bg-input:#21262d;
+      --border:#30363d;--text:#e6edf3;--mute:#8b949e;--link:#58a6ff;
+      --green:#3fb950;--red:#f85149;--orange:#ffa657;--purple:#d2a8ff;
     }
+    html,body{min-height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      font-size:13px;padding:0;margin:0}
 
-    header {
-      width: 100%;
-      max-width: 860px;
-      margin-bottom: 1.8rem;
-    }
+    /* ── header ── */
+    header{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;
+      background:var(--bg-card);border-bottom:1px solid var(--border);
+      position:sticky;top:0;z-index:10}
+    header h1{font-size:.93rem;font-weight:600;color:var(--link);flex:1}
+    .status-pill{font-size:.72rem;padding:3px 10px;border-radius:20px;font-weight:600}
+    .sp-processing{background:#162040;color:var(--link);border:1px solid #2a4a90}
+    .sp-completed {background:#162316;color:var(--green);border:1px solid #2a3d2a}
+    .sp-error     {background:#200e10;color:var(--red);border:1px solid #3d1820}
+    .sp-normal    {background:#162316;color:var(--green);border:1px solid #2a3d2a}
+    .sp-abnormal  {background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+    .sp-critical  {background:#200e10;color:var(--red);border:1px solid #3d1820;
+      animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
-    header h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: #58a6ff;
-      margin-bottom: 0.25rem;
-    }
+    /* ── layout ── */
+    .page{max-width:820px;margin:0 auto;padding:20px}
 
-    header p.sub {
-      font-size: 0.85rem;
-      color: #8b949e;
-      word-break: break-all;
-    }
+    /* ── info card ── */
+    .info-card{background:var(--bg-card);border:1px solid var(--border);
+      border-radius:7px;padding:12px 16px;margin-bottom:16px;
+      display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.8rem}
+    .ic-item{display:flex;flex-direction:column;gap:2px}
+    .ic-label{font-size:.67rem;color:var(--mute);text-transform:uppercase;letter-spacing:.07em}
+    .ic-val{font-weight:600}
+    .ic-sep{color:var(--border);align-self:center}
 
-    #status {
-      font-size: 1rem;
-      color: #8b949e;
-      margin-bottom: 1rem;
-    }
+    /* ── impression box ── */
+    .impression-box{background:var(--bg-card);border:1px solid var(--border);
+      border-radius:7px;padding:14px 16px;margin-bottom:16px}
+    .section-title{font-size:.7rem;font-weight:700;color:var(--mute);
+      text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+    .impression-text{font-size:.88rem;line-height:1.65;color:var(--text)}
+    .impression-text.normal{color:var(--green)}
+    .impression-text.critical{color:var(--red)}
 
-    .card {
-      width: 100%;
-      max-width: 860px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      overflow: hidden;
-    }
+    /* ── findings ── */
+    .findings-wrap{background:var(--bg-card);border:1px solid var(--border);
+      border-radius:7px;overflow:hidden;margin-bottom:16px}
+    .finding-row{display:flex;align-items:center;gap:12px;padding:11px 16px;
+      border-bottom:1px solid #1a1e25;transition:background .12s}
+    .finding-row:last-child{border-bottom:none}
+    .finding-row:hover{background:var(--bg-hover)}
 
-    .top3-banner {
-      display: flex;
-      gap: 1rem;
-      padding: 1rem 1.25rem;
-      background: #1a1f29;
-      border-bottom: 1px solid #30363d;
-    }
+    .sev-icon{font-size:1rem;width:20px;text-align:center;flex-shrink:0}
+    .finding-info{flex:1;min-width:0}
+    .finding-desc{font-size:.82rem;font-weight:500}
+    .finding-meta{font-size:.7rem;color:var(--mute);margin-top:2px;
+      display:flex;gap:8px;flex-wrap:wrap}
+    .finding-meta .tag{padding:1px 6px;border-radius:3px;background:var(--bg-input);
+      border:1px solid var(--border)}
 
-    .top3-item {
-      flex: 1;
-      background: #21262d;
-      border: 1px solid #da3633;
-      border-radius: 6px;
-      padding: 0.65rem 0.9rem;
-    }
+    /* ── confidence bar ── */
+    .conf-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:3px;
+      flex-shrink:0;min-width:90px}
+    .conf-label{font-size:.7rem;color:var(--mute)}
+    .conf-bar-bg{width:80px;height:5px;background:var(--bg-input);
+      border-radius:3px;overflow:hidden}
+    .conf-bar{height:100%;border-radius:3px;transition:width .4s}
+    .conf-hi{background:var(--green)}
+    .conf-md{background:var(--orange)}
+    .conf-lo{background:var(--mute)}
 
-    .top3-item .rank {
-      font-size: 0.7rem;
-      color: #f85149;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
+    /* ── measurements ── */
+    .meas-table{width:100%;border-collapse:collapse;font-size:.75rem;margin-top:4px}
+    .meas-table td{padding:2px 6px;color:var(--mute)}
+    .meas-table td:first-child{color:var(--text)}
 
-    .top3-item .name {
-      font-size: 0.95rem;
-      font-weight: 600;
-      margin-top: 0.2rem;
-    }
+    /* ── actions ── */
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;
+      border-radius:6px;border:1px solid var(--border);background:var(--bg-input);
+      color:var(--text);font-size:.8rem;cursor:pointer;text-decoration:none;
+      transition:all .14s;font-family:inherit}
+    .btn:hover{background:var(--bg-hover)}
+    .btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+    .btn.pri:hover{background:#1c2a58}
+    .btn.success{background:#162316;border-color:#2a3d2a;color:var(--green)}
+    .btn.success:hover{background:#1e2f1e}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
 
-    .top3-item .prob {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: #f85149;
-      margin-top: 0.15rem;
-    }
+    /* ── loading / error states ── */
+    .state-box{padding:40px;text-align:center}
+    .state-icon{font-size:2.5rem;margin-bottom:12px;opacity:.5}
+    .state-title{font-size:.93rem;font-weight:600;color:var(--text);margin-bottom:6px}
+    .state-sub{font-size:.8rem;color:var(--mute)}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spinner{display:inline-block;animation:spin 1s linear infinite;font-size:1.5rem}
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
+    /* ── push-to-ris feedback ── */
+    .ris-toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;
+      border-radius:6px;font-size:.8rem;border:1px solid;
+      display:none;z-index:100;max-width:320px}
+    .ris-toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+    .ris-toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
 
-    thead tr {
-      background: #21262d;
-    }
-
-    thead th {
-      padding: 0.65rem 1.25rem;
-      text-align: left;
-      font-weight: 600;
-      color: #8b949e;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      border-bottom: 1px solid #30363d;
-    }
-
-    tbody tr {
-      border-bottom: 1px solid #21262d;
-      transition: background 0.12s;
-    }
-
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover      { background: #1c2128; }
-    tbody tr.top3-row   { background: #1e1316; }
-    tbody tr.top3-row:hover { background: #251418; }
-
-    td {
-      padding: 0.6rem 1.25rem;
-    }
-
-    td.pathology { font-weight: 500; }
-    td.pathology.top3-cell { color: #f85149; }
-
-    .bar-cell { width: 40%; }
-
-    .bar-wrap {
-      background: #21262d;
-      border-radius: 4px;
-      height: 8px;
-      overflow: hidden;
-    }
-
-    .bar-fill {
-      height: 100%;
-      border-radius: 4px;
-      background: #388bfd;
-      transition: width 0.4s ease;
-    }
-
-    .bar-fill.top3-fill { background: #f85149; }
-
-    td.prob-val {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-      color: #8b949e;
-      width: 6rem;
-    }
-
-    td.prob-val.top3-val { color: #f85149; font-weight: 600; }
-
-    #error-box {
-      display: none;
-      background: #21130f;
-      border: 1px solid #da3633;
-      border-radius: 8px;
-      padding: 1.25rem;
-      max-width: 860px;
-      width: 100%;
-      color: #f85149;
-    }
-
-    footer {
-      margin-top: 2rem;
-      font-size: 0.78rem;
-      color: #484f58;
-    }
+    .tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:.8rem}
+    thead tr{background:var(--bg-card)}
+    thead th{padding:8px 12px;text-align:left;font-size:.7rem;font-weight:600;
+      color:var(--mute);text-transform:uppercase;letter-spacing:.06em;
+      border-bottom:1px solid var(--border);white-space:nowrap}
+    tbody tr{border-bottom:1px solid #1a1e25;transition:background .12s}
+    tbody tr:last-child{border-bottom:none}
+    tbody tr:hover{background:var(--bg-hover)}
+    td{padding:8px 12px;vertical-align:middle}
+    .btn.sm{padding:3px 10px;font-size:.72rem}
   </style>
 </head>
 <body>
-  <header>
-    <h1>🔬 AI Diagnostic Results</h1>
-    <p class="sub" id="instance-label">Loading…</p>
-  </header>
 
-  <p id="status">Fetching AI results…</p>
+<header>
+  <h1>🤖 AI Analysis Results</h1>
+  <span id="status-pill" class="status-pill sp-processing">⟳ Processing…</span>
+</header>
 
-  <div id="error-box"></div>
-
-  <div class="card" id="card" style="display:none">
-    <div class="top3-banner" id="top3-banner"></div>
-    <table>
-      <thead>
-        <tr>
-          <th>Pathology</th>
-          <th class="bar-cell">Confidence</th>
-          <th style="text-align:right">Score</th>
-        </tr>
-      </thead>
-      <tbody id="table-body"></tbody>
-    </table>
+<div class="page" id="page">
+  <div class="state-box">
+    <div class="spinner">⟳</div>
+    <div class="state-title" style="margin-top:12px">Fetching analysis…</div>
+    <div class="state-sub" id="loading-sub">Querying AI service</div>
   </div>
+</div>
 
-  <footer>PACS Demo — AI model: DenseNet121 (TorchXRayVision densenet121-res224-all)</footer>
+<div class="ris-toast" id="ris-toast"></div>
 
-  <script>
-    (function () {
-      const params     = new URLSearchParams(window.location.search);
-      const instanceId = params.get("instanceId") || "";
-      const label      = document.getElementById("instance-label");
-      const status     = document.getElementById("status");
-      const errorBox   = document.getElementById("error-box");
-      const card       = document.getElementById("card");
-      const top3Banner = document.getElementById("top3-banner");
-      const tableBody  = document.getElementById("table-body");
+<script>
+(function(){
+'use strict';
 
-      if (!instanceId) {
-        label.textContent = "No instanceId provided in URL.";
-        status.textContent = "Usage: ai-panel.html?instanceId=<orthanc-instance-id>";
+const params     = new URLSearchParams(location.search);
+const instanceId = params.get('instanceId') || '';
+const RIS_URL    = '/ris/api';
+const AI_URL     = '/ai';
+
+boot();
+
+async function boot(){
+  if(!instanceId){ renderList(); return; }
+  try{
+    await fetch(AI_URL+'/analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({instance_id:instanceId})});
+  }catch{}
+  poll();
+}
+
+/* ── LIST VIEW ── */
+let _listTimer=null;
+function renderList(){
+  document.querySelector('header h1').textContent='🤖 AI Diagnostic — All Patients';
+  document.getElementById('status-pill').className='status-pill sp-processing';
+  document.getElementById('status-pill').textContent='Loading…';
+  const page=document.getElementById('page');
+
+  async function refresh(){
+    let results=[];
+    try{ results=await fetch(AI_URL+'/results').then(r=>r.json()); }catch{}
+
+    const q=(document.getElementById('ls-q')?.value||'').toLowerCase().trim();
+    const all=q ? results.filter(r=>
+      (r.patient_name||'').toLowerCase().includes(q)||
+      (r.modality||'').toLowerCase().includes(q)||
+      (r.body_part||'').toLowerCase().includes(q)) : results;
+
+    const mc={CR:'#79c0ff',DX:'#79c0ff',CT:'#ffa657',MR:'#7ee787',US:'#d2a8ff'};
+    const nn=all.filter(r=>r.normal).length;
+    const na=all.filter(r=>!r.normal&&r.status==='completed').length;
+    const np=all.filter(r=>r.status==='processing').length;
+    const nc=all.filter(r=>r.findings?.some(f=>f.severity==='high')).length;
+
+    document.getElementById('status-pill').className='status-pill '+(nc?'sp-critical':na?'sp-abnormal':'sp-completed');
+    document.getElementById('status-pill').textContent=nc?`⚠ ${nc} critical`:`${all.length} results`;
+
+    const header=`<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <input id="ls-q" placeholder="Search patient / modality / body part…" value="${esc(q)}"
+        style="flex:1;min-width:180px;background:var(--bg-input);border:1px solid var(--border);
+          border-radius:5px;color:var(--text);padding:6px 10px;font-size:.8rem;outline:none"
+        onkeyup="window._listRefresh()"/>
+      <button class="btn" onclick="window._listRefresh()">↺</button>
+      <a class="btn pri" href="/simulator/">+ New Acquisition</a>
+    </div>
+    <div style="display:flex;gap:14px;font-size:.75rem;margin-bottom:12px;flex-wrap:wrap">
+      <span style="color:var(--mute)">Total <b style="color:var(--text)">${all.length}</b></span>
+      <span style="color:var(--green)">Normal <b>${nn}</b></span>
+      <span style="color:var(--orange)">Abnormal <b>${na}</b></span>
+      ${nc?`<span style="color:var(--red)">Critical <b>${nc}</b></span>`:''}
+      ${np?`<span style="color:var(--link)">Processing <b>${np}</b></span>`:''}
+    </div>`;
+
+    if(!all.length){
+      page.innerHTML=header+`<div class="state-box">
+        <div class="state-icon">🤖</div>
+        <div class="state-title">No results yet</div>
+        <div class="state-sub">Generate a DICOM in the Simulator — analyses appear here automatically</div>
+        <a class="btn pri" href="/simulator/" style="margin-top:14px">Open Simulator →</a>
+      </div>`;
+      document.getElementById('ls-q')?.addEventListener('keyup',window._listRefresh);
+      return;
+    }
+
+    const rows=all.map(r=>{
+      const crit=r.findings?.some(f=>f.severity==='high');
+      const c=mc[r.modality]||'#888';
+      const mod=`<span style="font-size:.65rem;font-weight:700;padding:1px 6px;border-radius:3px;
+        background:${c}22;color:${c};border:1px solid ${c}44">${r.modality||'?'}</span>`;
+      const badge=r.status==='processing'
+        ?`<span class="status-pill sp-processing" style="font-size:.65rem;padding:1px 7px">⟳</span>`
+        :crit?`<span class="status-pill sp-critical" style="font-size:.65rem;padding:1px 7px">⚠ Critical</span>`
+        :r.normal?`<span class="status-pill sp-normal" style="font-size:.65rem;padding:1px 7px">✓ Normal</span>`
+        :`<span class="status-pill sp-abnormal" style="font-size:.65rem;padding:1px 7px">Abnormal</span>`;
+      const fc=(r.findings||[]).filter(f=>f.severity!=='none').length;
+      const fsumm=r.status==='processing'?'—'
+        :fc===0?`<span style="color:var(--green)">—</span>`
+        :`<span style="color:${crit?'var(--red)':'var(--orange)'}">${fc} finding${fc!==1?'s':''}</span>`;
+      const ts=(r.analyzed_at||r.queued_at||'').replace('T',' ').slice(0,16);
+      return `<tr style="cursor:pointer" onclick="location.href='?instanceId=${r.instance_id}'">
+        <td><b>${esc(fmtName(r.patient_name||'UNKNOWN'))}</b></td>
+        <td>${mod}</td>
+        <td style="font-size:.78rem">${esc(r.body_part||'—')}</td>
+        <td>${badge}</td>
+        <td>${fsumm}</td>
+        <td style="font-size:.71rem;color:var(--mute)">${ts||'—'}</td>
+        <td><a class="btn sm pri" href="?instanceId=${r.instance_id}" onclick="event.stopPropagation()">View →</a></td>
+      </tr>`}).join('');
+
+    page.innerHTML=header+`<div class="tbl-wrap"><table>
+      <thead><tr><th>Patient</th><th>Mod.</th><th>Body Part</th>
+        <th>Status</th><th>Findings</th><th>Analysed</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+    document.getElementById('ls-q')?.addEventListener('keyup',window._listRefresh);
+  }
+
+  window._listRefresh=function(){clearTimeout(_listTimer);refresh();_listTimer=setTimeout(window._listRefresh,10000);};
+  window._listRefresh();
+}
+
+async function poll(){
+  document.getElementById('loading-sub').textContent =
+    'Instance: '+instanceId.slice(0,8)+'…';
+  let attempts = 0;
+  const MAX_ATTEMPTS = 100;  // ~5 min with longer delays
+  const NOT_FOUND_TIMEOUT = 30000;  // 30s to wait for result to appear
+  let notFoundSince = Date.now();
+  
+  while(attempts < MAX_ATTEMPTS){
+    await sleep(attempts < 5 ? 1500 : 3000);
+    attempts++;
+    document.getElementById('loading-sub').textContent =
+      'Instance: '+instanceId.slice(0,8)+'… (attempt '+attempts+')';
+    
+    try{
+      const r = await fetch(AI_URL+'/results/'+instanceId);
+      if(r.status===404){ 
+        if(Date.now()-notFoundSince>NOT_FOUND_TIMEOUT){
+          throw new Error('Analysis not found (instance ID may not exist)');
+        }
+        continue; 
+      }
+      notFoundSince = Date.now();
+      const data = await r.json();
+      if(data.status==='processing'){ continue; }
+      render(data);
+      return;
+    }catch(err){ 
+      if(err.message.includes('not found')){
+        document.getElementById('page').innerHTML=`
+          <div class="state-box"><div class="state-icon">❌</div>
+            <div class="state-title">Analysis Not Found</div>
+            <div class="state-sub">${esc(err.message)}</div>
+            <a class="btn pri" href="/ai-panel.html" style="margin-top:14px">← Back to All Results</a>
+          </div>`;
         return;
       }
+      continue; 
+    }
+  }
+  
+  document.getElementById('page').innerHTML=`
+    <div class="state-box"><div class="state-icon">⏱️</div>
+      <div class="state-title">Analysis Timeout</div>
+      <div class="state-sub">Analysis is taking longer than expected. Check if the AI service is running.</div>
+      <a class="btn pri" href="/ai-panel.html" style="margin-top:14px">← Back to All Results</a>
+    </div>`;
+}
 
-      label.textContent = "Instance: " + instanceId;
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-      const metaUrl = "/orthanc/instances/" + instanceId + "/metadata/9999";
+/* ── render ── */
+function render(d){
+  const critical = d.findings?.some(f=>f.severity==='high');
+  const normal   = d.normal ?? true;
 
-      fetch(metaUrl)
-        .then(function (res) {
-          if (!res.ok) {
-            throw new Error(
-              "HTTP " + res.status + " — AI metadata not found. " +
-              "Ensure the instance is CR/DX modality and the AI service processed it."
-            );
-          }
-          return res.text();
-        })
-        .then(function (text) {
-          var data;
-          try { data = JSON.parse(text); }
-          catch (e) { throw new Error("Could not parse metadata JSON: " + e.message); }
+  // update pill
+  const pill = document.getElementById('status-pill');
+  if(d.status==='error'){
+    pill.className='status-pill sp-error'; pill.textContent='⚠ Error';
+  } else if(critical){
+    pill.className='status-pill sp-critical'; pill.textContent='⚠ Critical Finding';
+  } else if(!normal){
+    pill.className='status-pill sp-abnormal'; pill.textContent='Abnormal';
+  } else {
+    pill.className='status-pill sp-normal'; pill.textContent='✓ Normal';
+  }
 
-          var predictions = data.predictions || {};
-          var top3        = data.top3        || [];
+  if(d.status==='error'){
+    document.getElementById('page').innerHTML=`
+      <div class="state-box"><div class="state-icon">❌</div>
+        <div class="state-title">Analysis Failed</div>
+        <div class="state-sub">${esc(d.error||'Unknown error')}</div>
+      </div>`;
+    return;
+  }
 
-          // Sort all pathologies descending
-          var sorted = Object.entries(predictions)
-            .sort(function (a, b) { return b[1] - a[1]; });
+  document.getElementById('page').innerHTML =
+    infoCard(d) + impressionBox(d) + findingsSection(d) + actionsBar(d);
+}
 
-          var top3Names = top3.map(function (t) { return t.pathology; });
+function infoCard(d){
+  const mc={CR:'#79c0ff',DX:'#79c0ff',CT:'#ffa657',MR:'#7ee787',US:'#d2a8ff'};
+  const c=mc[d.modality]||'#888';
+  const modTag=`<span style="font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:4px;
+    background:${c}22;color:${c};border:1px solid ${c}55">${d.modality||'?'}</span>`;
+  return `<div class="info-card">
+    ${modTag}
+    <span class="ic-sep">·</span>
+    <div class="ic-item"><span class="ic-label">Patient</span>
+      <span class="ic-val">${esc(fmtName(d.patient_name||''))}</span></div>
+    <span class="ic-sep">·</span>
+    <div class="ic-item"><span class="ic-label">Body Part</span>
+      <span class="ic-val">${esc(d.body_part||'—')}</span></div>
+    <span class="ic-sep">·</span>
+    <div class="ic-item"><span class="ic-label">Instance</span>
+      <span class="ic-val" style="font-family:monospace;font-size:.72rem">
+        ${esc(d.instance_id.slice(0,8))}…</span></div>
+    <span class="ic-sep">·</span>
+    <div class="ic-item"><span class="ic-label">Analysis Time</span>
+      <span class="ic-val">${d.analysis_ms ?? '?'} ms</span></div>
+  </div>`;}
 
-          // Top-3 banner
-          top3.forEach(function (item, i) {
-            var div = document.createElement("div");
-            div.className = "top3-item";
-            div.innerHTML =
-              '<div class="rank">#' + (i + 1) + ' Finding</div>' +
-              '<div class="name">' + escHtml(item.pathology) + '</div>' +
-              '<div class="prob">' + (item.probability * 100).toFixed(2) + '%</div>';
-            top3Banner.appendChild(div);
-          });
+function impressionBox(d){
+  const critical = d.findings?.some(f=>f.severity==='high');
+  const cls = critical ? 'critical' : (d.normal ? 'normal' : '');
+  const icon = critical ? '⚠️ ' : (d.normal ? '✅ ' : '');
+  return `<div class="impression-box">
+    <div class="section-title">AI Impression</div>
+    <div class="impression-text ${cls}">${icon}${esc(d.impression||'—')}</div>
+  </div>`;}
 
-          // Table rows
-          sorted.forEach(function (entry) {
-            var name  = entry[0];
-            var prob  = entry[1];
-            var isTop = top3Names.indexOf(name) !== -1;
+function findingsSection(d){
+  if(!d.findings?.length) return '';
+  const rows = d.findings.map(f=>{
+    const icon = f.severity==='high'?'🔴': f.severity==='moderate'?'🟡':
+                 f.severity==='mild'?'🟠':'✅';
+    const pct  = Math.round((f.confidence||0)*100);
+    const barCls = pct>=80?'conf-hi':pct>=65?'conf-md':'conf-lo';
+    const measHtml = Object.keys(f.measurements||{}).length
+      ? `<table class="meas-table"><tr>`+
+        Object.entries(f.measurements).map(([k,v])=>
+          `<td>${k.replace(/_/g,' ')}</td><td><b>${v}</b></td>`).join('')+
+        `</tr></table>` : '';
+    const tags = [f.type, f.location].filter(Boolean).map(t=>
+      `<span class="tag">${esc(t)}</span>`).join('');
+    return `<div class="finding-row">
+      <div class="sev-icon">${icon}</div>
+      <div class="finding-info">
+        <div class="finding-desc">${esc(f.description)}</div>
+        <div class="finding-meta">${tags}</div>
+        ${measHtml}
+      </div>
+      <div class="conf-wrap">
+        <div class="conf-label">${pct}%</div>
+        <div class="conf-bar-bg">
+          <div class="conf-bar ${barCls}" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>`; }).join('');
+  return `<div class="section-title" style="margin-bottom:8px">
+    Findings (${d.findings.length})</div>
+    <div class="findings-wrap">${rows}</div>`;}
 
-            var tr = document.createElement("tr");
-            if (isTop) tr.className = "top3-row";
+function actionsBar(d){
+  return `<div class="actions">
+    <a class="btn" href="/ai-panel.html">← All Results</a>
+    <a class="btn pri" href="/?StudyInstanceUID=${encodeURIComponent(d.study_instance_uid||'')}"
+       target="_blank">Open in OHIF →</a>
+    <button class="btn success" onclick="pushToRis()" id="btn-ris">
+      📋 Push to RIS Report</button>
+    <button class="btn" onclick="reAnalyze()">↺ Re-analyse</button>
+  </div>`;}
 
-            var pct = Math.max(0, Math.min(100, prob * 100)).toFixed(2);
+/* ── push to RIS ── */
+window.pushToRis = async function(){
+  const btn = document.getElementById('btn-ris');
+  if(!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⟳ Pushing…';
 
-            tr.innerHTML =
-              '<td class="pathology' + (isTop ? " top3-cell" : "") + '">' +
-                escHtml(name) +
-              '</td>' +
-              '<td class="bar-cell">' +
-                '<div class="bar-wrap">' +
-                  '<div class="bar-fill' + (isTop ? " top3-fill" : "") + '" ' +
-                       'style="width:' + pct + '%"></div>' +
-                '</div>' +
-              '</td>' +
-              '<td class="prob-val' + (isTop ? " top3-val" : "") + '">' +
-                (prob * 100).toFixed(2) + '%' +
-              '</td>';
+  try{
+    // 1. get result
+    const res = await fetch(AI_URL+'/results/'+instanceId).then(r=>r.json());
 
-            tableBody.appendChild(tr);
-          });
+    // 2. find matching order by study_uid via worklist (best-effort)
+    let orderId = null;
+    try{
+      const wl = await fetch(RIS_URL+'/worklist').then(r=>r.json());
+      const match = wl.find(o=>o.orthanc_study_id===res.study_instance_uid
+                              || o.modality===res.modality);
+      if(match) orderId = match.id;
+    }catch{}
 
-          status.style.display = "none";
-          card.style.display   = "block";
-        })
-        .catch(function (err) {
-          status.style.display   = "none";
-          errorBox.style.display = "block";
-          errorBox.textContent   = "Error: " + err.message;
-        });
+    if(!orderId){
+      showToast('No matching RIS order found. Create an order in RIS first, '
+               +'then push again.','err');
+      btn.disabled=false; btn.textContent='📋 Push to RIS Report';
+      return;
+    }
 
-      function escHtml(str) {
-        return String(str)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
-      }
-    })();
-  </script>
+    // 3. build draft report content from AI findings
+    const technique = `${res.modality} acquisition. AI-assisted analysis performed.`;
+    const findings_text = (res.findings||[]).map((f,i)=>
+      `${i+1}. ${f.description} (${f.location}) — confidence ${Math.round(f.confidence*100)}%`
+    ).join('\n');
+    const impression = res.impression || '';
+    const recommendation = res.follow_up_recommended
+      ? 'Follow-up imaging recommended. Clinical correlation advised.'
+      : 'No follow-up imaging required based on AI assessment.';
+
+    const payload = {
+      order_id:orderId, radiologist:'AI-assisted (pending radiologist review)',
+      technique, findings:findings_text, impression, recommendation, status:'DRAFT'};
+
+    // 4. create or update report
+    let reportRes;
+    try{
+      const existing = await fetch(RIS_URL+'/reports/order/'+orderId);
+      if(existing.ok){
+        const old = await existing.json();
+        reportRes = await fetch(RIS_URL+'/reports/'+old.id,{
+          method:'PUT',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({technique,findings:findings_text,
+                               impression,recommendation})}).then(r=>r.json());
+      }else throw new Error('no existing');
+    }catch{
+      reportRes = await fetch(RIS_URL+'/reports',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)}).then(r=>r.json());
+    }
+
+    showToast('✅ Draft report created in RIS — open RIS to review.','ok');
+    btn.textContent='✓ Pushed to RIS';
+  }catch(e){
+    showToast('Push failed: '+e.message,'err');
+    btn.disabled=false; btn.textContent='📋 Push to RIS Report';
+  }
+};
+
+window.reAnalyze = async function(){
+  try{
+    await fetch(AI_URL+'/results/'+instanceId,{method:'DELETE'});
+    await fetch(AI_URL+'/analyze',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({instance_id:instanceId})});
+    document.getElementById('page').innerHTML=
+      `<div class="state-box"><div class="spinner">⟳</div>
+       <div class="state-title" style="margin-top:12px">Re-analysing…</div></div>`;
+    document.getElementById('status-pill').className='status-pill sp-processing';
+    document.getElementById('status-pill').textContent='⟳ Processing…';
+    poll();
+  }catch(e){showToast('Re-analyse failed: '+e.message,'err');}};
+
+function showToast(msg, type){
+  const t=document.getElementById('ris-toast');
+  t.className='ris-toast '+type; t.textContent=msg; t.style.display='block';
+  setTimeout(()=>{t.style.display='none';}, 6000);}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtName(r){
+  if(!r)return'Unknown';
+  const p=r.split('^').map(s=>s.trim()).filter(Boolean);
+  return p.length<2?p[0]:p.slice(1).join(' ')+' '+p[0];}
+
+})();
+</script>
 </body>
 </html>

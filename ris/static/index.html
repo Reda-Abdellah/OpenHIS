@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>RIS — Radiology Information System</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--bg-card:#161b22;--bg-hover:#1c2128;--bg-input:#21262d;
+      --border:#30363d;--text:#e6edf3;--mute:#8b949e;--link:#58a6ff;
+      --green:#3fb950;--red:#f85149;--orange:#ffa657;--yellow:#d29922;--purple:#d2a8ff;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px}
+    .app{display:grid;grid-template-rows:48px 40px 1fr;height:100vh;overflow:hidden}
+
+    header{display:flex;align-items:center;gap:12px;padding:0 20px;
+      background:var(--bg-card);border-bottom:1px solid var(--border)}
+    header h1{font-size:.95rem;font-weight:600;color:var(--link);flex:1}
+    .hdr-meta{display:flex;align-items:center;gap:10px}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--border)}
+    .dot.ok{background:var(--green)}.dot.err{background:var(--red)}
+    .o-txt{font-size:.73rem;color:var(--mute)}
+
+    .tabbar{display:flex;align-items:center;padding:0 16px;gap:2px;
+      background:var(--bg-card);border-bottom:1px solid var(--border)}
+    .tab{padding:0 14px;height:40px;display:flex;align-items:center;gap:6px;
+      font-size:.8rem;color:var(--mute);cursor:pointer;border-bottom:2px solid transparent;
+      transition:all .15s;user-select:none}
+    .tab:hover{color:var(--text)}
+    .tab.active{color:var(--link);border-bottom-color:var(--link)}
+    .tab .badge{font-size:.65rem;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:10px;padding:1px 6px}
+    .tab.active .badge{background:#162040;border-color:#2a4a90;color:var(--link)}
+    .tabbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+    .pane{display:none;height:100%;overflow-y:auto;padding:16px 20px}
+    .pane.active{display:block}
+
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+    .toolbar h2{font-size:.9rem;font-weight:600;flex:1}
+    .btn{display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:5px;
+      border:1px solid var(--border);background:var(--bg-input);color:var(--text);
+      font-size:.78rem;cursor:pointer;transition:all .14s;text-decoration:none;font-family:inherit}
+    .btn:hover{background:var(--bg-hover)}
+    .btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+    .btn.pri:hover{background:#1c2a58}
+    .btn.success{background:#162316;border-color:#2a3d2a;color:var(--green)}
+    .btn.success:hover{background:#1e2f1e}
+    .btn.warning{background:#201a10;border-color:#5a3a00;color:var(--orange)}
+    .btn.warning:hover{background:#2a2010}
+    .btn.danger{background:#200e10;border-color:#3d1820;color:var(--red)}
+    .btn.danger:hover{background:#2a1015}
+    .btn.sm{padding:3px 10px;font-size:.72rem}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+
+    .badge-status{font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:10px}
+    .s-pending    {background:#162316;color:var(--green);border:1px solid #2a3d2a}
+    .s-inprogress {background:#162040;color:var(--link);border:1px solid #2a4a90}
+    .s-completed  {background:#1a1a1a;color:var(--mute);border:1px solid var(--border)}
+    .s-cancelled  {background:#200e10;color:var(--red);border:1px solid #3d1820}
+    .p-stat       {background:#200e10;color:var(--red);border:1px solid #3d1820}
+    .p-urgent     {background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+    .p-routine    {background:var(--bg-input);color:var(--mute);border:1px solid var(--border)}
+    .r-draft      {background:var(--bg-input);color:var(--mute);border:1px solid var(--border)}
+    .r-prelim     {background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+    .r-final      {background:#162316;color:var(--green);border:1px solid #2a3d2a}
+    .r-addendum   {background:#16162a;color:var(--purple);border:1px solid #3a2a90}
+
+    .tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+    table{width:100%;border-collapse:collapse;font-size:.8rem}
+    thead tr{background:var(--bg-card)}
+    thead th{padding:8px 12px;text-align:left;font-size:.7rem;font-weight:600;
+      color:var(--mute);text-transform:uppercase;letter-spacing:.06em;
+      border-bottom:1px solid var(--border);white-space:nowrap}
+    tbody tr{border-bottom:1px solid #1a1e25;transition:background .12s}
+    tbody tr:last-child{border-bottom:none}
+    tbody tr:hover{background:var(--bg-hover)}
+    td{padding:8px 12px;vertical-align:middle}
+
+    .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+    .filters select,.filters input{background:var(--bg-input);border:1px solid var(--border);
+      border-radius:5px;color:var(--text);padding:4px 8px;font-size:.78rem;outline:none}
+    .filters select:focus,.filters input:focus{border-color:var(--link)}
+    .filters label{font-size:.73rem;color:var(--mute)}
+
+    .empty{padding:40px;text-align:center;color:var(--mute)}
+    .empty .ei{font-size:2.5rem;opacity:.2;margin-bottom:10px}
+    .empty p{font-size:.83rem}
+
+    /* ── modals ── */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;
+      display:none;align-items:flex-start;justify-content:center;padding-top:40px}
+    .modal-bg.open{display:flex}
+    .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
+      width:min(580px,95vw);max-height:88vh;overflow-y:auto;padding:20px}
+    .modal.wide{width:min(760px,96vw)}
+    .modal h3{font-size:.93rem;font-weight:600;margin-bottom:16px;
+      display:flex;align-items:center;gap:8px}
+    .modal-close{margin-left:auto;background:none;border:none;color:var(--mute);
+      font-size:1.1rem;cursor:pointer}
+    .modal-close:hover{color:var(--text)}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:10px}
+    .form-row.c1{grid-template-columns:1fr}.form-row.c3{grid-template-columns:1fr 1fr 1fr}
+    .form-field{display:flex;flex-direction:column;gap:4px}
+    .form-field label{font-size:.72rem;color:var(--mute);font-weight:500}
+    .form-field input,.form-field select,.form-field textarea{
+      background:var(--bg-input);border:1px solid var(--border);border-radius:5px;
+      color:var(--text);padding:6px 8px;font-size:.8rem;outline:none;font-family:inherit}
+    .form-field textarea{resize:vertical}
+    .form-field input:focus,.form-field select:focus,.form-field textarea:focus{border-color:var(--link)}
+    .form-field input[readonly],.form-field textarea[readonly]{opacity:.6;cursor:default}
+    .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;
+      padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap}
+
+    /* ── report order info banner ── */
+    .order-banner{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+      padding:10px 12px;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:6px;margin-bottom:14px;font-size:.78rem}
+    .order-banner .ob-val{color:var(--text);font-weight:600}
+    .order-banner .ob-sep{color:var(--border)}
+
+    /* ── report section headers ── */
+    .rsec{margin-bottom:10px}
+    .rsec-label{font-size:.68rem;font-weight:700;color:var(--mute);
+      text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+    .rsec textarea{width:100%;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:5px;color:var(--text);padding:8px 10px;font-size:.82rem;
+      outline:none;font-family:inherit;resize:vertical;line-height:1.55}
+    .rsec textarea:focus{border-color:var(--link)}
+    .rsec textarea[readonly]{opacity:.55;cursor:default;border-style:dashed}
+
+    /* ── finalized notice ── */
+    .final-notice{padding:10px 14px;background:#0d180d;border:1px solid #2a3d2a;
+      border-radius:6px;margin-bottom:14px;font-size:.78rem;color:var(--green);
+      display:flex;align-items:center;gap:8px}
+
+    /* ── print styles ── */
+    @media print{
+      body{background:#fff!important;color:#000!important;font-size:11pt}
+      .app,.modal-bg,.modal-close,.modal-actions,.order-banner .btn{display:none!important}
+      #print-area{display:block!important}
+    }
+    #print-area{display:none;padding:30px;max-width:800px;margin:auto;font-family:serif}
+    #print-area h2{font-size:16pt;margin-bottom:4px}
+    #print-area .ph{font-size:10pt;color:#555;margin-bottom:16px;border-bottom:1px solid #ccc;padding-bottom:8px}
+    #print-area .ps{margin-bottom:14px}
+    #print-area .ps h3{font-size:11pt;text-transform:uppercase;font-weight:bold;
+      letter-spacing:.05em;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:6px}
+    #print-area .ps p{white-space:pre-wrap;font-size:11pt;line-height:1.6}
+    #print-area .footer{margin-top:24px;border-top:1px solid #ccc;padding-top:8px;
+      font-size:9pt;color:#555}
+
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🏥 RIS — Radiology Information System</h1>
+    <div class="hdr-meta">
+      <span class="dot" id="o-dot"></span>
+      <span class="o-txt" id="o-txt">Checking Orthanc…</span>
+    </div>
+  </header>
+
+  <div class="tabbar">
+    <div class="tab active" data-tab="worklist">📋 Worklist <span class="badge" id="tab-wl-count">0</span></div>
+    <div class="tab" data-tab="patients">👤 Patients <span class="badge" id="tab-pt-count">0</span></div>
+    <div class="tab" data-tab="reports">📄 Reports <span class="badge" id="tab-rp-count">0</span></div>
+  </div>
+
+  <!-- Worklist -->
+  <div class="pane active" id="pane-worklist">
+    <div class="toolbar">
+      <h2>Worklist</h2>
+      <button class="btn pri" onclick="openOrderModal()">+ New Order</button>
+    </div>
+    <div class="filters">
+      <label>Status</label>
+      <select id="f-status" onchange="loadWorklist()">
+        <option value="">All</option>
+        <option value="PENDING">Pending</option>
+        <option value="IN_PROGRESS">In Progress</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+      <label>Priority</label>
+      <select id="f-priority" onchange="loadWorklist()">
+        <option value="">All</option>
+        <option value="STAT">STAT</option>
+        <option value="URGENT">Urgent</option>
+        <option value="ROUTINE">Routine</option>
+      </select>
+      <label>Modality</label>
+      <select id="f-modality" onchange="loadWorklist()">
+        <option value="">All</option>
+        <option value="CR">CR</option><option value="DX">DX</option>
+        <option value="CT">CT</option><option value="MR">MR</option><option value="US">US</option>
+      </select>
+      <button class="btn sm" onclick="loadWorklist()">↺ Refresh</button>
+    </div>
+    <div id="worklist-wrap"><div class="empty"><p>Loading…</p></div></div>
+  </div>
+
+  <!-- Patients -->
+  <div class="pane" id="pane-patients">
+    <div class="toolbar">
+      <h2>Patients</h2>
+      <button class="btn" onclick="syncPatients()">⟳ Sync from Orthanc</button>
+    </div>
+    <div id="patients-wrap"><div class="empty"><p>Loading…</p></div></div>
+  </div>
+
+  <!-- Reports -->
+  <div class="pane" id="pane-reports">
+    <div class="toolbar">
+      <h2>Reports</h2>
+      <select id="f-report-status" onchange="loadReports()"
+        style="background:var(--bg-input);border:1px solid var(--border);border-radius:5px;
+               color:var(--text);padding:4px 8px;font-size:.78rem">
+        <option value="">All Reports</option>
+        <option value="DRAFT">Draft</option>
+        <option value="PRELIMINARY">Preliminary</option>
+        <option value="FINAL">Final</option>
+        <option value="ADDENDUM">Addendum</option>
+      </select>
+    </div>
+    <div id="reports-wrap"><div class="empty"><div class="ei">📄</div><p>No reports yet</p></div></div>
+  </div>
+</div>
+
+<!-- Order Modal -->
+<div class="modal-bg" id="order-modal">
+  <div class="modal">
+    <h3>📋 New Imaging Order
+      <button class="modal-close" onclick="closeOrderModal()">✕</button>
+    </h3>
+    <div class="form-row">
+      <div class="form-field"><label>Patient *</label>
+        <select id="om-patient" required><option value="">Select patient…</option></select></div>
+      <div class="form-field"><label>Requesting Physician</label>
+        <input type="text" id="om-physician" placeholder="Dr. Smith"/></div>
+    </div>
+    <div class="form-row c3">
+      <div class="form-field"><label>Modality *</label>
+        <select id="om-modality" required>
+          <option value="">—</option>
+          <option value="CR">CR</option><option value="DX">DX</option>
+          <option value="CT">CT</option><option value="MR">MR</option>
+          <option value="US">US</option><option value="NM">NM</option><option value="PT">PT</option>
+        </select></div>
+      <div class="form-field"><label>Body Part</label>
+        <input type="text" id="om-body" placeholder="CHEST"/></div>
+      <div class="form-field"><label>Priority</label>
+        <select id="om-priority">
+          <option value="ROUTINE">Routine</option>
+          <option value="URGENT">Urgent</option>
+          <option value="STAT">STAT</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Scheduled Date</label>
+        <input type="date" id="om-date"/></div>
+      <div class="form-field"><label>Accession # (auto if blank)</label>
+        <input type="text" id="om-accession" placeholder="auto-generated"/></div>
+    </div>
+    <div class="form-row c1">
+      <div class="form-field"><label>Clinical Information / Indication</label>
+        <textarea id="om-clinical" rows="3" placeholder="Clinical history and indication…"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeOrderModal()">Cancel</button>
+      <button class="btn pri" onclick="submitOrder()">Create Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Report Modal -->
+<div class="modal-bg" id="report-modal">
+  <div class="modal wide">
+    <h3 id="rm-title">📄 Radiology Report
+      <button class="modal-close" onclick="closeReportModal()">✕</button>
+    </h3>
+    <div id="report-modal-body"></div>
+  </div>
+</div>
+
+<!-- Print area (hidden except @media print) -->
+<div id="print-area"></div>
+
+<script>
+(function(){
+'use strict';
+
+const MOD_COLORS={CR:'#79c0ff',DX:'#79c0ff',CT:'#ffa657',MR:'#7ee787',US:'#d2a8ff'};
+
+/* ── tabs ── */
+document.querySelectorAll('.tab').forEach(t=>
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='patients') loadPatients();
+    if(t.dataset.tab==='reports')  loadReports();
+  }));
+
+/* ── helpers ── */
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDt(s){return s?s.replace('T',' ').slice(0,16):'—';}
+function fmtName(r){
+  if(!r)return'Unknown';
+  const p=r.split('^').map(s=>s.trim()).filter(Boolean);
+  return p.length<2?p[0]:p.slice(1).join(' ')+' '+p[0];}
+function sBadge(s){
+  const m={PENDING:'s-pending',IN_PROGRESS:'s-inprogress',COMPLETED:'s-completed',CANCELLED:'s-cancelled'};
+  return `<span class="badge-status ${m[s]||'s-pending'}">${s||'PENDING'}</span>`;}
+function pBadge(p){
+  const m={STAT:'p-stat',URGENT:'p-urgent',ROUTINE:'p-routine'};
+  return `<span class="badge-status ${m[p]||'p-routine'}">${p||'ROUTINE'}</span>`;}
+function rBadge(s){
+  const m={DRAFT:'r-draft',PRELIMINARY:'r-prelim',FINAL:'r-final',ADDENDUM:'r-addendum'};
+  return s?`<span class="badge-status ${m[s]||'r-draft'}">${s}</span>`:'<span style="color:var(--mute);font-size:.72rem">none</span>';}
+function modBadge(m){
+  const c=MOD_COLORS[m]||'#888';
+  return `<span style="font-size:.67rem;font-weight:700;padding:2px 6px;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}55">${m||'?'}</span>`;}
+async function api(path,opts={}){
+  const r=await fetch('api'+path,opts);
+  if(!r.ok){const d=await r.json().catch(()=>({detail:r.statusText}));throw new Error(d.detail||r.statusText);}
+  return r.json();}
+
+/* ══════════ WORKLIST ══════════ */
+async function loadWorklist(){
+  const qs=new URLSearchParams();
+  const s=document.getElementById('f-status').value;
+  const p=document.getElementById('f-priority').value;
+  const m=document.getElementById('f-modality').value;
+  if(s) qs.set('status',s); if(p) qs.set('priority',p); if(m) qs.set('modality',m);
+  const wrap=document.getElementById('worklist-wrap');
+  try{
+    const data=await api('/worklist?'+qs);
+    document.getElementById('tab-wl-count').textContent=data.length;
+    wrap.innerHTML=renderWorklist(data);
+  }catch(e){wrap.innerHTML=`<div class="empty"><p style="color:var(--red)">Error: ${esc(e.message)}</p></div>`;}
+}
+function renderWorklist(rows){
+  if(!rows.length) return`<div class="empty"><div class="ei">📋</div><p>No orders — create one with "+ New Order"</p></div>`;
+  const trs=rows.map(r=>`
+    <tr>
+      <td style="font-family:monospace;font-size:.71rem;color:var(--mute)">${esc(r.accession_number||'—')}</td>
+      <td><b>${esc(fmtName(r.patient_name||''))}</b><br>
+        <span style="font-size:.69rem;color:var(--mute)">${esc(r.patient_id_ext||'')}</span></td>
+      <td>${modBadge(r.modality)}</td>
+      <td style="font-size:.78rem">${esc(r.body_part||'—')}</td>
+      <td>${pBadge(r.priority)}</td>
+      <td style="font-size:.72rem;color:var(--mute)">${esc(r.scheduled_date||'—')}</td>
+      <td>${sBadge(r.status)}</td>
+      <td>${rBadge(r.report_status)}</td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn sm pri" onclick="openReportModal(${r.id})">📄 Report</button>
+        ${r.status!=='COMPLETED'&&r.status!=='CANCELLED'
+          ?`<button class="btn sm" onclick="updateOrderStatus(${r.id},'COMPLETED')" title="Mark complete">✓</button>`:''}</div>
+      </td>
+    </tr>`).join('');
+  return`<div class="tbl-wrap"><table>
+    <thead><tr><th>Accession</th><th>Patient</th><th>Mod.</th><th>Body Part</th>
+      <th>Priority</th><th>Scheduled</th><th>Status</th><th>Report</th><th></th></tr></thead>
+    <tbody>${trs}</tbody></table></div>`;}
+window.updateOrderStatus=async function(id,status){
+  try{await api(`/orders/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});loadWorklist();}
+  catch(e){alert('Error: '+e.message);}};
+
+/* ══════════ PATIENTS ══════════ */
+async function loadPatients(){
+  const wrap=document.getElementById('patients-wrap');
+  try{
+    const data=await api('/patients');
+    document.getElementById('tab-pt-count').textContent=data.length;
+    wrap.innerHTML=renderPatients(data);
+    populatePatientSelect(data);
+  }catch(e){wrap.innerHTML=`<div class="empty"><p style="color:var(--red)">Error: ${esc(e.message)}</p></div>`;}
+}
+function renderPatients(rows){
+  if(!rows.length) return`<div class="empty"><div class="ei">👤</div>
+    <p>No patients — click "⟳ Sync from Orthanc"</p></div>`;
+  const trs=rows.map(r=>`
+    <tr>
+      <td style="font-family:monospace;font-size:.72rem">${esc(r.patient_id||'—')}</td>
+      <td><b>${esc(fmtName(r.patient_name||''))}</b></td>
+      <td>${esc(r.birth_date||'—')}</td><td>${esc(r.sex||'—')}</td>
+      <td><span style="font-size:.69rem;color:var(--mute)">${esc((r.orthanc_id||'').slice(0,8))}…</span></td>
+      <td><button class="btn sm pri" onclick="openOrderModalForPatient(${r.id})">+ Order</button></td>
+    </tr>`).join('');
+  return`<div class="tbl-wrap"><table>
+    <thead><tr><th>Patient ID</th><th>Name</th><th>DOB</th><th>Sex</th><th>Orthanc ID</th><th></th></tr></thead>
+    <tbody>${trs}</tbody></table></div>`;}
+function populatePatientSelect(pts){
+  const sel=document.getElementById('om-patient'),cur=sel.value;
+  sel.innerHTML='<option value="">Select patient…</option>'+
+    pts.map(p=>`<option value="${p.id}">${esc(fmtName(p.patient_name))} (${esc(p.patient_id||'?')})</option>`).join('');
+  if(cur)sel.value=cur;}
+window.syncPatients=async function(){
+  try{const r=await api('/patients/sync',{method:'POST'});await loadPatients();alert(`Synced ${r.added} new, ${r.updated} updated patients.`);}
+  catch(e){alert('Sync failed: '+e.message);}};
+window.openOrderModalForPatient=function(patientId){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+  document.querySelector('.tab[data-tab="worklist"]').classList.add('active');
+  document.getElementById('pane-worklist').classList.add('active');
+  openOrderModal(patientId);};
+
+/* ══════════ REPORTS LIST ══════════ */
+async function loadReports(){
+  const status=document.getElementById('f-report-status').value;
+  const qs=status?'?status='+status:'';
+  const wrap=document.getElementById('reports-wrap');
+  try{
+    const data=await api('/reports'+qs);
+    document.getElementById('tab-rp-count').textContent=data.length;
+    wrap.innerHTML=renderReportsList(data);
+  }catch(e){wrap.innerHTML=`<div class="empty"><p style="color:var(--red)">Error: ${esc(e.message)}</p></div>`;}
+}
+function renderReportsList(rows){
+  if(!rows.length)return`<div class="empty"><div class="ei">📄</div><p>No reports yet</p></div>`;
+  const trs=rows.map(r=>`
+    <tr>
+      <td style="font-family:monospace;font-size:.72rem">${esc(r.accession_number||'—')}</td>
+      <td><b>${esc(fmtName(r.patient_name||''))}</b></td>
+      <td>${modBadge(r.modality)}</td>
+      <td>${rBadge(r.report_status)}</td>
+      <td>${esc(r.radiologist||'—')}</td>
+      <td style="font-size:.71rem;color:var(--mute)">${fmtDt(r.report_updated)}</td>
+      <td><button class="btn sm pri" onclick="openReportModal(${r.order_id})">Edit →</button></td>
+    </tr>`).join('');
+  return`<div class="tbl-wrap"><table>
+    <thead><tr><th>Accession</th><th>Patient</th><th>Mod.</th>
+      <th>Status</th><th>Radiologist</th><th>Updated</th><th></th></tr></thead>
+    <tbody>${trs}</tbody></table></div>`;}
+
+/* ══════════ ORDER MODAL ══════════ */
+window.openOrderModal=async function(presetPt=null){
+  const pts=await api('/patients').catch(()=>[]);
+  populatePatientSelect(pts);
+  if(presetPt)document.getElementById('om-patient').value=presetPt;
+  document.getElementById('om-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('om-accession').value='';
+  document.getElementById('om-clinical').value='';
+  document.getElementById('order-modal').classList.add('open');};
+window.closeOrderModal=function(){document.getElementById('order-modal').classList.remove('open');};
+window.submitOrder=async function(){
+  const patient=document.getElementById('om-patient').value;
+  const modality=document.getElementById('om-modality').value;
+  if(!patient||!modality){alert('Patient and Modality are required.');return;}
+  try{
+    await api('/orders',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        patient_id:parseInt(patient),modality,
+        body_part:document.getElementById('om-body').value,
+        priority:document.getElementById('om-priority').value,
+        scheduled_date:document.getElementById('om-date').value,
+        accession_number:document.getElementById('om-accession').value||null,
+        requesting_physician:document.getElementById('om-physician').value,
+        clinical_info:document.getElementById('om-clinical').value,
+      })});
+    closeOrderModal();loadWorklist();
+  }catch(e){alert('Error: '+e.message);}};
+
+/* ══════════ REPORT MODAL ══════════ */
+let _currentReport=null, _currentOrderId=null;
+
+window.openReportModal=async function(orderId){
+  _currentOrderId=orderId;
+  _currentReport=null;
+  const body=document.getElementById('report-modal-body');
+  body.innerHTML='<div style="padding:20px;text-align:center;color:var(--mute)">Loading…</div>';
+  document.getElementById('report-modal').classList.add('open');
+
+  try{
+    // fetch order details
+    const order=await api('/orders/'+orderId);
+    let report=null;
+    try{report=await api('/reports/order/'+orderId);}catch(e){/*no report yet*/}
+    _currentReport=report;
+    body.innerHTML=renderReportForm(order,report);
+  }catch(e){
+    body.innerHTML=`<p style="color:var(--red);padding:16px">Error: ${esc(e.message)}</p>`;}};
+
+window.closeReportModal=function(){
+  document.getElementById('report-modal').classList.remove('open');
+  _currentReport=null;_currentOrderId=null;
+  loadWorklist();loadReports();};
+
+function renderReportForm(order,report){
+  const isFinal=report?.status==='FINAL';
+  const ro=isFinal?'readonly':'';
+  const status=report?.status||'DRAFT';
+
+  const statusColors={DRAFT:'var(--mute)',PRELIMINARY:'var(--orange)',FINAL:'var(--green)',ADDENDUM:'var(--purple)'};
+  const sc=statusColors[status]||'var(--mute)';
+
+  let html=`
+    <div class="order-banner">
+      ${modBadge(order.modality)}
+      <span><span style="color:var(--mute)">Patient</span>
+        <span class="ob-val"> ${esc(fmtName(order.patient_name||''))}</span></span>
+      <span class="ob-sep">·</span>
+      <span><span style="color:var(--mute)">Body</span>
+        <span class="ob-val"> ${esc(order.body_part||'—')}</span></span>
+      <span class="ob-sep">·</span>
+      <span><span style="color:var(--mute)">Accession</span>
+        <span class="ob-val" style="font-family:monospace"> ${esc(order.accession_number||'—')}</span></span>
+      <span style="margin-left:auto">${sBadge(order.order_status)}</span>
+    </div>`;
+
+  if(isFinal){
+    html+=`<div class="final-notice">✅ This report was finalized on
+      ${fmtDt(report.finalized_at||'')} by <b>${esc(report.radiologist||'—')}</b>.
+      Any new text will be saved as an Addendum.</div>`;}
+
+  html+=`
+    <div class="form-row">
+      <div class="form-field"><label>Radiologist</label>
+        <input type="text" id="rm-radiologist" value="${esc(report?.radiologist||'')}"
+          ${isFinal?'readonly':''} placeholder="Dr. Name"/></div>
+      <div class="form-field"><label>Status</label>
+        <div style="display:flex;align-items:center;gap:8px;height:32px">
+          ${rBadge(status)}
+          ${report?.finalized_at?`<span style="font-size:.7rem;color:var(--mute)">
+            Finalized ${fmtDt(report.finalized_at)}</span>`:''}
+        </div>
+      </div>
+    </div>
+    <div class="rsec"><div class="rsec-label">Technique</div>
+      <textarea id="rm-technique" rows="2" ${ro}
+        placeholder="Imaging technique and protocol…">${esc(report?.technique||'')}</textarea></div>
+    <div class="rsec"><div class="rsec-label">Findings</div>
+      <textarea id="rm-findings" rows="6" ${ro}
+        placeholder="Detailed radiological findings…">${esc(report?.findings||'')}</textarea></div>
+    <div class="rsec"><div class="rsec-label">Impression</div>
+      <textarea id="rm-impression" rows="4" ${ro}
+        placeholder="Summary impression (numbered list recommended)…">${esc(report?.impression||'')}</textarea></div>
+    <div class="rsec"><div class="rsec-label">Recommendation</div>
+      <textarea id="rm-recommendation" rows="2" ${ro}
+        placeholder="Follow-up or clinical recommendations…">${esc(report?.recommendation||'')}</textarea></div>
+  `;
+
+  if(isFinal){
+    html+=`
+    <div class="rsec"><div class="rsec-label" style="color:var(--purple)">Addendum (optional)</div>
+      <textarea id="rm-addendum" rows="3" placeholder="Additional notes for addendum…"></textarea></div>`;}
+
+  // action buttons
+  html+=`<div class="modal-actions">
+    <button class="btn" onclick="printReport()">🖨 Print</button>
+    <span style="flex:1"></span>`;
+
+  if(!isFinal){
+    html+=`<button class="btn" onclick="saveReport('DRAFT')">💾 Save Draft</button>`;
+    if(status!=='PRELIMINARY')
+      html+=`<button class="btn warning" onclick="saveReport('PRELIMINARY')">📋 Preliminary</button>`;
+    if(status==='PRELIMINARY'||status==='DRAFT')
+      html+=`<button class="btn success" onclick="confirmFinalize()">✅ Finalize</button>`;
+  }else{
+    html+=`<button class="btn warning" onclick="saveAddendum()">＋ Save Addendum</button>`;}
+
+  html+=`</div>`;
+  return html;}
+
+async function _doSave(status){
+  const payload={
+    radiologist:document.getElementById('rm-radiologist')?.value||'',
+    technique   :document.getElementById('rm-technique')?.value||'',
+    findings    :document.getElementById('rm-findings')?.value||'',
+    impression  :document.getElementById('rm-impression')?.value||'',
+    recommendation:document.getElementById('rm-recommendation')?.value||'',
+    status,
+  };
+  try{
+    let rep;
+    if(_currentReport){
+      rep=await api(`/reports/${_currentReport.id}`,{method:'PUT',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }else{
+      rep=await api('/reports',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({order_id:_currentOrderId,...payload})});
+    }
+    _currentReport=rep;
+    // refresh form
+    const order=await api('/orders/'+_currentOrderId);
+    document.getElementById('report-modal-body').innerHTML=renderReportForm(order,rep);
+  }catch(e){alert('Save failed: '+e.message);}
+}
+
+window.saveReport=async function(status){await _doSave(status);};
+window.confirmFinalize=function(){
+  if(confirm('Finalize this report? The report will be marked FINAL and the order COMPLETED. This cannot be undone (only an addendum can be added).'))
+    _doSave('FINAL');};
+window.saveAddendum=async function(){
+  const addendum=document.getElementById('rm-addendum')?.value||'';
+  if(!addendum.trim()){alert('Please enter addendum text.');return;}
+  const existing=_currentReport?.impression||'';
+  const ts=new Date().toISOString().slice(0,10);
+  const merged=existing+`\n\n--- ADDENDUM ${ts} ---\n`+addendum;
+  const payload={impression:merged,status:'ADDENDUM'};
+  try{
+    const rep=await api(`/reports/${_currentReport.id}`,{method:'PUT',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    _currentReport=rep;
+    const order=await api('/orders/'+_currentOrderId);
+    document.getElementById('report-modal-body').innerHTML=renderReportForm(order,rep);
+  }catch(e){alert('Addendum failed: '+e.message);}};
+
+window.printReport=function(){
+  if(!_currentReport){alert('Save the report first.');return;}
+  const r=_currentReport;
+  const sections=[
+    {h:'Technique',     v:r.technique},
+    {h:'Findings',      v:r.findings},
+    {h:'Impression',    v:r.impression},
+    {h:'Recommendation',v:r.recommendation},
+  ].filter(s=>s.v&&s.v.trim());
+  document.getElementById('print-area').innerHTML=`
+    <h2>Radiology Report</h2>
+    <div class="ph">
+      Patient: <b>${esc(fmtName(r.patient_name||''))}</b> &nbsp;|&nbsp;
+      Modality: <b>${esc(r.modality||'')}</b> &nbsp;|&nbsp;
+      Body Part: <b>${esc(r.body_part||'')}</b><br>
+      Accession: <b>${esc(r.accession_number||'—')}</b> &nbsp;|&nbsp;
+      Status: <b>${esc(r.status||'')}</b> &nbsp;|&nbsp;
+      Radiologist: <b>${esc(r.radiologist||'—')}</b>
+    </div>
+    ${sections.map(s=>`<div class="ps"><h3>${s.h}</h3><p>${esc(s.v)}</p></div>`).join('')}
+    <div class="footer">
+      Report generated: ${new Date().toLocaleString()} &nbsp;|&nbsp;
+      ${r.finalized_at?`Finalized: ${fmtDt(r.finalized_at)}`:'NOT FINALIZED — DRAFT ONLY'}
+    </div>`;
+  window.print();};
+
+/* ══════════ ORTHANC STATUS ══════════ */
+async function checkOrthanc(){
+  const dot=document.getElementById('o-dot'),txt=document.getElementById('o-txt');
+  try{
+    const d=await fetch('/orthanc/system').then(r=>r.json());
+    dot.className='dot ok';txt.textContent='Orthanc '+d.Version+' · '+d.Name;
+  }catch{dot.className='dot err';txt.textContent='Orthanc unreachable';}}
+
+loadWorklist();checkOrthanc();
+setInterval(checkOrthanc,20000);
+})();
+</script>
+</body>
+</html>

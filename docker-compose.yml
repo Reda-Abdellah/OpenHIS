@@ -7,6 +7,7 @@ networks:
 volumes:
   pg-data:
   orthanc-data:
+  ris-data:
 
 services:
 
@@ -62,6 +63,31 @@ services:
       retries: 5
       start_period: 120s
 
+  simulator:
+    build: ./simulator
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+    networks:
+      - pacs-net
+    restart: unless-stopped
+
+  ris:
+    build: ./ris
+    environment:
+      DB_PATH: /data/ris.db
+      ORTHANC_URL: http://orthanc:8042
+    volumes:
+      - ris-data:/data
+    networks:
+      - pacs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   ohif:
     image: ohif/app:v3.9.2
     volumes:
@@ -81,6 +107,8 @@ services:
       - orthanc
       - ohif
       - ai-service
+      - simulator
+      - ris
     networks:
       - pacs-net
     restart: unless-stopped

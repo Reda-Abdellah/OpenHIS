@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>DICOM Acquisition Simulator</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--bg-card:#161b22;--bg-hover:#1c2128;--bg-input:#21262d;
+      --border:#30363d;--text:#e6edf3;--mute:#8b949e;--link:#58a6ff;
+      --green:#3fb950;--red:#f85149;--orange:#ffa657;--purple:#d2a8ff;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      font-size:13px;overflow:hidden}
+
+    .app{display:grid;grid-template-rows:48px 1fr 36px;height:100vh}
+
+    /* ── header ── */
+    header{display:flex;align-items:center;gap:12px;padding:0 18px;
+      background:var(--bg-card);border-bottom:1px solid var(--border)}
+    header h1{font-size:.93rem;font-weight:600;color:var(--link);flex:1}
+    .vbadge{font-size:.68rem;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:20px;padding:2px 9px;color:var(--mute)}
+    .o-status{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--mute)}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0}
+    .dot.ok{background:var(--green)}.dot.err{background:var(--red)}
+
+    /* ── body ── */
+    .body{display:grid;grid-template-columns:252px 1fr;overflow:hidden}
+
+    /* ── left panel ── */
+    .left{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .panel-hdr{padding:8px 13px;border-bottom:1px solid var(--border);
+      font-size:.7rem;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.07em}
+    .mod-grid{padding:7px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;flex:1}
+
+    .mod-card{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:6px;
+      border:1px solid var(--border);cursor:pointer;transition:all .14s;background:var(--bg-card)}
+    .mod-card:hover{background:var(--bg-hover);border-color:var(--mute)}
+    .mod-card.active{border-color:var(--link);background:#111d2e}
+    .mod-card .icon{font-size:1.25rem;width:28px;text-align:center;flex-shrink:0}
+    .mod-card .info{flex:1;min-width:0}
+    .mod-card .mname{font-weight:600;font-size:.82rem}
+    .mod-card .mdesc{font-size:.68rem;color:var(--mute);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+    .mod-card .mtag{font-size:.63rem;font-weight:700;padding:2px 6px;
+      border-radius:4px;flex-shrink:0}
+
+    /* ── right panel ── */
+    .right{display:flex;flex-direction:column;overflow:hidden}
+    .right-top{padding:9px 16px;border-bottom:1px solid var(--border);background:var(--bg-card);
+      display:flex;align-items:center;gap:9px;flex-shrink:0}
+    .right-top h2{font-size:.91rem;font-weight:600}
+    .right-top p{font-size:.71rem;color:var(--mute);margin-top:1px}
+
+    .right-scroll{flex:1;overflow-y:auto;padding:12px 16px 12px}
+
+    /* result card */
+    .rcard{margin-bottom:12px;padding:12px 14px;border-radius:6px;border:1px solid;display:none}
+    .rcard.ok{border-color:#2a3d2a;background:#0d180d}
+    .rcard.err{border-color:#3d1a1a;background:#180d0d}
+    .rcard .rhead{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+    .rcard .rtitle{font-size:.85rem;font-weight:600}
+    .rcard .rtitle.ok{color:var(--green)}.rcard .rtitle.err{color:var(--red)}
+    .rcard .rmeta{display:flex;gap:8px;flex-wrap:wrap;font-size:.73rem;
+      color:var(--mute);margin-bottom:10px}
+    .rcard .rmeta b{color:var(--text)}
+    .rlinks{display:flex;gap:7px;flex-wrap:wrap}
+
+    /* fieldsets */
+    .fset{margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+    .fleg{padding:5px 12px;background:var(--bg-card);border-bottom:1px solid var(--border);
+      font-size:.69rem;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.07em}
+    .fbody{padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+    .fbody.c1{grid-template-columns:1fr}.fbody.c3{grid-template-columns:1fr 1fr 1fr}
+    .field{display:flex;flex-direction:column;gap:3px}
+    .field label{font-size:.7rem;color:var(--mute)}
+    .iw{display:flex;align-items:center;gap:4px}
+    .iw input,.iw select{flex:1;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:4px;color:var(--text);padding:4px 7px;font-size:.8rem;outline:none;min-width:0}
+    .iw input:focus,.iw select:focus{border-color:var(--link)}
+    .unit{font-size:.68rem;color:var(--mute);flex-shrink:0;min-width:20px}
+
+    /* actions */
+    .actions{padding:9px 16px;background:var(--bg-card);border-top:1px solid var(--border);
+      display:flex;align-items:center;gap:9px;flex-shrink:0}
+    #btn-gen{display:flex;align-items:center;gap:6px;padding:6px 16px;border-radius:5px;
+      font-size:.81rem;font-weight:600;cursor:pointer;border:1px solid;transition:all .14s}
+    #btn-gen:not(:disabled){background:#162040;border-color:#2a4a90;color:var(--link)}
+    #btn-gen:not(:disabled):hover{background:#1c2a58}
+    #btn-gen:disabled{background:var(--bg-input);border-color:var(--border);
+      color:var(--mute);cursor:not-allowed;opacity:.55}
+    .hint{font-size:.71rem;color:var(--mute);flex:1}
+
+    /* ── status bar ── */
+    .statusbar{display:flex;align-items:center;gap:16px;padding:0 16px;
+      background:#0a0e14;border-top:1px solid var(--border);font-size:.7rem;color:var(--mute);
+      overflow:hidden}
+    .sb-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
+
+    /* ── job drawer ── */
+    .job-drawer{
+      position:fixed;bottom:36px;right:0;width:360px;
+      background:var(--bg-card);border:1px solid var(--border);
+      border-bottom:none;border-radius:8px 0 0 0;
+      display:flex;flex-direction:column;
+      transition:height .2s;overflow:hidden;z-index:100;
+    }
+    .job-drawer.closed{height:36px}
+    .job-drawer.open{height:min(420px,60vh)}
+    .jd-header{
+      display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;
+      cursor:pointer;border-bottom:1px solid var(--border);flex-shrink:0;
+      user-select:none;
+    }
+    .jd-header span{font-size:.75rem;font-weight:600;flex:1}
+    .jd-toggle{font-size:.65rem;color:var(--mute);transition:transform .2s}
+    .job-drawer.open .jd-toggle{transform:rotate(180deg)}
+    .jd-body{flex:1;overflow-y:auto;padding:6px 0}
+
+    .job-row{
+      display:flex;align-items:flex-start;gap:10px;
+      padding:8px 12px;border-bottom:1px solid #1a1e25;
+      transition:background .12s;
+    }
+    .job-row:last-child{border-bottom:none}
+    .job-row:hover{background:var(--bg-hover)}
+    .job-mod{font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px;
+      flex-shrink:0;margin-top:1px}
+    .job-info{flex:1;min-width:0}
+    .job-info .ji-top{display:flex;align-items:center;gap:6px}
+    .job-info .ji-patient{font-size:.78rem;font-weight:600;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .job-info .ji-meta{font-size:.68rem;color:var(--mute);margin-top:2px}
+    .job-links{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap}
+
+    /* shared buttons */
+    .btn{font-size:.72rem;padding:3px 10px;border-radius:4px;border:1px solid var(--border);
+      background:var(--bg-input);color:var(--text);text-decoration:none;
+      transition:all .12s;cursor:pointer;display:inline-block;white-space:nowrap}
+    .btn:hover{background:var(--bg-hover)}
+    .btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+    .btn.pri:hover{background:#1c2a58}
+    .btn.ai{background:#200e18;border-color:#3d1828;color:var(--red)}
+    .btn.ai:hover{background:#2a1022}
+    .btn.sm{font-size:.68rem;padding:2px 8px}
+
+    /* placeholder */
+    .ph{height:100%;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:10px;color:var(--mute)}
+    .ph .phi{font-size:2.6rem;opacity:.2}
+    .ph p{font-size:.82rem}
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin{display:inline-block;animation:spin .8s linear infinite}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>🏥 DICOM Acquisition Simulator</h1>
+    <span class="vbadge">Step 2.3 — CR · DX · CT · MR · US</span>
+    <div class="o-status">
+      <span class="dot" id="o-dot"></span>
+      <span id="o-label">Checking Orthanc…</span>
+    </div>
+  </header>
+
+  <div class="body">
+    <div class="left">
+      <div class="panel-hdr">Select Modality</div>
+      <div class="mod-grid" id="mod-grid"></div>
+    </div>
+
+    <div class="right">
+      <div class="right-top" id="right-top">
+        <span style="color:var(--mute);font-size:.82rem">← Select a modality</span>
+      </div>
+      <div class="right-scroll" id="right-scroll">
+        <div class="rcard" id="rcard"></div>
+        <div class="ph" id="ph">
+          <div class="phi">🩻</div>
+          <p>Choose a modality to configure acquisition parameters</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btn-gen" disabled>⚡ Generate &amp; Send to Orthanc</button>
+        <span class="hint" id="hint">Select a modality to begin</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span class="sb-item" id="sb-jobs">📋 0 jobs</span>
+    <span class="sb-item" id="sb-last">—</span>
+    <span class="sb-item" style="margin-left:auto;font-size:.65rem;color:#30363d">
+      PACS Demo Simulator v2.3
+    </span>
+  </div>
+</div>
+
+<!-- Job history drawer -->
+<div class="job-drawer closed" id="job-drawer">
+  <div class="jd-header" id="jd-toggle-btn">
+    <span>📋 Acquisition History</span>
+    <span class="badge" id="jd-count" style="font-size:.65rem;background:var(--bg-input);
+      border:1px solid var(--border);border-radius:10px;padding:1px 7px;color:var(--mute)">0</span>
+    <span class="jd-toggle">▲</span>
+  </div>
+  <div class="jd-body" id="jd-body">
+    <div style="padding:16px;text-align:center;color:var(--mute);font-size:.78rem">
+      No acquisitions yet
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const MOD_COLORS = {CR:'#79c0ff',DX:'#79c0ff',CT:'#ffa657',MR:'#7ee787',US:'#d2a8ff'};
+let presets = {}, activeMod = null, busy = false;
+
+const modGrid   = document.getElementById('mod-grid');
+const rightTop  = document.getElementById('right-top');
+const rightScroll = document.getElementById('right-scroll');
+const rcardEl   = document.getElementById('rcard');
+const btnGen    = document.getElementById('btn-gen');
+const hintEl    = document.getElementById('hint');
+const jdBody    = document.getElementById('jd-body');
+const jdCount   = document.getElementById('jd-count');
+const sbJobs    = document.getElementById('sb-jobs');
+const sbLast    = document.getElementById('sb-last');
+const drawer    = document.getElementById('job-drawer');
+
+/* ── init ── */
+async function init() {
+  const [p] = await Promise.all([
+    fetch('api/presets').then(r=>r.json()).catch(()=>({})),
+    checkOrthanc(),
+    refreshJobs(),
+  ]);
+  presets = p;
+  renderModCards();
+}
+
+/* ── modality cards ── */
+function renderModCards() {
+  modGrid.innerHTML = Object.entries(presets).map(([mod, cfg]) => {
+    const col = MOD_COLORS[mod]||'#888';
+    return `
+      <div class="mod-card" data-mod="${mod}">
+        <div class="icon">${cfg.icon}</div>
+        <div class="info">
+          <div class="mname">${cfg.label}</div>
+          <div class="mdesc">${cfg.description}</div>
+        </div>
+        <span class="mtag" style="background:${col}22;color:${col};border:1px solid ${col}55">${mod}</span>
+      </div>`;
+  }).join('');
+  modGrid.querySelectorAll('.mod-card').forEach(el =>
+    el.addEventListener('click', () => selectMod(el.dataset.mod)));
+}
+
+/* ── select modality ── */
+function selectMod(mod) {
+  activeMod = mod;
+  rcardEl.style.display = 'none';
+  modGrid.querySelectorAll('.mod-card').forEach(el =>
+    el.classList.toggle('active', el.dataset.mod === mod));
+  const cfg = presets[mod], col = MOD_COLORS[mod]||'#888';
+  rightTop.innerHTML = `
+    <div style="font-size:1.25rem">${cfg.icon}</div>
+    <div>
+      <h2 style="color:${col}">${cfg.label}
+        <span style="font-size:.68rem;font-weight:400;color:var(--mute);margin-left:6px">${mod}</span>
+      </h2>
+      <p>${cfg.description}</p>
+    </div>`;
+
+  // clear ph, render form
+  const ph = document.getElementById('ph');
+  if (ph) ph.remove();
+  rcardEl.style.display = 'none';
+  // insert form before rcard's container
+  const existing = document.getElementById('form-wrap');
+  if (existing) existing.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'form-wrap';
+  wrap.innerHTML = patientFset() + acqFsets(mod);
+  rightScroll.appendChild(wrap);
+
+  btnGen.disabled = false;
+  hintEl.textContent = 'Fill in parameters and click Generate';
+}
+
+/* ── patient fieldset ── */
+function patientFset() {
+  return `
+    <div class="fset">
+      <div class="fleg">Patient Information</div>
+      <div class="fbody">
+        ${fi('patientName','Patient Name','text','SIMULATOR^DEMO')}
+        ${fi('patientId',  'Patient ID',  'text','SIM-001')}
+        ${fi('dob',        'Date of Birth','date','1985-06-15')}
+        ${fs('sex','Sex',[['M','Male'],['F','Female'],['O','Other']],'M')}
+        ${fi('accession',  'Accession #', 'text','','auto-generated')}
+        ${fi('studyDesc',  'Study Desc.', 'text','Simulated Exam')}
+      </div>
+    </div>`;
+}
+
+function fi(id,lbl,type,val,ph=''){
+  return `<div class="field"><label>${lbl}</label>
+    <div class="iw"><input type="${type}" id="f-${id}" value="${val}" placeholder="${ph}"/></div>
+  </div>`;}
+function fs(id,lbl,opts,def){
+  const o=opts.map(([v,t])=>`<option value="${v}" ${v===def?'selected':''}>${t}</option>`).join('');
+  return `<div class="field"><label>${lbl}</label>
+    <div class="iw"><select id="f-${id}">${o}</select></div></div>`;}
+function fd(f){
+  const u = f.unit?`<span class="unit">${f.unit}</span>`:'';
+  if(f.type==='select'){
+    const o=f.options.map(v=>`<option value="${v}" ${v===f.default?'selected':''}>${v}</option>`).join('');
+    return `<div class="field"><label>${f.label}${f.unit?` <span style="font-size:.62rem;color:var(--mute)">(${f.unit})</span>`:''}</label>
+      <div class="iw"><select id="f-${f.id}">${o}</select></div></div>`;}
+  return `<div class="field"><label>${f.label}</label>
+    <div class="iw"><input type="number" id="f-${f.id}" value="${f.default}"
+      ${f.min!=null?`min="${f.min}"`:''}${f.max!=null?` max="${f.max}"`:''}
+      ${f.step!=null?` step="${f.step}"`:''}/>${u}</div></div>`;}
+function acqFsets(mod){
+  return presets[mod].groups.map(g=>{
+    const c=g.fields.length===3?'c3':g.fields.length===1?'c1':'';
+    return `<div class="fset"><div class="fleg">${g.name}</div>
+      <div class="fbody ${c}">${g.fields.map(fd).join('')}</div></div>`;
+  }).join('');}
+
+/* ── collect form ── */
+function collectForm(){
+  const patient={};
+  ['patientName','patientId','dob','sex','accession','studyDesc'].forEach(id=>{
+    const el=document.getElementById('f-'+id); if(el) patient[id]=el.value;});
+  const params={};
+  (presets[activeMod]?.groups||[]).forEach(g=>
+    g.fields.forEach(f=>{
+      const el=document.getElementById('f-'+f.id); if(!el) return;
+      params[f.id]=f.type==='number'?parseFloat(el.value):el.value;}));
+  return {patient,params};}
+
+/* ── generate ── */
+btnGen.addEventListener('click', async()=>{
+  if(!activeMod||busy) return;
+  busy=true;
+  btnGen.innerHTML='<span class="spin">⟳</span> Generating…';
+  btnGen.disabled=true;
+  rcardEl.style.display='none';
+  hintEl.textContent='Building DICOM and uploading to Orthanc…';
+
+  const {patient,params}=collectForm();
+  try{
+    const r=await fetch('api/generate',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({modality:activeMod,params,patient}),});
+    const data=await r.json();
+    if(!r.ok){showErr(data.detail||'Generation failed');return;}
+    showOk(data);
+    refreshJobs();
+  }catch(e){showErr('Network error: '+e.message);}
+  finally{
+    busy=false;
+    btnGen.innerHTML='⚡ Generate &amp; Send to Orthanc';
+    btnGen.disabled=false;}
+});
+
+function showOk(d){
+  const kb=(d.size_bytes/1024).toFixed(1);
+  const multi=d.count>1?` × ${d.count} slices`:'';
+  rcardEl.className='rcard ok';
+  rcardEl.innerHTML=`
+    <div class="rhead"><span>✅</span><span class="rtitle ok">Stored in Orthanc</span></div>
+    <div class="rmeta">
+      <span><b>${d.modality}</b>${multi} · ${d.bodyPart||'—'}</span>
+      <span>Patient: <b>${esc(d.patientName)}</b></span>
+      <span>Size: <b>${kb} KB</b></span>
+    </div>
+    <div class="rlinks">
+      <a class="btn pri" href="${d.ohif_url}" target="_blank">Open in OHIF →</a>
+      ${d.ai_panel_url?`<a class="btn ai" href="${d.ai_panel_url}" target="_blank">AI Results →</a>`:''}
+    </div>`;
+  rcardEl.style.display='block';
+  rcardEl.scrollIntoView({behavior:'smooth',block:'nearest'});
+  hintEl.textContent='✓ Done — ready for next acquisition';
+}
+
+function showErr(msg){
+  rcardEl.className='rcard err';
+  rcardEl.innerHTML=`<div class="rhead"><span>❌</span><span class="rtitle err">Failed</span></div>
+    <div style="font-size:.78rem;color:var(--mute)">${esc(msg)}</div>`;
+  rcardEl.style.display='block';
+  hintEl.textContent='Fix the error above and retry';}
+
+/* ── job history ── */
+async function refreshJobs(){
+  try{
+    const jobs=await fetch('api/jobs').then(r=>r.json());
+    renderJobs(jobs);
+  }catch{}
+}
+
+function renderJobs(jobs){
+  jdCount.textContent=jobs.length;
+  sbJobs.textContent=`📋 ${jobs.length} job${jobs.length!==1?'s':''}`;
+  if(!jobs.length){
+    jdBody.innerHTML='<div style="padding:16px;text-align:center;color:var(--mute);font-size:.76rem">No acquisitions yet</div>';
+    sbLast.textContent='—';return;}
+  const latest=jobs[0];
+  sbLast.textContent=`Last: ${latest.modality} ${latest.bodyPart||''} · ${latest.timestamp.slice(11,19)}`;
+  jdBody.innerHTML=jobs.map(j=>{
+    const col=MOD_COLORS[j.modality]||'#888';
+    const kb=(j.size_bytes/1024).toFixed(0);
+    const multi=j.count>1?` · ${j.count} slices`:'';
+    return `
+      <div class="job-row">
+        <span class="job-mod" style="background:${col}22;color:${col};border:1px solid ${col}44">${j.modality}</span>
+        <div class="job-info">
+          <div class="ji-top">
+            <span class="ji-patient">${esc(fmtName(j.patientName))}</span>
+            <span style="font-size:.65rem;color:var(--mute)">${j.bodyPart||''}${multi}</span>
+          </div>
+          <div class="ji-meta">${j.timestamp.slice(0,19).replace('T',' ')} · ${kb} KB</div>
+          <div class="job-links">
+            <a class="btn sm pri" href="${j.ohif_url}" target="_blank">OHIF →</a>
+            ${j.ai_panel_url?`<a class="btn sm ai" href="${j.ai_panel_url}" target="_blank">AI →</a>`:''}
+            <span class="btn sm" style="cursor:default;font-family:monospace;color:var(--mute);border:none;background:none">
+              #${j.id}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');}
+
+/* ── drawer toggle ── */
+document.getElementById('jd-toggle-btn').addEventListener('click',()=>{
+  drawer.classList.toggle('open');
+  drawer.classList.toggle('closed');});
+
+/* ── orthanc status ── */
+async function checkOrthanc(){
+  const dot=document.getElementById('o-dot'),lbl=document.getElementById('o-label');
+  try{
+    const d=await fetch('api/orthanc-status').then(r=>r.json());
+    dot.className=d.reachable?'dot ok':'dot err';
+    lbl.textContent=d.reachable?`Orthanc ${d.version} · ${d.name}`:'Orthanc unreachable';
+  }catch{dot.className='dot err';lbl.textContent='Status unknown';}}
+
+/* ── utils ── */
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtName(r){
+  if(!r)return'Unknown';
+  const p=r.split('^').map(s=>s.trim()).filter(Boolean);
+  return p.length<2?p[0]:p.slice(1).join(' ')+' '+p[0];}
+
+init();
+setInterval(checkOrthanc, 15000);
+setInterval(refreshJobs,   10000);
+
+})();
+</script>
+</body>
+</html>
