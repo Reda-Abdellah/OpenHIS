@@ -118,10 +118,10 @@ async def generate(req: GenerateRequest):
         "bodyPart"    : body_part,
         "patientName" : patient_name,
         "count"       : len(instance_ids),
-        "instanceIds" : instance_ids,
+        "instance_id" : instance_ids,
         "size_bytes"  : total_bytes,
         "ohif_url"    : "/",
-        "ai_panel_url": f"/ai-panel.html?instanceId={instance_ids[0]}"
+        "ai_panel_url": f"/ai-panel.html?instance_id={instance_ids[0]}"
                          if is_xray and instance_ids else None,
     }
     job_history.append(job)

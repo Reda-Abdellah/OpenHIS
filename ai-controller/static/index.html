@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AI Controller</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg-card:#161b22;--bg-hover:#1c2128;--bg-input:#21262d;
+  --border:#30363d;--text:#e6edf3;--mute:#8b949e;--link:#58a6ff;
+  --green:#3fb950;--red:#f85149;--orange:#ffa657;--purple:#d2a8ff;--yellow:#e3b341;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px}
+/* layout */
+.shell{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:200px;min-width:200px;background:var(--bg-card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px 0}
+.sidebar-logo{padding:10px 16px 16px;font-size:.9rem;font-weight:700;color:var(--link);letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;border-left:3px solid transparent;transition:all .13s;font-size:.82rem;color:var(--mute);text-decoration:none;user-select:none}
+.nav-item:hover{background:var(--bg-hover);color:var(--text)}
+.nav-item.active{border-left-color:var(--link);color:var(--link);background:rgba(88,166,255,.07)}
+.nav-icon{font-size:1rem;width:18px;text-align:center}
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.topbar{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg-card);position:sticky;top:0;z-index:5}
+.topbar h2{font-size:.93rem;font-weight:600;flex:1}
+.content{padding:20px 24px;flex:1}
+/* cards */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;padding:16px;margin-bottom:14px}
+.card-title{font-size:.7rem;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+/* stat cards */
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;padding:14px 18px;min-width:110px;flex:1}
+.stat-val{font-size:1.5rem;font-weight:700;margin-bottom:2px}
+.stat-label{font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+/* table */
+.tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+thead tr{background:var(--bg-card)}
+thead th{padding:8px 12px;text-align:left;font-size:.68rem;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .12s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--bg-hover)}
+td{padding:8px 12px;vertical-align:middle}
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .13s;text-decoration:none;user-select:none}
+.btn:hover{background:var(--bg-hover)}
+.btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+.btn.pri:hover{background:#1c2a58}
+.btn.success{background:#162316;border-color:#2a3d2a;color:var(--green)}
+.btn.success:hover{background:#1e2f1e}
+.btn.danger{background:#200e10;border-color:#3d1820;color:var(--red)}
+.btn.danger:hover{background:#2a1015}
+.btn.sm{padding:3px 10px;font-size:.72rem}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+/* badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.68rem;font-weight:600;line-height:1.5}
+.b-pending{background:#1a1e30;color:#7b90d4;border:1px solid #2a3558}
+.b-running{background:#162040;color:var(--link);border:1px solid #2a4a90;animation:pulse 1.4s infinite}
+.b-completed{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-failed{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-normal{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-abnormal{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.b-critical{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-auto{background:#1a1a2e;color:var(--purple);border:1px solid #3a2060}
+.b-manual{background:#1e1e1e;color:var(--mute);border:1px solid #333}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+/* modality tags */
+.mod{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.65rem;font-weight:700;border-width:1px;border-style:solid}
+/* form */
+.form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end}
+.form-group{display:flex;flex-direction:column;gap:4px;min-width:120px}
+.form-group label{font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+input,select,textarea{background:var(--bg-input);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px 10px;font-size:.8rem;font-family:inherit;outline:none;transition:border .13s}
+input:focus,select:focus{border-color:var(--link)}
+select option{background:var(--bg-card)}
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;width:100%;max-width:860px;padding:0;overflow:hidden;margin:auto}
+.modal-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.modal-header h3{flex:1;font-size:.9rem;font-weight:600}
+.modal-body{padding:18px 20px;max-height:75vh;overflow-y:auto}
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap}
+.tab{padding:7px 14px;font-size:.78rem;cursor:pointer;border-bottom:2px solid transparent;color:var(--mute);transition:all .13s;user-select:none}
+.tab:hover{color:var(--text)}
+.tab.active{border-bottom-color:var(--link);color:var(--link)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+/* artifact rows */
+.art-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1a1e25}
+.art-row:last-child{border-bottom:none}
+.art-name{flex:1;font-size:.8rem;font-weight:500}
+.art-meta{font-size:.72rem;color:var(--mute)}
+/* finding rows */
+.finding-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1a1e25}
+.finding-row:last-child{border-bottom:none}
+.finding-desc{flex:1;font-size:.8rem}
+.finding-loc{font-size:.72rem;color:var(--mute)}
+.sev-none{color:var(--green)} .sev-low{color:var(--yellow)} .sev-mild{color:var(--yellow)}
+.sev-moderate{color:var(--orange)} .sev-high{color:var(--red)}
+/* logs */
+pre.logs{background:#0a0d12;border:1px solid var(--border);border-radius:5px;padding:10px;font-size:.72rem;color:#adb5bd;overflow-x:auto;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+/* toast */
+.toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:6px;font-size:.8rem;border:1px solid;z-index:200;max-width:320px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+.toast.info{background:#0d1220;border-color:#2a3a60;color:var(--link)}
+/* misc */
+.empty{padding:36px;text-align:center;color:var(--mute);font-size:.85rem}
+.sep{height:1px;background:var(--border);margin:12px 0}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filter-bar select,.filter-bar input{height:30px;padding:0 8px;font-size:.78rem}
+.toggle{position:relative;display:inline-block;width:36px;height:20px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--bg-input);border:1px solid var(--border);border-radius:20px;transition:.2s}
+.toggle-slider::before{content:"";position:absolute;left:2px;bottom:2px;width:14px;height:14px;background:var(--mute);border-radius:50%;transition:.2s}
+.toggle input:checked+.toggle-slider{background:#162040;border-color:var(--link)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(16px);background:var(--link)}
+.flex-center{display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+<div class="shell">
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">🧠 AI Controller</div>
+  <a class="nav-item active" data-view="dashboard"   onclick="nav('dashboard')">  <span class="nav-icon">📊</span> Dashboard</a>
+  <a class="nav-item"        data-view="pipelines"   onclick="nav('pipelines')">  <span class="nav-icon">🔧</span> Pipelines</a>
+  <a class="nav-item"        data-view="rules"       onclick="nav('rules')">      <span class="nav-icon">📋</span> Rules</a>
+  <a class="nav-item"        data-view="jobs"        onclick="nav('jobs')">        <span class="nav-icon">⚙️</span> Jobs</a>
+  <a class="nav-item"        data-view="pacs"        onclick="nav('pacs')">        <span class="nav-icon">🏥</span> PACS Browser</a>
+  <div style="flex:1"></div>
+  <a class="nav-item" href="/orthanc/" target="_blank" style="font-size:.75rem"><span class="nav-icon">🔗</span> Orthanc</a>
+  <a class="nav-item" href="/ris/"     target="_blank" style="font-size:.75rem"><span class="nav-icon">🔗</span> RIS</a>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <h2 id="page-title">Dashboard</h2>
+    <div id="topbar-actions"></div>
+  </div>
+  <div class="content" id="content"></div>
+</div>
+</div>
+
+<!-- JOB DETAIL MODAL -->
+<div class="overlay" id="job-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Job Detail</h3>
+      <button class="btn sm" onclick="closeModal()">✕ Close</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const BASE = '/ai-controller';
+let _refreshTimer = null;
+let _pipelines = [];
+
+// ── utilities ────────────────────────────────────────────────────────────────
+async function api(path, opts){
+  const r = await fetch(BASE+path, opts);
+  if(!r.ok){ const t=await r.text(); throw new Error(`${r.status}: ${t}`); }
+  return r.json();
+}
+function toast(msg, type='info'){
+  const t=document.getElementById('toast');
+  t.className='toast '+type; t.textContent=msg; t.style.display='block';
+  setTimeout(()=>t.style.display='none', 3200);
+}
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+function fmtDate(s){ return s?s.replace('T',' ').slice(0,16):'—'; }
+function fmtDur(ms){ if(!ms)return '—'; if(ms<1000)return ms+'ms'; return (ms/1000).toFixed(1)+'s'; }
+function statusBadge(s){
+  const m={PENDING:'b-pending',RUNNING:'b-running',COMPLETED:'b-completed',FAILED:'b-failed'};
+  return `<span class="badge ${m[s]||'b-pending'}">${s}</span>`;
+}
+function modTag(m){
+  const c={CR:'#79c0ff',DX:'#79c0ff',CT:'#ffa657',MR:'#7ee787',US:'#d2a8ff',PT:'#f78166'}[m]||'#8b949e';
+  return m?`<span class="mod" style="color:${c};border-color:${c}44;background:${c}18">${m}</span>`:'';
+}
+function triggerBadge(t){
+  return `<span class="badge ${t==='AUTO'?'b-auto':'b-manual'}">${t||'MANUAL'}</span>`;
+}
+function resultBadge(summary){
+  if(!summary)return '';
+  const s=typeof summary==='string'?JSON.parse(summary):summary;
+  if(s.critical) return '<span class="badge b-critical">CRITICAL</span>';
+  if(!s.normal)  return '<span class="badge b-abnormal">Abnormal</span>';
+  return '<span class="badge b-normal">Normal</span>';
+}
+function humanBytes(b){ if(!b)return ''; if(b<1024)return b+'B'; if(b<1048576)return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB'; }
+
+// ── navigation ───────────────────────────────────────────────────────────────
+function nav(view){
+  clearInterval(_refreshTimer);
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===view));
+  const titles={dashboard:'Dashboard',pipelines:'Pipelines',rules:'Rules',jobs:'Jobs',pacs:'PACS Browser'};
+  document.getElementById('page-title').textContent=titles[view]||view;
+  document.getElementById('topbar-actions').innerHTML='';
+  const views={dashboard:renderDashboard,pipelines:renderPipelines,rules:renderRules,jobs:renderJobs,pacs:renderPacs};
+  (views[view]||renderDashboard)();
+}
+
+// ── DASHBOARD ────────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const [health,jobs,pipes] = await Promise.all([
+      api('/api/health'), api('/api/jobs?limit=10'), api('/api/pipelines')
+    ]);
+    const pend=jobs.filter(j=>j.status==='PENDING').length;
+    const run=jobs.filter(j=>j.status==='RUNNING').length;
+    const comp=jobs.filter(j=>j.status==='COMPLETED').length;
+    const fail=jobs.filter(j=>j.status==='FAILED').length;
+    el.innerHTML=`
+<div class="stats">
+  <div class="stat"><div class="stat-val" style="color:var(--link)">${health.pipelines}</div><div class="stat-label">Pipelines</div></div>
+  <div class="stat"><div class="stat-val" style="color:var(--text)">${health.jobs}</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-val" style="color:#7b90d4">${pend}</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-val" style="color:var(--link)">${run}</div><div class="stat-label">Running</div></div>
+  <div class="stat"><div class="stat-val" style="color:var(--green)">${comp}</div><div class="stat-label">Completed</div></div>
+  <div class="stat"><div class="stat-val" style="color:var(--red)">${fail}</div><div class="stat-label">Failed</div></div>
+</div>
+<div class="card">
+  <div class="card-title">Pipelines</div>
+  ${pipes.map(p=>`<div class="flex-center" style="padding:6px 0;border-bottom:1px solid #1a1e25">
+    <span style="flex:1;font-size:.82rem">${esc(p.name)}</span>
+    <span style="font-size:.72rem;color:var(--mute)">${p.docker_image}</span>
+    <span class="badge ${p.enabled?'b-completed':'b-failed'}" style="margin-left:8px">${p.enabled?'enabled':'disabled'}</span>
+  </div>`).join('')}
+</div>
+<div class="card">
+  <div class="card-title">Recent Jobs</div>
+  ${jobs.length===0?'<div class="empty">No jobs yet</div>':
+  `<div class="tbl-wrap"><table>
+    <thead><tr><th>Patient</th><th>Modality</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th></tr></thead>
+    <tbody>${jobs.map(j=>`<tr onclick="openJob('${j.id}')">
+      <td>${esc(j.patient_name)||'—'}</td>
+      <td>${modTag(j.modality)}</td>
+      <td style="font-size:.75rem;color:var(--mute)">${esc(j.pipeline_name)}</td>
+      <td>${statusBadge(j.status)}</td>
+      <td>${j.result_summary?resultBadge(j.result_summary):''}</td>
+      <td>${triggerBadge(j.trigger_type)}</td>
+      <td style="font-size:.72rem;color:var(--mute)">${fmtDate(j.created_at)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`}
+</div>`;
+    if(pend+run>0) _refreshTimer=setInterval(renderDashboard, 4000);
+  }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
+}
+
+// ── PIPELINES ────────────────────────────────────────────────────────────────
+async function renderPipelines(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML='';
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    _pipelines = await api('/api/pipelines');
+    el.innerHTML=`
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Name</th><th>Docker Image</th><th>Version</th><th>Output Types</th><th>Rules</th><th>Jobs</th><th>Enabled</th></tr></thead>
+  <tbody id="pipe-tbody">
+    ${_pipelines.map(p=>`<tr>
+      <td><strong>${esc(p.name)}</strong><br><small style="color:var(--mute)">${esc(p.description)}</small></td>
+      <td style="font-family:monospace;font-size:.75rem">${esc(p.docker_image)}</td>
+      <td style="color:var(--mute)">${esc(p.version)}</td>
+      <td style="font-size:.75rem;color:var(--mute)">${esc(p.output_types)}</td>
+      <td style="color:var(--link)">${p.rules_count||0}</td>
+      <td>${p.jobs_count||0}</td>
+      <td>
+        <label class="toggle" title="Enable/disable pipeline">
+          <input type="checkbox" ${p.enabled?'checked':''} onchange="togglePipeline('${p.id}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+    </tr>`).join('')}
+  </tbody>
+</table></div>
+<div style="margin-top:4px;font-size:.75rem;color:var(--mute)">Pipeline containers are built once via docker compose. To add a new pipeline, add its image to docker-compose.yml and register it here.</div>`;
+  }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
+}
+
+async function togglePipeline(id, enabled){
+  try{
+    await api(`/api/pipelines/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:enabled?1:0})});
+    toast(enabled?'Pipeline enabled':'Pipeline disabled', enabled?'ok':'info');
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+// ── RULES ─────────────────────────────────────────────────────────────────────
+async function renderRules(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML='<button class="btn pri" onclick="showAddRule()">＋ Add Rule</button>';
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    if(!_pipelines.length) _pipelines=await api('/api/pipelines');
+    const rules=await api('/api/rules');
+    el.innerHTML=`
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Pipeline</th><th>Rule Name</th><th>Modality</th><th>Body Part</th><th>Auto-Trigger</th><th>Auto-Saveback</th><th>Priority</th><th>Enabled</th><th></th></tr></thead>
+  <tbody>
+    ${rules.length===0?'<tr><td colspan="9" class="empty">No rules configured yet.</td></tr>':
+    rules.map(r=>`<tr>
+      <td style="color:var(--link);font-size:.78rem">${esc(r.pipeline_name)}</td>
+      <td>${esc(r.name)}</td>
+      <td>${(r.modality||'').split(',').filter(Boolean).map(m=>modTag(m.trim())).join(' ')||'<span style="color:var(--mute)">any</span>'}</td>
+      <td style="font-size:.78rem">${esc(r.body_part)||'<span style="color:var(--mute)">any</span>'}</td>
+      <td><span class="badge ${r.auto_trigger?'b-completed':'b-failed'}">${r.auto_trigger?'ON':'OFF'}</span></td>
+      <td><span class="badge ${r.auto_saveback?'b-completed':'b-failed'}">${r.auto_saveback?'ON':'OFF'}</span></td>
+      <td style="color:var(--mute)">${r.priority}</td>
+      <td><label class="toggle"><input type="checkbox" ${r.enabled?'checked':''} onchange="toggleRule(${r.id},this.checked)"><span class="toggle-slider"></span></label></td>
+      <td><button class="btn sm danger" onclick="deleteRule(${r.id})">Delete</button></td>
+    </tr>`).join('')}
+  </tbody>
+</table></div>
+<div id="add-rule-form"></div>`;
+  }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
+}
+
+function showAddRule(){
+  const f=document.getElementById('add-rule-form');
+  if(!f) return;
+  f.innerHTML=`
+<div class="card" style="margin-top:16px">
+  <div class="card-title">New Rule</div>
+  <div class="form-row">
+    <div class="form-group" style="min-width:160px"><label>Pipeline</label>
+      <select id="r-pipe">${_pipelines.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="form-group" style="flex:2"><label>Rule Name</label><input id="r-name" placeholder="e.g. Auto – Chest X-Ray"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Modality (comma-sep)</label><input id="r-mod" placeholder="CR,DX"></div>
+    <div class="form-group"><label>Body Part (comma-sep)</label><input id="r-bp" placeholder="CHEST,THORAX"></div>
+    <div class="form-group"><label>Priority</label><input id="r-prio" type="number" value="0" style="width:70px"></div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Auto-Trigger</label>
+      <select id="r-at"><option value="0">OFF</option><option value="1">ON</option></select></div>
+    <div class="form-group"><label>Auto-Saveback</label>
+      <select id="r-as"><option value="0">OFF</option><option value="1">ON</option></select></div>
+    <div class="form-group" style="flex:2"><label>Saveback Types (JSON array)</label>
+      <input id="r-st" value='["report","secondary_capture"]'></div>
+  </div>
+  <div class="form-row">
+    <button class="btn pri" onclick="saveRule()">Save Rule</button>
+    <button class="btn" onclick="document.getElementById('add-rule-form').innerHTML=''">Cancel</button>
+  </div>
+</div>`;
+}
+
+async function saveRule(){
+  const body={
+    pipeline_id: document.getElementById('r-pipe').value,
+    name: document.getElementById('r-name').value.trim(),
+    modality: document.getElementById('r-mod').value.trim()||null,
+    body_part: document.getElementById('r-bp').value.trim()||null,
+    auto_trigger: parseInt(document.getElementById('r-at').value),
+    auto_saveback: parseInt(document.getElementById('r-as').value),
+    saveback_types: document.getElementById('r-st').value.trim(),
+    priority: parseInt(document.getElementById('r-prio').value)||0,
+    enabled: 1,
+  };
+  if(!body.name){ toast('Rule name required','err'); return; }
+  try{
+    await api('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('Rule created','ok'); renderRules();
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function deleteRule(id){
+  if(!confirm('Delete this rule?')) return;
+  try{ await api(`/api/rules/${id}`,{method:'DELETE'}); toast('Rule deleted','ok'); renderRules(); }
+  catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+async function toggleRule(id,enabled){
+  try{
+    await api(`/api/rules/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:enabled?1:0})});
+    toast(enabled?'Rule enabled':'Rule disabled', enabled?'ok':'info');
+  }catch(e){ toast('Error: '+e.message,'err'); renderRules(); }
+}
+
+// ── JOBS ──────────────────────────────────────────────────────────────────────
+async function renderJobs(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML='';
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    if(!_pipelines.length) _pipelines=await api('/api/pipelines');
+    const pipeOpts=_pipelines.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    el.innerHTML=`
+<div class="filter-bar">
+  <select id="j-pipe"><option value="">All Pipelines</option>${pipeOpts}</select>
+  <select id="j-status"><option value="">All Statuses</option>
+    <option value="PENDING">Pending</option><option value="RUNNING">Running</option>
+    <option value="COMPLETED">Completed</option><option value="FAILED">Failed</option></select>
+  <button class="btn" onclick="refreshJobs()">↻ Refresh</button>
+  <span id="j-active-badge"></span>
+</div>
+<div id="jobs-table"><div class="empty">Loading…</div></div>`;
+    await refreshJobs();
+  }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
+}
+
+async function refreshJobs(){
+  const pipe=document.getElementById('j-pipe')?.value||'';
+  const status=document.getElementById('j-status')?.value||'';
+  let url=`/api/jobs?limit=200${pipe?'&pipeline_id='+pipe:''}${status?'&status='+status:''}`;
+  try{
+    const jobs=await api(url);
+    const running=jobs.filter(j=>['PENDING','RUNNING'].includes(j.status)).length;
+    const badge=document.getElementById('j-active-badge');
+    if(badge) badge.innerHTML=running?`<span class="badge b-running">${running} active</span>`:'';
+
+    const tbody=jobs.map(j=>`<tr onclick="openJob('${j.id}')">
+      <td>${esc(j.patient_name)||'—'}</td>
+      <td>${modTag(j.modality)} <span style="font-size:.72rem;color:var(--mute)">${esc(j.body_part)}</span></td>
+      <td style="font-size:.75rem;color:var(--link)">${esc(j.pipeline_name)}</td>
+      <td>${statusBadge(j.status)}</td>
+      <td>${j.result_summary?resultBadge(j.result_summary):''}</td>
+      <td>${triggerBadge(j.trigger_type)}</td>
+      <td style="font-size:.72rem;color:var(--mute)">${fmtDate(j.created_at)}</td>
+      <td style="color:var(--mute)">${fmtDur(j.duration_ms)}</td>
+      <td><button class="btn sm danger" onclick="event.stopPropagation();deleteJob('${j.id}')">Del</button></td>
+    </tr>`).join('');
+    document.getElementById('jobs-table').innerHTML=jobs.length===0?'<div class="empty">No jobs found.</div>':
+      `<div class="tbl-wrap"><table>
+        <thead><tr><th>Patient</th><th>Modality / Body</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th><th>Duration</th><th></th></tr></thead>
+        <tbody>${tbody}</tbody>
+      </table></div>`;
+
+    clearInterval(_refreshTimer);
+    if(running>0) _refreshTimer=setInterval(refreshJobs, 3500);
+  }catch(e){ console.error(e); }
+}
+
+async function deleteJob(id){
+  if(!confirm('Delete this job and its artifacts?')) return;
+  try{ await api(`/api/jobs/${id}`,{method:'DELETE'}); toast('Job deleted','ok'); refreshJobs(); }
+  catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+// ── PACS BROWSER ──────────────────────────────────────────────────────────────
+async function renderPacs(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Fetching series from Orthanc…</div>';
+  try{
+    if(!_pipelines.length) _pipelines=await api('/api/pipelines');
+    const series=await api('/api/orthanc/series');
+    const pipeOpts=_pipelines.filter(p=>p.enabled).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    el.innerHTML=`
+<div style="font-size:.8rem;color:var(--mute);margin-bottom:12px">${series.length} series found in Orthanc. Select a pipeline and click Run to create a manual job.</div>
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Patient</th><th>Modality</th><th>Body Part</th><th>Description</th><th>Instances</th><th>Pipeline</th><th></th></tr></thead>
+  <tbody>${series.length===0?'<tr><td colspan="7" class="empty">No series in PACS. Generate some in the Simulator.</td></tr>':
+    series.map((s,i)=>`<tr>
+      <td>${esc(s.patient_name)}</td>
+      <td>${modTag(s.modality)}</td>
+      <td style="font-size:.78rem">${esc(s.body_part)}</td>
+      <td style="font-size:.75rem;color:var(--mute)">${esc(s.description)}</td>
+      <td style="color:var(--mute)">${s.instance_count}</td>
+      <td><select id="ps-${i}" style="font-size:.75rem;height:26px;padding:0 6px">${pipeOpts}</select></td>
+      <td><button class="btn sm pri" onclick="runPipeline('${s.orthanc_series_id}','ps-${i}')">▶ Run</button></td>
+    </tr>`).join('')}
+  </tbody>
+</table></div>`;
+  }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
+}
+
+async function runPipeline(seriesId, selId){
+  const pipeId=document.getElementById(selId)?.value;
+  if(!pipeId){ toast('Select a pipeline','err'); return; }
+  try{
+    const r=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pipeline_id:pipeId,orthanc_series_id:seriesId,trigger_type:'MANUAL'})});
+    toast(`Job ${r.job_id.slice(0,8)}… queued`,'ok');
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
+// ── JOB DETAIL MODAL ─────────────────────────────────────────────────────────
+async function openJob(id){
+  document.getElementById('job-modal').classList.add('open');
+  document.getElementById('modal-body').innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const job=await api(`/api/jobs/${id}`);
+    const summary=job.result_summary?JSON.parse(job.result_summary):{};
+    const artifacts=job.artifacts||[];
+    const inputs=artifacts.filter(a=>a.direction==='input');
+    const outputs=artifacts.filter(a=>a.direction==='output');
+    const savebacks=job.saveback_events||[];
+
+    document.getElementById('modal-title').innerHTML=`Job <code style="font-size:.8rem">${id.slice(0,8)}…</code> &nbsp; ${statusBadge(job.status)}`;
+
+    // ── Overview ─────────────────────────────────────────────────────────────
+    const overviewHTML=`
+<div class="card" style="margin-bottom:10px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;font-size:.8rem">
+    ${[
+      ['Pipeline', esc(job.pipeline_name)],
+      ['Trigger',  triggerBadge(job.trigger_type)],
+      ['Patient',  esc(job.patient_name)||'—'],
+      ['Modality', modTag(job.modality)],
+      ['Body Part',esc(job.body_part)||'—'],
+      ['Status',   statusBadge(job.status)],
+      ['Created',  fmtDate(job.created_at)],
+      ['Started',  fmtDate(job.started_at)],
+      ['Finished', fmtDate(job.finished_at)],
+      ['Duration', fmtDur(job.duration_ms)],
+    ].map(([l,v])=>`<div><div style="font-size:.65rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">${l}</div><div>${v}</div></div>`).join('')}
+  </div>
+  ${job.error?`<div style="margin-top:10px;padding:8px;background:#180d0d;border:1px solid #3d1a1a;border-radius:5px;font-size:.78rem;color:var(--red)">${esc(job.error)}</div>`:''}
+</div>
+${summary.impression?`<div class="card" style="margin-bottom:10px">
+  <div class="card-title">Impression</div>
+  <div style="font-size:.85rem;line-height:1.65;color:${summary.critical?'var(--red)':summary.normal?'var(--green)':'var(--text)'}">${esc(summary.impression)}</div>
+</div>`:''}`;
+
+    // ── Findings ─────────────────────────────────────────────────────────────
+    let findingsHTML='';
+    if(summary.findings_count>0){
+      const resultArt=outputs.find(a=>a.filename==='result.json');
+      if(resultArt){
+        try{
+          const rd=await fetch(`${BASE}/api/artifacts/${resultArt.id}/download`);
+          const rj=await rd.json();
+          const rows=rj.findings.map(f=>`<div class="finding-row">
+            <span class="sev-${f.severity}" style="width:22px;text-align:center">
+              ${f.severity==='high'?'🔴':f.severity==='moderate'||f.severity==='mild'?'🟡':'🟢'}
+            </span>
+            <span class="finding-desc">${esc(f.description)}</span>
+            <span class="finding-loc">${esc(f.location)}</span>
+            <span style="font-size:.72rem;color:var(--mute)">${f.confidence?(f.confidence*100).toFixed(0)+'%':''}</span>
+            <span class="badge ${f.severity==='high'?'b-critical':f.severity==='none'?'b-normal':'b-abnormal'}">${f.severity}</span>
+          </div>`).join('');
+          findingsHTML=`<div class="card" style="margin-bottom:10px"><div class="card-title">Findings (${rj.findings.length})</div>${rows}</div>`;
+        }catch(_){}
+      }
+    }
+
+    // ── Artifacts tabs content ────────────────────────────────────────────────
+    function artList(arts, showSaveback){
+      if(!arts.length) return '<div class="empty">No artifacts</div>';
+      return arts.map(a=>`<div class="art-row">
+        <span style="font-size:.85rem">${a.artifact_type==='json_report'?'📄':a.artifact_type==='secondary_capture'||a.artifact_type==='segmentation'?'🖼️':'📂'}</span>
+        <div style="flex:1">
+          <div class="art-name">${esc(a.filename)}</div>
+          <div class="art-meta">${esc(a.artifact_type)} · ${humanBytes(a.size_bytes)}</div>
+        </div>
+        <a class="btn sm" href="${BASE}/api/artifacts/${a.id}/download" target="_blank">⬇ Download</a>
+        ${showSaveback&&a.filename.endsWith('.dcm')?
+          `<button class="btn sm success" onclick="doSaveback('${job.id}',${a.id},this)">↑ Save to PACS</button>`:''}
+      </div>`).join('');
+    }
+
+    const savebackLog=savebacks.length?`<div class="card" style="margin-top:10px"><div class="card-title">Saveback History</div>
+      ${savebacks.map(e=>`<div class="art-row">
+        <span class="badge ${e.status==='SUCCESS'?'b-completed':'b-failed'}">${e.status}</span>
+        <span style="font-size:.75rem;color:var(--mute)">${e.trigger_type}</span>
+        <span style="flex:1;font-size:.75rem;color:var(--mute)">${esc(e.orthanc_instance_id||e.error||'')}</span>
+        <span style="font-size:.72rem;color:var(--mute)">${fmtDate(e.completed_at)}</span>
+      </div>`).join('')}
+    </div>`:'';
+
+    document.getElementById('modal-body').innerHTML=`
+<div class="tabs">
+  <div class="tab active"  onclick="switchTab(0)">Overview</div>
+  <div class="tab"         onclick="switchTab(1)">Input (${inputs.length})</div>
+  <div class="tab"         onclick="switchTab(2)">Output (${outputs.length})</div>
+  <div class="tab"         onclick="switchTab(3)">Logs</div>
+</div>
+<div class="tab-pane active">${overviewHTML}${findingsHTML}</div>
+<div class="tab-pane">${artList(inputs,false)}</div>
+<div class="tab-pane">${artList(outputs,true)}${savebackLog}</div>
+<div class="tab-pane">${job.container_logs?`<pre class="logs">${esc(job.container_logs)}</pre>`:'<div class="empty">No logs available</div>'}</div>`;
+
+    // auto-poll if job is active
+    if(['PENDING','RUNNING'].includes(job.status)){
+      setTimeout(()=>openJob(id), 3000);
+    }
+  }catch(e){
+    document.getElementById('modal-body').innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function switchTab(idx){
+  document.querySelectorAll('#modal-body .tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.querySelectorAll('#modal-body .tab-pane').forEach((p,i)=>p.classList.toggle('active',i===idx));
+}
+
+async function doSaveback(jobId, artifactId, btn){
+  btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const r=await api('/api/saveback',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({job_id:jobId,artifact_id:artifactId})});
+    toast('Saved to PACS: '+r.orthanc_instance_id,'ok');
+    btn.textContent='✓ Saved'; btn.className='btn sm success';
+  }catch(e){ toast('Saveback failed: '+e.message,'err'); btn.disabled=false; btn.textContent='↑ Save to PACS'; }
+}
+
+function closeModal(){
+  document.getElementById('job-modal').classList.remove('open');
+  clearInterval(_refreshTimer);
+}
+document.getElementById('job-modal').addEventListener('click',function(e){
+  if(e.target===this) closeModal();
+});
+
+// boot
+nav('dashboard');
+</script>
+</body>
+</html>

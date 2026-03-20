@@ -1,4 +1,4 @@
-version: "3.9"
+name: pacs-demo
 
 networks:
   pacs-net:
@@ -8,6 +8,8 @@ volumes:
   pg-data:
   orthanc-data:
   ris-data:
+  ai-jobs:
+  ai-controller-db:
 
 services:
 
@@ -19,8 +21,7 @@ services:
       POSTGRES_PASSWORD: orthanc
     volumes:
       - pg-data:/var/lib/postgresql/data
-    networks:
-      - pacs-net
+    networks: [pacs-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U orthanc"]
@@ -40,35 +41,28 @@ services:
       ORTHANC__POSTGRESQL__PASSWORD: orthanc
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__PYTHON_SCRIPT: /etc/orthanc/plugin.py
-      AI_SERVICE_URL: http://ai-service:8000
+      AI_CONTROLLER_URL: http://ai-controller:8000
     volumes:
       - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - ./orthanc/plugin.py:/etc/orthanc/plugin.py:ro
       - orthanc-data:/var/lib/orthanc/db
     ports:
       - "4242:4242"
-    networks:
-      - pacs-net
+    networks: [pacs-net]
     restart: unless-stopped
 
-  ai-service:
-    build: ./ai-service
-    networks:
-      - pacs-net
+  ohif:
+    image: ohif/app:latest
+    volumes:
+      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+    networks: [pacs-net]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
 
   simulator:
     build: ./simulator
     environment:
       ORTHANC_URL: http://orthanc:8042
-    networks:
-      - pacs-net
+    networks: [pacs-net]
     restart: unless-stopped
 
   ris:
@@ -78,8 +72,7 @@ services:
       ORTHANC_URL: http://orthanc:8042
     volumes:
       - ris-data:/data
-    networks:
-      - pacs-net
+    networks: [pacs-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
@@ -88,27 +81,51 @@ services:
       retries: 3
       start_period: 10s
 
-  ohif:
-    image: ohif/app:v3.9.2
+  ai-controller:
+    build: ./ai-controller
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      RIS_URL: http://ris:8002/api
+      DB_PATH: /data/ai-controller.db
+      JOBS_DATA_DIR: /data/jobs
+      JOBS_VOLUME_NAME: pacs-demo_ai-jobs
+      DOCKER_NETWORK: pacs-demo_pacs-net
+      POC_XRAY_IMAGE: pacs-demo/poc-xray:latest
+      POC_CT_IMAGE: pacs-demo/poc-ct:latest
     volumes:
-      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
-    networks:
-      - pacs-net
+      - ai-jobs:/data/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ai-controller-db:/data
+    networks: [pacs-net]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  poc-xray-pipeline:
+    build: ./pipelines/poc-xray
+    image: pacs-demo/poc-xray:latest
+    restart: "no"
+    command: ["true"]
+    networks: [pacs-net]
+
+  poc-ct-pipeline:
+    build: ./pipelines/poc-ct
+    image: pacs-demo/poc-ct:latest
+    restart: "no"
+    command: ["true"]
+    networks: [pacs-net]
 
   nginx:
-    image: nginx:alpine
+    image: nginx:1.25-alpine
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
-    depends_on:
-      - orthanc
-      - ohif
-      - ai-service
-      - simulator
-      - ris
-    networks:
-      - pacs-net
+    depends_on: [orthanc, ohif, simulator, ris, ai-controller]
+    networks: [pacs-net]
     restart: unless-stopped

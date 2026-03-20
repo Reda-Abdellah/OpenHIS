@@ -1,8 +1,46 @@
-# PACS Demo — Full-Stack Radiology Platform
+# PACS Demo – Full-Stack Radiology Platform
 
 A self-contained, Docker-based radiology demo stack including a DICOM server,
-acquisition simulator, RIS, AI analysis service, and OHIF viewer — all wired
-together and accessible through a single nginx reverse proxy.
+acquisition simulator, RIS, AI controller with pipeline support, and OHIF viewer —
+all wired together behind a single nginx reverse proxy.
+
+---
+
+## Quick start
+
+```bash
+# 1. Make sure nothing is already using port 4242 (DICOM) or 80 (HTTP)
+docker ps --format "table {{.Names}}\t{{.Ports}}" | grep -E "4242|:80"
+
+# If the old stack is still running, stop it first
+docker compose down   # run from the old project directory if needed
+
+# 2. Build all images (including pipeline containers)
+docker compose build
+
+# 3. Start the stack
+docker compose up -d
+
+# 4. Follow logs (optional)
+docker compose logs -f
+```
+
+---
+
+## Service URLs
+
+| Service | URL | Notes |
+|---|---|---|
+| **OHIF Viewer** | http://localhost/ | DICOMweb viewer, catch-all route |
+| **AI Controller** | http://localhost/ai-controller/ | Pipeline manager UI (new) |
+| **Simulator** | http://localhost/simulator/ | Generate synthetic DICOM acquisitions |
+| **RIS** | http://localhost/ris/ | Radiology Information System (worklist, reports) |
+| **Orthanc** | http://localhost/orthanc/ | DICOM server web UI |
+| **Orthanc DICOM** | `localhost:4242` | C-STORE / C-FIND (raw DICOM port) |
+
+> All HTTP services share **port 80** through nginx. Only the DICOM port `4242` is
+> exposed separately. If `4242` is already allocated on your host, change the mapping
+> in `docker-compose.yml` under the `orthanc` service: `"4243:4242"`.
 
 ---
 
@@ -10,313 +48,169 @@ together and accessible through a single nginx reverse proxy.
 
 ```
 Browser
-  │
-  ▼
-┌─────────────────────────────────────────────────────────┐
-│                     nginx  :80                          │
-│   /          → OHIF Viewer                              │
-│   /orthanc/  → Orthanc DICOM server                     │
-│   /simulator/→ Acquisition Simulator                    │
-│   /ris/      → Radiology Information System             │
-│   /ai/       → AI Analysis Service                      │
-│   /ai-panel.html → AI Results Panel                     │
-└───┬──────────┬──────────┬──────────┬────────────────────┘
-    │          │          │          │
-    ▼          ▼          ▼          ▼
-  OHIF      Orthanc   Simulator    RIS          AI Service
-  :80        :8042      :8001      :8002          :8000
-               │                                   ▲
-               │  OnStoredInstance                 │
-               └───────────── plugin.py ───────────┘
-               │
-               ▼
-           PostgreSQL
-              :5432
+   │
+   └─ nginx :80
+        ├─ /                  →  OHIF Viewer
+        ├─ /ai-controller/    →  AI Controller  :8000
+        ├─ /simulator/        →  Simulator      :8001
+        ├─ /ris/              →  RIS            :8002
+        └─ /orthanc/          →  Orthanc        :8042
+                                      │
+                              PostgreSQL :5432
+                              (study/series store)
+                                      │
+                              Orthanc plugin.py
+                              (OnStoredInstance)
+                                      │
+                              AI Controller :8000
+                              ├─ SQLite DB  (/data/ai-controller.db)
+                              ├─ Jobs data  (/data/jobs  ← ai-jobs volume)
+                              └─ docker.sock → pipeline containers
+                                    ├─ pacs-demo/poc-xray:latest
+                                    └─ pacs-demo/poc-ct:latest
 ```
 
 ---
 
-## Services at a Glance
+## AI Controller – Pipeline system
 
-| URL | Service | Description |
-|-----|---------|-------------|
-| `http://localhost/` | **OHIF Viewer** | Zero-footprint DICOM viewer (v3.9) |
-| `http://localhost/orthanc/` | **Orthanc** | DICOM server + REST API + Explorer UI |
-| `http://localhost/simulator/` | **Simulator** | Generate & send synthetic DICOMs |
-| `http://localhost/ris/` | **RIS** | Worklist · Orders · Reports |
-| `http://localhost/ai/health` | **AI Service** | Analysis API health check |
-| `http://localhost/ai-panel.html?instanceId=<id>` | **AI Panel** | Per-instance AI results |
+### How it works
 
-DICOM C-STORE (for real modalities): **port 4242**
+1. **Orthanc plugin** (`orthanc/plugin.py`) fires on every stored DICOM instance and
+   calls `POST /api/trigger-instance` on the AI Controller.
+2. The controller **resolves the series**, matches it against enabled **rules**
+   (modality + body part filters), and creates a **job** for each matching pipeline
+   (deduplicated: one job per series × pipeline).
+3. The **runner** downloads the full DICOM series into
+   `/data/jobs/{job_id}/input/`, writes `input.json`, then calls
+   `docker run <pipeline-image>` via the Docker socket.
+4. The pipeline container reads the input, runs its analysis, and writes
+   `output/result.json` + optional `*.dcm` files.
+5. The controller registers all **artifacts**, stores a result summary, and
+   optionally **saves output DICOMs back to Orthanc** (auto or manual).
 
----
+### Pipeline contract
 
-## Prerequisites
+Every pipeline image must:
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 24 or Docker Engine + Compose v2
-- 4 GB RAM recommended (Orthanc + OHIF + AI service)
-- Ports **80** and **4242** free on localhost
+| | Path inside container |
+|---|---|
+| Read DICOM series | `/data/jobs/$JOB_ID/input/*.dcm` |
+| Read metadata | `/data/jobs/$JOB_ID/input/input.json` |
+| Write report | `/data/jobs/$JOB_ID/output/result.json` |
+| Write derived DICOM (optional) | `/data/jobs/$JOB_ID/output/*.dcm` |
 
----
-
-## Quick Start
-
-```bash
-# 1. Clone / unzip the project
-cd pacs-demo
-
-# 2. Build and start all services
-docker compose up --build -d
-
-# 3. Wait ~30 s for Orthanc and OHIF to become ready
-docker compose ps          # all should show "healthy" or "running"
-
-# 4. Open the portal
-open http://localhost/
+Minimum `result.json` schema:
+```json
+{
+  "pipeline_id": "my-pipeline",
+  "normal": true,
+  "critical": false,
+  "findings": [
+    {
+      "id": 1,
+      "type": "opacity",
+      "description": "Right lower lobe opacity",
+      "location": "RLL",
+      "severity": "moderate",
+      "confidence": 0.87,
+      "measurements": { "area_cm2": 3.2 }
+    }
+  ],
+  "impression": "...",
+  "follow_up_recommended": false,
+  "output_files": ["overlay_001.dcm"]
+}
 ```
 
-> **First boot note:** PostgreSQL initialises its data directory on first run.
-> If Orthanc starts before Postgres is ready it will restart once automatically —
-> this is expected and handled by the `depends_on: condition: service_healthy` rule.
+### POC pipelines (included)
+
+| Image | ID | Trigger rule | Output |
+|---|---|---|---|
+| `pacs-demo/poc-xray:latest` | `poc-xray` | CR or DX, body part CHEST/THORAX | `overlay_001.dcm` (Secondary Capture) + `result.json` |
+| `pacs-demo/poc-ct:latest` | `poc-ct` | CT, body part CHEST | `seg_mask_001.dcm` (colour mask SC) + `result.json` |
+
+Both pipelines generate **random seeded findings** — they are skeletons showing
+the pipeline contract, not real AI models.
 
 ---
 
-## End-to-End Workflow
+## AI Controller UI pages
 
-### 1 — Generate a synthetic DICOM
-
-1. Open **`http://localhost/simulator/`**
-2. Click a modality card (e.g. **CT**)
-3. Set Body Part → `CHEST`, Priority → `ROUTINE`
-4. Fill in patient details (or leave defaults)
-5. Click **⚡ Generate & Send to Orthanc**
-
-The simulator builds a valid DICOM with synthetic pixel data and POSTs it
-directly to Orthanc. A result card appears with three links:
-
-| Link | Destination |
-|------|-------------|
-| **Open in OHIF →** | Launches the study in the viewer |
-| **AI Results →** | Opens the AI analysis panel for this instance |
-| **Orthanc Explorer ↗** | Raw instance view in Orthanc |
+| Page | Path | Description |
+|---|---|---|
+| Dashboard | `/ai-controller/` | Live stats, recent jobs, auto-refresh |
+| Pipelines | `#pipelines` | List pipelines, enable/disable toggle |
+| Rules | `#rules` | Manage auto-trigger + auto-saveback rules per pipeline |
+| Jobs | `#jobs` | Filterable job list; click a row for full detail |
+| PACS Browser | `#pacs` | Browse Orthanc series, trigger a pipeline manually |
+| Job Detail | modal | Input/output artifacts, findings, impression, container logs, save-to-PACS button |
 
 ---
 
-### 2 — Review AI Analysis
-
-The Orthanc plugin fires automatically on every stored instance.
-By the time you click **AI Results →** the analysis is usually already done.
-
-The **AI Panel** (`/ai-panel.html?instanceId=...`) shows:
-
-- Patient / modality / body-part info bar
-- Colour-coded **impression** (green = normal, orange = abnormal, red = critical)
-- **Findings list** — each finding has a severity icon, type tags, optional
-  measurements, and an animated confidence bar
-- **Push to RIS Report** button — creates a pre-filled DRAFT report in the RIS
-  using the AI findings as a starting point
-
----
-
-### 3 — Manage the Worklist (RIS)
-
-Open **`http://localhost/ris/`**
-
-#### Import patients from Orthanc
-1. Click the **Patients** tab
-2. Click **⟳ Sync from Orthanc** — all patients stored in Orthanc are imported
-
-#### Create an imaging order
-1. Click **+ New Order** (Worklist tab)
-2. Select a patient, modality, body part, priority
-3. Click **Create Order** — the order appears in the worklist table
-
-#### Write a radiology report
-1. Find the order row → click **📄 Report**
-2. Fill in Technique · Findings · Impression · Recommendation
-3. Workflow buttons:
-
-| Button | Status transition |
-|--------|-------------------|
-| **💾 Save Draft** | Saves as `DRAFT` |
-| **📋 Preliminary** | Promotes to `PRELIMINARY` |
-| **✅ Finalize** | Locks to `FINAL`, marks order `COMPLETED`, sets `finalized_at` |
-| **＋ Save Addendum** | Appends dated note (only on `FINAL` reports) |
-| **🖨 Print** | Opens browser print dialog with clean serif layout |
-
-> **Tip:** After clicking **Push to RIS Report** in the AI panel, the draft is
-> already pre-filled — just review and finalize.
-
----
-
-### 4 — View in OHIF
-
-Open **`http://localhost/`** — all studies stored in Orthanc appear automatically
-via DICOMweb (WADO-RS). Click any study to open it in the viewer.
-
----
-
-## Supported Modalities
-
-| Modality | SOP Class | Pixel Engine | AI Findings Pool |
-|----------|-----------|--------------|-----------------|
-| **CR** | Computed Radiography | 12-bit X-ray (body-part aware) | Chest: opacity, nodule, effusion, cardiomegaly, PTX |
-| **DX** | Digital X-ray | 12-bit X-ray (body-part aware) | Same as CR |
-| **CT** | CT Image | 16-bit HU axial slices × N | Chest / Head / Abdomen pools |
-| **MR** | MR Image | 12-bit T1/T2 slices × N | Brain / Spine / Knee pools |
-| **US** | Ultrasound | 8-bit B-mode fan | Abdomen / Thyroid pools |
-
-CT and MR generate one DICOM instance **per slice** — all sharing the same
-`StudyInstanceUID` and `SeriesInstanceUID`.
-
----
-
-## API Reference
-
-### AI Service (`/ai/`)
+## AI Controller API
 
 | Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/ai/health` | Service status + cached result count |
-| `POST` | `/ai/analyze` | Queue analysis `{"instance_id":"..."}` |
-| `GET` | `/ai/results` | List all cached results, newest first (used by all-patients view) |
-| `GET` | `/ai/results/{id}` | Get result for one instance |
-| `DELETE` | `/ai/results/{id}` | Clear cached result (forces re-analysis) |
-
-### RIS (`/ris/api/`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/worklist` | Filtered orders + patient + report status |
-| `POST` | `/orders` | Create imaging order |
-| `GET/PUT` | `/orders/{id}` | Read / update order |
-| `GET` | `/patients` | List patients |
-| `POST` | `/patients/sync` | Import patients from Orthanc |
-| `GET` | `/reports` | List reports (filter by `?status=`) |
-| `GET` | `/reports/order/{id}` | Get report for an order |
-| `POST` | `/reports` | Create report |
-| `PUT` | `/reports/{id}` | Update / finalize report |
-
-### Orthanc REST API (`/orthanc/`)
-
-Full Orthanc REST API is proxied at `/orthanc/` — see
-[Orthanc REST API docs](https://orthanc.uclouvain.be/api/) for the complete
-reference. Commonly used endpoints:
-
-```
-GET  /orthanc/patients          → list all patients
-GET  /orthanc/instances/{id}    → instance metadata
-GET  /orthanc/instances/{id}/file → raw DICOM bytes
-POST /orthanc/instances         → upload DICOM (Content-Type: application/dicom)
-```
+|---|---|---|
+| `GET` | `/api/health` | Service status + counts |
+| `GET` | `/api/pipelines` | List all pipelines |
+| `PATCH` | `/api/pipelines/{id}` | Update pipeline (e.g. `{"enabled": 0}`) |
+| `GET` | `/api/rules` | List all rules (filter: `?pipeline_id=`) |
+| `POST` | `/api/rules` | Create rule |
+| `PATCH` | `/api/rules/{id}` | Update rule |
+| `DELETE` | `/api/rules/{id}` | Delete rule |
+| `GET` | `/api/jobs` | List jobs (filter: `?pipeline_id=&status=`) |
+| `POST` | `/api/jobs` | Manually trigger a job |
+| `GET` | `/api/jobs/{id}` | Job detail with artifacts + saveback events |
+| `DELETE` | `/api/jobs/{id}` | Delete job |
+| `GET` | `/api/artifacts/{id}/download` | Download artifact file |
+| `POST` | `/api/saveback` | Manually save a DICOM artifact back to Orthanc |
+| `GET` | `/api/orthanc/series` | Browse Orthanc series for manual triggering |
+| `POST` | `/api/trigger-instance` | Webhook called by Orthanc plugin |
 
 ---
 
-## Data Persistence
+## Adding a real pipeline
 
-| Volume | Mount | Contents |
-|--------|-------|----------|
-| `pg-data` | postgres:/var/lib/postgresql | Orthanc index |
-| `orthanc-data` | orthanc:/var/lib/orthanc/db | DICOM pixel data |
-| `ris-data` | ris:/data/ris.db | SQLite RIS database |
-
-**Reset everything:**
-```bash
-docker compose down -v   # removes all volumes — full clean slate
-docker compose up -d
-```
-
-**Keep data, restart services:**
-```bash
-docker compose restart
-```
+1. Create `pipelines/my-pipeline/Dockerfile` + `run.py` following the contract above.
+2. Add the build service to `docker-compose.yml`:
+   ```yaml
+   my-pipeline:
+     build: ./pipelines/my-pipeline
+     image: pacs-demo/my-pipeline:latest
+     restart: "no"
+     command: ["true"]
+     networks: [pacs-net]
+   ```
+3. Build: `docker compose build my-pipeline`
+4. Register in the AI Controller UI (Pipelines page → add) or seed in `database.py`.
+5. Add a routing rule on the Rules page (modality, body part, auto-trigger).
 
 ---
 
-## Useful Commands
+## Port conflict troubleshooting
 
 ```bash
-# Live logs for a specific service
-docker compose logs -f ai-service
-docker compose logs -f ris
-docker compose logs -f orthanc
+# Find what holds port 4242
+docker ps --format "table {{.Names}}\t{{.Ports}}" | grep 4242
+sudo lsof -i :4242          # Linux/macOS
 
-# Rebuild a single service after code change
-docker compose up --build -d simulator
+# Stop a previous stack
+docker compose -p pacs-demo down
 
-# Restart without rebuild (Python/HTML file changes only)
-docker compose restart ris
-docker compose restart simulator
-
-# Open a shell inside the AI service
-docker compose exec ai-service bash
-
-# Query the RIS database directly
-docker compose exec ris sqlite3 /data/ris.db ".tables"
-docker compose exec ris sqlite3 /data/ris.db "SELECT * FROM orders;"
-
-# Check Orthanc plugin loaded correctly
-docker compose logs orthanc | grep "AI analysis plugin"
+# Or remap the DICOM port in docker-compose.yml
+# ports:
+#   - "4243:4242"   ← host port 4243, container still uses 4242 internally
 ```
 
 ---
 
-## Troubleshooting
+## Volumes
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| `/ris/` returns 502 | RIS container not ready | `docker compose restart ris` |
-| AI Results shows "processing" forever | AI service unreachable | Check `docker compose logs ai-service` |
-| OHIF shows no studies | Orthanc not healthy | `docker compose logs orthanc` — wait for Postgres |
-| Simulator "Orthanc unreachable" dot | Orthanc still starting | Wait 20 s, reload |
-| Port 80 already in use | Another web server running | Stop it or change nginx port in `docker-compose.yml` |
-| Port 4242 in use | Another DICOM listener | Change `"4242:4242"` mapping |
-
----
-
-## Project Structure
-
-```
-pacs-demo/
-├── docker-compose.yml
-├── nginx/
-│   └── nginx.conf
-├── orthanc/
-│   ├── orthanc.json          # Orthanc configuration
-│   └── plugin.py             # AI webhook (OnStoredInstance)
-├── simulator/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py               # FastAPI — POST /api/generate
-│   ├── presets.py            # Modality configurations
-│   ├── dicom_factory.py      # Pixel generators (CR/DX/CT/MR/US)
-│   └── static/index.html     # Simulator UI
-├── ris/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py               # FastAPI app
-│   ├── database.py           # SQLite schema + helpers
-│   ├── routers/
-│   │   ├── patients.py       # GET /patients, POST /patients/sync
-│   │   ├── orders.py         # Worklist + CRUD
-│   │   └── reports.py        # Report editor + finalization
-│   └── static/index.html     # RIS UI (Worklist · Patients · Reports)
-├── ai-service/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py               # FastAPI — /analyze, /results
-│   └── analyzers/
-│       ├── __init__.py       # Dispatch + pydicom parsing
-│       ├── xray.py           # CR / DX findings
-│       ├── ct.py             # CT findings (chest/head/abdomen)
-│       ├── mr.py             # MR findings (brain/spine/knee)
-│       └── us.py             # US findings (abdomen/thyroid)
-└── ohif/
-    ├── app-config.js         # OHIF DICOMweb config
-    └── ai-panel.html         # AI Results Panel (all-patients + per-instance)
-```
-
----
-
-*Built step by step — Step 1 (infrastructure) → Step 2 (simulator) →
-Step 3 (RIS) → Step 4 (AI service + all-patients diagnostic panel).*
+| Volume | Contents |
+|---|---|
+| `pg-data` | Orthanc PostgreSQL database |
+| `orthanc-data` | Orthanc file store |
+| `ris-data` | RIS SQLite database |
+| `ai-jobs` | Job input/output DICOM files (shared with pipeline containers) |
+| `ai-controller-db` | AI Controller SQLite database |

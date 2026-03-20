@@ -73,7 +73,7 @@ for name, prob in preds:
 echo ""
 echo "======================================================"
 echo " AI Panel URL:"
-echo "   http://localhost/ai-panel.html?instanceId=${INSTANCE_ID}"
+echo "   http://localhost/ai-panel.html?instance_id=${INSTANCE_ID}"
 echo ""
 echo " OHIF Viewer:"
 echo "   http://localhost/"

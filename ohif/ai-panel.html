@@ -146,24 +146,24 @@
 'use strict';
 
 const params     = new URLSearchParams(location.search);
-const instanceId = params.get('instanceId') || '';
+const instance_id = params.get('instance_id') || '';
 const RIS_URL    = '/ris/api';
 const AI_URL     = '/ai';
+let _listTimer=null;
 
 boot();
 
 async function boot(){
-  if(!instanceId){ renderList(); return; }
+  if(!instance_id){ renderList(); return; }
   try{
     await fetch(AI_URL+'/analyze',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({instance_id:instanceId})});
+      body:JSON.stringify({instance_id:instance_id})});
   }catch{}
   poll();
 }
 
 /* ── LIST VIEW ── */
-let _listTimer=null;
 function renderList(){
   document.querySelector('header h1').textContent='🤖 AI Diagnostic — All Patients';
   document.getElementById('status-pill').className='status-pill sp-processing';
@@ -172,7 +172,12 @@ function renderList(){
 
   async function refresh(){
     let results=[];
-    try{ results=await fetch(AI_URL+'/results').then(r=>r.json()); }catch{}
+    try {
+      const r = await fetch(AI_URL + '/results');
+      if (!r.ok) return;                          // ← guard 1: reject non-2xx
+      results = await r.json();
+    } catch { return; }
+    if (!Array.isArray(results)) return;          // ← guard 2: must be an array
 
     const q=(document.getElementById('ls-q')?.value||'').toLowerCase().trim();
     const all=q ? results.filter(r=>
@@ -226,19 +231,19 @@ function renderList(){
         :crit?`<span class="status-pill sp-critical" style="font-size:.65rem;padding:1px 7px">⚠ Critical</span>`
         :r.normal?`<span class="status-pill sp-normal" style="font-size:.65rem;padding:1px 7px">✓ Normal</span>`
         :`<span class="status-pill sp-abnormal" style="font-size:.65rem;padding:1px 7px">Abnormal</span>`;
-      const fc=(r.findings||[]).filter(f=>f.severity!=='none').length;
+      const fc=(r.findings||[]).filter(f=>f.severity!=='none').length ?? 0;
       const fsumm=r.status==='processing'?'—'
         :fc===0?`<span style="color:var(--green)">—</span>`
         :`<span style="color:${crit?'var(--red)':'var(--orange)'}">${fc} finding${fc!==1?'s':''}</span>`;
       const ts=(r.analyzed_at||r.queued_at||'').replace('T',' ').slice(0,16);
-      return `<tr style="cursor:pointer" onclick="location.href='?instanceId=${r.instance_id}'">
+      return `<tr style="cursor:pointer" onclick="location.href='?instance_id=${r.instance_id}'">
         <td><b>${esc(fmtName(r.patient_name||'UNKNOWN'))}</b></td>
         <td>${mod}</td>
         <td style="font-size:.78rem">${esc(r.body_part||'—')}</td>
         <td>${badge}</td>
         <td>${fsumm}</td>
         <td style="font-size:.71rem;color:var(--mute)">${ts||'—'}</td>
-        <td><a class="btn sm pri" href="?instanceId=${r.instance_id}" onclick="event.stopPropagation()">View →</a></td>
+        <td><a class="btn sm pri" href="?instance_id=${r.instance_id}" onclick="event.stopPropagation()">View →</a></td>
       </tr>`}).join('');
 
     page.innerHTML=header+`<div class="tbl-wrap"><table>
@@ -254,27 +259,28 @@ function renderList(){
 
 async function poll(){
   document.getElementById('loading-sub').textContent =
-    'Instance: '+instanceId.slice(0,8)+'…';
+    'Instance: '+instance_id.slice(0,8)+'…';
   let attempts = 0;
   const MAX_ATTEMPTS = 100;  // ~5 min with longer delays
   const NOT_FOUND_TIMEOUT = 30000;  // 30s to wait for result to appear
-  let notFoundSince = Date.now();
+  let notFoundSince = null ;
   
   while(attempts < MAX_ATTEMPTS){
     await sleep(attempts < 5 ? 1500 : 3000);
     attempts++;
     document.getElementById('loading-sub').textContent =
-      'Instance: '+instanceId.slice(0,8)+'… (attempt '+attempts+')';
+      'Instance: '+instance_id.slice(0,8)+'… (attempt '+attempts+')';
     
     try{
-      const r = await fetch(AI_URL+'/results/'+instanceId);
-      if(r.status===404){ 
-        if(Date.now()-notFoundSince>NOT_FOUND_TIMEOUT){
-          throw new Error('Analysis not found (instance ID may not exist)');
-        }
-        continue; 
+      const r = await fetch(AI_URL+'/results/'+instance_id);
+      if (r.status === 404) {
+          if (!notFoundSince) notFoundSince = Date.now()  // start timer on first 404
+          if (Date.now() - notFoundSince > NOT_FOUND_TIMEOUT) {
+              throw new Error('Analysis not found — instance ID may not exist')
+          }
+          continue;
       }
-      notFoundSince = Date.now();
+      notFoundSince = null  // reset if we ever get a non-404 response
       const data = await r.json();
       if(data.status==='processing'){ continue; }
       render(data);
@@ -415,7 +421,7 @@ window.pushToRis = async function(){
 
   try{
     // 1. get result
-    const res = await fetch(AI_URL+'/results/'+instanceId).then(r=>r.json());
+    const res = await fetch(AI_URL+'/results/'+instance_id).then(r=>r.json());
 
     // 2. find matching order by study_uid via worklist (best-effort)
     let orderId = null;
@@ -474,10 +480,10 @@ window.pushToRis = async function(){
 
 window.reAnalyze = async function(){
   try{
-    await fetch(AI_URL+'/results/'+instanceId,{method:'DELETE'});
+    await fetch(AI_URL+'/results/'+instance_id,{method:'DELETE'});
     await fetch(AI_URL+'/analyze',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({instance_id:instanceId})});
+      body:JSON.stringify({instance_id:instance_id})});
     document.getElementById('page').innerHTML=
       `<div class="state-box"><div class="spinner">⟳</div>
        <div class="state-title" style="margin-top:12px">Re-analysing…</div></div>`;
