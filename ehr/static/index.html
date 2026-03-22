@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EHR</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --card: #161b22; --card-hover: #1c2128; --input: #21262d;
+      --border: #30363d; --text: #e6edf3; --mute: #8b949e; --link: #58a6ff;
+      --green: #3fb950; --red: #f85149; --orange: #ffa657; --yellow: #e3b341; --purple: #d2a8ff;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; }
+    .shell { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { width: 200px; min-width: 200px; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 0; }
+    .sidebar-logo { padding: 10px 16px 16px; font-size: .9rem; font-weight: 700; color: var(--link); letter-spacing: .02em; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 8px 16px; cursor: pointer; border-left: 3px solid transparent; transition: all .13s; font-size: .82rem; color: var(--mute); text-decoration: none; user-select: none; }
+    .nav-item:hover { background: var(--card-hover); color: var(--text); }
+    .nav-item.active { border-left-color: var(--link); color: var(--link); background: rgba(88,166,255,.07); }
+    .nav-icon { font-size: 1rem; width: 18px; text-align: center; }
+    .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+    .topbar { padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; background: var(--card); position: sticky; top: 0; z-index: 5; }
+    .topbar h2 { font-size: .93rem; font-weight: 600; flex: 1; }
+    .content { padding: 20px 24px; flex: 1; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 16px; margin-bottom: 14px; }
+    .card-title { font-size: .7rem; font-weight: 700; color: var(--mute); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+    .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 14px 18px; min-width: 110px; flex: 1; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; margin-bottom: 2px; }
+    .stat-label { font-size: .7rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    .tbl-wrap { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    thead tr { background: var(--card); }
+    thead th { padding: 8px 12px; text-align: left; font-size: .68rem; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid #1a1e25; transition: background .12s; cursor: pointer; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--card-hover); }
+    td { padding: 8px 12px; vertical-align: middle; }
+    .btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: .78rem; cursor: pointer; font-family: inherit; transition: all .13s; text-decoration: none; user-select: none; }
+    .btn:hover { background: var(--card-hover); }
+    .btn.pri { background: #162040; border-color: #2a4a90; color: var(--link); }
+    .btn.pri:hover { background: #1c2a58; }
+    .btn.success { background: #162316; border-color: #2a3d2a; color: var(--green); }
+    .btn.success:hover { background: #1e2f1e; }
+    .btn.danger { background: #200e10; border-color: #3d1820; color: var(--red); }
+    .btn.danger:hover { background: #2a1015; }
+    .btn.sm { padding: 3px 10px; font-size: .72rem; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: .68rem; font-weight: 600; line-height: 1.5; }
+    .b-active   { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-discharged{ background: #1a1e30; color: #7b90d4;      border: 1px solid #2a3558; }
+    .b-pending  { background: #1a1e30; color: #7b90d4;       border: 1px solid #2a3558; }
+    .b-sent     { background: #162040; color: var(--link);   border: 1px solid #2a4a90; }
+    .b-completed{ background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-critical { background: #200e10; color: var(--red);    border: 1px solid #3d1820; }
+    .b-warning  { background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
+    .b-info     { background: #162040; color: var(--link);   border: 1px solid #2a4a90; }
+    .b-mild     { background: #201a10; color: var(--yellow); border: 1px solid #4a3a00; }
+    .b-scheduled{ background: #162040; color: var(--link);   border: 1px solid #2a4a90; }
+    .b-cancelled{ background: #200e10; color: var(--red);    border: 1px solid #3d1820; }
+    .b-paid     { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-chronic  { background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
+    .b-resolved { background: #1a1e30; color: var(--mute);   border: 1px solid #30363d; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+    .form-group.full { flex: 1; min-width: 200px; }
+    .form-group label { font-size: .68rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    input, select, textarea { background: var(--input); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 6px 10px; font-size: .8rem; font-family: inherit; outline: none; transition: border .13s; width: 100%; }
+    input:focus, select:focus, textarea:focus { border-color: var(--link); }
+    select option { background: var(--card); }
+    textarea { resize: vertical; min-height: 60px; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; align-items: flex-start; justify-content: center; padding: 24px; overflow-y: auto; }
+    .overlay.open { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 9px; width: 100%; max-width: 660px; overflow: hidden; margin: auto; }
+    .modal-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .modal-header h3 { flex: 1; font-size: .9rem; font-weight: 600; }
+    .modal-body { padding: 18px 20px; max-height: 78vh; overflow-y: auto; }
+    .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { padding: 7px 14px; font-size: .78rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--mute); transition: all .13s; user-select: none; }
+    .tab:hover { color: var(--text); }
+    .tab.active { border-bottom-color: var(--link); color: var(--link); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+    .filter-bar select, .filter-bar input { height: 30px; padding: 0 8px; font-size: .78rem; width: auto; }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; border-radius: 6px; font-size: .8rem; border: 1px solid; z-index: 200; max-width: 340px; display: none; }
+    .toast.ok   { background: #0d180d; border-color: #2a3d2a; color: var(--green); }
+    .toast.err  { background: #180d0d; border-color: #3d1a1a; color: var(--red); }
+    .toast.info { background: #0d1220; border-color: #2a3a60; color: var(--link); }
+    .empty { padding: 36px; text-align: center; color: var(--mute); font-size: .85rem; }
+    .sep { height: 1px; background: var(--border); margin: 12px 0; }
+    .flex-center { display: flex; align-items: center; gap: 8px; }
+    .alert-banner { background: #200e10; border: 1px solid #3d1820; border-radius: 7px; padding: 10px 14px; margin-bottom: 14px; color: var(--red); font-size: .82rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .alert-banner .alert-count { font-weight: 700; font-size: 1.1rem; }
+    .cdss-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1a1e25; }
+    .cdss-row:last-child { border-bottom: none; }
+    .cdss-meta { font-size: .72rem; color: var(--mute); margin-top: 3px; }
+    .chart-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .chart-name { font-size: 1.2rem; font-weight: 700; }
+    .chart-meta { font-size: .78rem; color: var(--mute); margin-top: 2px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">🏥 EHR</div>
+    <a class="nav-item active" data-view="patients" onclick="nav('patients')">
+      <span class="nav-icon">👤</span> Patients
+    </a>
+    <a class="nav-item" data-view="cdss" onclick="nav('cdss')">
+      <span class="nav-icon">⚠️</span> CDSS Alerts
+    </a>
+    <div style="flex:1"></div>
+    <a class="nav-item" href="docs" target="_blank" style="font-size:.75rem">
+      <span class="nav-icon">📖</span> API Docs
+    </a>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Patients</h2>
+      <div id="topbar-actions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ MODALS ═══════════════════════ -->
+
+<!-- New Patient -->
+<div class="overlay" id="modal-new-patient">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>New Patient</h3>
+      <button class="btn sm" onclick="closeModal('modal-new-patient')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-new-patient" onsubmit="submitNewPatient(event)">
+        <div class="form-row">
+          <div class="form-group"><label>MRN *</label><input name="mrn" required placeholder="e.g. MRN-001"></div>
+          <div class="form-group full"><label>First Name *</label><input name="first_name" required></div>
+          <div class="form-group full"><label>Last Name *</label><input name="last_name" required></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Date of Birth</label><input name="birth_date" type="date"></div>
+          <div class="form-group"><label>Sex</label>
+            <select name="sex"><option value="">—</option><option>male</option><option>female</option><option>other</option></select>
+          </div>
+          <div class="form-group"><label>Phone</label><input name="phone" placeholder="+33..."></div>
+          <div class="form-group full"><label>Insurance ID</label><input name="insurance_id"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-new-patient')">Cancel</button>
+          <button type="submit" class="btn pri">Create Patient</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Admit Patient -->
+<div class="overlay" id="modal-admit">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Admit Patient</h3>
+      <button class="btn sm" onclick="closeModal('modal-admit')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-admit" onsubmit="submitAdmit(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>Encounter Type</label>
+            <select name="encounter_type">
+              <option value="outpatient">Outpatient</option><option value="inpatient">Inpatient</option>
+              <option value="emergency">Emergency</option><option value="daycare">Day Care</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Ward</label><input name="ward" placeholder="e.g. Cardiology"></div>
+          <div class="form-group"><label>Bed</label><input name="bed" placeholder="e.g. B-12"></div>
+          <div class="form-group full"><label>Attending Physician</label><input name="attending_physician" placeholder="Dr. ..."></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-admit')">Cancel</button>
+          <button type="submit" class="btn pri">Admit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- New Order -->
+<div class="overlay" id="modal-order">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>New Clinical Order</h3>
+      <button class="btn sm" onclick="closeModal('modal-order')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-order" onsubmit="submitOrder(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>Order Type *</label>
+            <select name="order_type" onchange="renderOrderDetail(this.value)" required>
+              <option value="LAB">LAB</option><option value="IMAGING">IMAGING</option>
+              <option value="PHARMACY">PHARMACY</option><option value="REFERRAL">REFERRAL</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Priority</label>
+            <select name="priority">
+              <option value="ROUTINE">Routine</option><option value="URGENT">Urgent</option><option value="STAT">STAT</option>
+            </select>
+          </div>
+          <div class="form-group full"><label>Requesting Physician</label><input name="requesting_physician" placeholder="Dr. ..."></div>
+        </div>
+        <div id="order-detail-fields"></div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-order')">Cancel</button>
+          <button type="submit" class="btn pri">Place Order</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Allergy -->
+<div class="overlay" id="modal-allergy">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Allergy</h3>
+      <button class="btn sm" onclick="closeModal('modal-allergy')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-allergy" onsubmit="submitAllergy(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>Substance *</label><input name="substance" required placeholder="e.g. Penicillin"></div>
+          <div class="form-group full"><label>Reaction</label><input name="reaction" placeholder="e.g. Rash, Anaphylaxis"></div>
+          <div class="form-group"><label>Severity</label>
+            <select name="severity"><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option></select>
+          </div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-allergy')">Cancel</button>
+          <button type="submit" class="btn pri">Add Allergy</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Diagnosis -->
+<div class="overlay" id="modal-diagnosis">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Diagnosis</h3>
+      <button class="btn sm" onclick="closeModal('modal-diagnosis')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-diagnosis" onsubmit="submitDiagnosis(event)">
+        <div class="form-row">
+          <div class="form-group"><label>ICD-10 Code *</label><input name="icd10_code" required placeholder="e.g. I10"></div>
+          <div class="form-group full"><label>Description</label><input name="description" placeholder="e.g. Essential hypertension"></div>
+          <div class="form-group"><label>Status</label>
+            <select name="status"><option value="active">Active</option><option value="chronic">Chronic</option><option value="resolved">Resolved</option></select>
+          </div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-diagnosis')">Cancel</button>
+          <button type="submit" class="btn pri">Add Diagnosis</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule Appointment -->
+<div class="overlay" id="modal-appointment">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Schedule Appointment</h3>
+      <button class="btn sm" onclick="closeModal('modal-appointment')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-appointment" onsubmit="submitAppointment(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>Provider</label><input name="provider" placeholder="Dr. ..."></div>
+          <div class="form-group full"><label>Department</label><input name="department" placeholder="e.g. Cardiology"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full"><label>Scheduled Date/Time *</label><input name="scheduled_date" type="datetime-local" required></div>
+          <div class="form-group"><label>Duration (min)</label><input name="duration_minutes" type="number" value="30" min="5" max="480"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full"><label>Notes</label><textarea name="notes"></textarea></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-appointment')">Cancel</button>
+          <button type="submit" class="btn pri">Schedule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Billing Record -->
+<div class="overlay" id="modal-billing">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Billing Record</h3>
+      <button class="btn sm" onclick="closeModal('modal-billing')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-billing" onsubmit="submitBilling(event)">
+        <div class="form-row">
+          <div class="form-group"><label>CPT Code *</label><input name="cpt_code" required placeholder="e.g. 99213"></div>
+          <div class="form-group full"><label>Description</label><input name="description" placeholder="e.g. Office visit - established patient"></div>
+          <div class="form-group"><label>Amount (€) *</label><input name="amount" type="number" step="0.01" min="0" required placeholder="0.00"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-billing')">Cancel</button>
+          <button type="submit" class="btn pri">Add Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Patient -->
+<div class="overlay" id="modal-edit-patient">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Patient</h3>
+      <button class="btn sm" onclick="closeModal('modal-edit-patient')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-edit-patient" onsubmit="submitEditPatient(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>First Name</label><input name="first_name"></div>
+          <div class="form-group full"><label>Last Name</label><input name="last_name"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Date of Birth</label><input name="birth_date" type="date"></div>
+          <div class="form-group"><label>Sex</label>
+            <select name="sex"><option value="">—</option><option>male</option><option>female</option><option>other</option></select>
+          </div>
+          <div class="form-group"><label>Phone</label><input name="phone"></div>
+          <div class="form-group full"><label>Insurance ID</label><input name="insurance_id"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-edit-patient')">Cancel</button>
+          <button type="submit" class="btn pri">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ── State ───────────────────────────────────────────────────────────────────
+let currentPatient = null;
+let cdssRefreshTimer = null;
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const r = await fetch('/ehr' + path, opts);
+  if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${t}`); }
+  if (r.status === 204) return null;
+  return r.json();
+}
+function toast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.className = `toast ${type}`; t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3200);
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function fmtDate(s) { return s ? s.replace('T', ' ').slice(0, 16) : '—'; }
+function age(dob) {
+  if (!dob) return '—';
+  return Math.floor((Date.now() - new Date(dob)) / 3.15576e10) + ' y';
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function formData(formId) {
+  const fd = new FormData(document.getElementById(formId));
+  const obj = {};
+  fd.forEach((v, k) => { if (v !== '') obj[k] = v; });
+  return obj;
+}
+function severityBadge(s) {
+  const m = { critical:'b-critical', warning:'b-warning', severe:'b-critical', moderate:'b-warning', mild:'b-mild' };
+  return `<span class="badge ${m[s]||'b-info'}">${esc(s)}</span>`;
+}
+function statusBadge(s) {
+  const m = {
+    active:'b-active', discharged:'b-discharged', pending:'b-pending',
+    PENDING:'b-pending', SENT:'b-sent', COMPLETED:'b-completed', completed:'b-completed',
+    scheduled:'b-scheduled', cancelled:'b-cancelled', paid:'b-paid',
+    outpatient:'b-info', inpatient:'b-active', emergency:'b-critical', daycare:'b-info',
+    chronic:'b-chronic', resolved:'b-resolved'
+  };
+  return `<span class="badge ${m[s]||'b-info'}">${esc(s)}</span>`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function nav(view) {
+  clearInterval(cdssRefreshTimer);
+  currentPatient = null;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+  const titles = { patients: 'Patients', cdss: 'CDSS Alerts' };
+  document.getElementById('page-title').textContent = titles[view] || view;
+  document.getElementById('topbar-actions').innerHTML = '';
+  ({ patients: renderPatients, cdss: renderCDSS }[view] || renderPatients)();
+}
+
+// ── PATIENTS LIST ─────────────────────────────────────────────────────────────
+async function renderPatients() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn pri" onclick="openModal('modal-new-patient')">＋ New Patient</button>`;
+  try {
+    const [patients, alerts] = await Promise.all([
+      api('/api/patients'),
+      api('/api/cdss/alerts?unacknowledged=true')
+    ]);
+    const critCount = alerts.filter(a => a.severity === 'critical').length;
+    const banner = critCount > 0
+      ? `<div class="alert-banner"><span class="alert-count">🚨 ${critCount}</span>
+         critical CDSS alert${critCount > 1 ? 's' : ''} pending acknowledgement.
+         <button class="btn sm danger" onclick="nav('cdss')">View Alerts</button></div>`
+      : '';
+    if (!patients.length) {
+      el.innerHTML = banner + `<div class="empty">No patients yet. Click "New Patient" to get started.</div>`;
+      return;
+    }
+    const rows = patients.map(p => `
+      <tr onclick="openPatientChart('${esc(p.id)}')">
+        <td><code style="color:var(--orange);font-size:.78rem">${esc(p.mrn)}</code></td>
+        <td><strong>${esc(p.last_name)}, ${esc(p.first_name)}</strong></td>
+        <td>${age(p.birth_date)}</td>
+        <td>${esc(p.sex || '—')}</td>
+        <td>${esc(p.phone || '—')}</td>
+        <td>${fmtDate(p.createdat)}</td>
+      </tr>`).join('');
+    el.innerHTML = banner + `
+      <div class="filter-bar">
+        <input id="patient-search" placeholder="🔍  Search name or MRN…" oninput="filterPatients()" style="width:240px">
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>MRN</th><th>Name</th><th>Age</th><th>Sex</th><th>Phone</th><th>Registered</th></tr></thead>
+        <tbody id="patient-tbody">${rows}</tbody>
+      </table></div>
+      <p style="color:var(--mute);font-size:.75rem">${patients.length} patient${patients.length !== 1 ? 's' : ''}</p>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function filterPatients() {
+  const q = document.getElementById('patient-search').value.toLowerCase();
+  document.querySelectorAll('#patient-tbody tr').forEach(r =>
+    r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none');
+}
+
+async function submitNewPatient(e) {
+  e.preventDefault();
+  try {
+    await api('/api/patients', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(formData('form-new-patient')) });
+    closeModal('modal-new-patient');
+    document.getElementById('form-new-patient').reset();
+    toast('Patient created', 'ok');
+    renderPatients();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── PATIENT CHART ─────────────────────────────────────────────────────────────
+async function openPatientChart(patientId) {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading patient…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn sm" onclick="nav('patients')">← Back</button>`;
+  document.getElementById('page-title').textContent = 'Patient Chart';
+  try {
+    const p = await api(`/api/patients/${patientId}`);
+    currentPatient = p;
+    const alertCount = (p.cdssalerts || []).length;
+    el.innerHTML = `
+      <div class="chart-header">
+        <div style="flex:1">
+          <div class="chart-name">${esc(p.last_name)}, ${esc(p.first_name)}</div>
+          <div class="chart-meta">MRN: ${esc(p.mrn)} · DOB: ${esc(p.birth_date||'—')} · ${age(p.birth_date)} · ${esc(p.sex||'unknown sex')}</div>
+        </div>
+        <button class="btn sm pri" onclick="prefillEditPatient()">✏️ Edit</button>
+        <button class="btn sm danger" onclick="deletePatient('${esc(p.id)}')">🗑 Delete</button>
+      </div>
+      ${alertCount > 0 ? `<div class="alert-banner">
+        <span class="alert-count">⚠️ ${alertCount}</span>
+        unacknowledged CDSS alert${alertCount>1?'s':''} for this patient.
+        <button class="btn sm danger" onclick="switchTab('tab-cdss')">View</button>
+      </div>` : ''}
+      <div class="tabs">
+        <div class="tab active" data-tab="tab-summary"   onclick="switchTab('tab-summary')">Summary</div>
+        <div class="tab"        data-tab="tab-encounters" onclick="switchTab('tab-encounters')">Encounters</div>
+        <div class="tab"        data-tab="tab-orders"     onclick="switchTab('tab-orders')">Orders</div>
+        <div class="tab"        data-tab="tab-allergy"    onclick="switchTab('tab-allergy')">Allergies &amp; Diagnoses</div>
+        <div class="tab"        data-tab="tab-scheduling" onclick="switchTab('tab-scheduling')">Scheduling</div>
+        <div class="tab"        data-tab="tab-billing"    onclick="switchTab('tab-billing')">Billing</div>
+        <div class="tab"        data-tab="tab-cdss"       onclick="switchTab('tab-cdss')">CDSS ${alertCount>0?`<span class="badge b-critical">${alertCount}</span>`:''}</div>
+      </div>
+      <div id="tab-summary"   class="tab-pane active"></div>
+      <div id="tab-encounters" class="tab-pane"></div>
+      <div id="tab-orders"     class="tab-pane"></div>
+      <div id="tab-allergy"    class="tab-pane"></div>
+      <div id="tab-scheduling" class="tab-pane"></div>
+      <div id="tab-billing"    class="tab-pane"></div>
+      <div id="tab-cdss"       class="tab-pane"></div>`;
+    renderTabSummary(p);
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === tabId));
+  if (!currentPatient) return;
+  const loaders = {
+    'tab-summary':    () => renderTabSummary(currentPatient),
+    'tab-encounters': () => renderTabEncounters(currentPatient.id),
+    'tab-orders':     () => renderTabOrders(currentPatient.id),
+    'tab-allergy':    () => renderTabAllergy(currentPatient.id),
+    'tab-scheduling': () => renderTabScheduling(currentPatient.id),
+    'tab-billing':    () => renderTabBilling(currentPatient.id),
+    'tab-cdss':       () => renderTabCDSSPatient(currentPatient.id),
+  };
+  if (loaders[tabId]) loaders[tabId]();
+}
+
+// ── TAB: SUMMARY ──────────────────────────────────────────────────────────────
+function renderTabSummary(p) {
+  const pane = document.getElementById('tab-summary');
+  const activeEnc = (p.encounters || []).find(e => e.status === 'active');
+  const diags = (p.diagnoses || []).filter(d => d.status === 'active' || d.status === 'chronic');
+  const allergies = p.allergies || [];
+  pane.innerHTML = `
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Demographics</div>
+        <table style="width:100%"><tbody>
+          ${[['MRN',p.mrn],['First Name',p.first_name],['Last Name',p.last_name],
+             ['Date of Birth',p.birth_date||'—'],['Age',age(p.birth_date)],
+             ['Sex',p.sex||'—'],['Phone',p.phone||'—'],['Insurance',p.insurance_id||'—']]
+            .map(([k,v])=>`<tr><td style="color:var(--mute);font-size:.75rem;padding:4px 0;width:42%">${esc(k)}</td><td style="font-size:.82rem;padding:4px 0">${esc(v)}</td></tr>`).join('')}
+        </tbody></table>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title">Current Encounter</div>
+          ${activeEnc
+            ? `<p style="font-size:.82rem">${esc(activeEnc.encountertype)} · Ward: <strong>${esc(activeEnc.ward||'—')}</strong> · Bed: <strong>${esc(activeEnc.bed||'—')}</strong></p>
+               <p style="font-size:.75rem;color:var(--mute);margin-top:4px">Admitted: ${fmtDate(activeEnc.admitdate)} · Dr. ${esc(activeEnc.attendingphysician||'—')}</p>`
+            : '<p style="color:var(--mute);font-size:.82rem">No active encounter</p>'}
+        </div>
+        <div class="card">
+          <div class="card-title">Active / Chronic Diagnoses</div>
+          ${diags.length
+            ? diags.map(d=>`<p style="font-size:.82rem;padding:3px 0"><code style="color:var(--orange)">${esc(d.icd10code)}</code>&nbsp;${esc(d.description||'')} ${statusBadge(d.status)}</p>`).join('')
+            : '<p style="color:var(--mute);font-size:.82rem">None recorded</p>'}
+        </div>
+        <div class="card">
+          <div class="card-title">Known Allergies</div>
+          ${allergies.length
+            ? allergies.map(a=>`<p style="font-size:.82rem;padding:3px 0"><strong>${esc(a.substance)}</strong> ${severityBadge(a.severity)}${a.reaction?` <span style="color:var(--mute)">— ${esc(a.reaction)}</span>`:''}</p>`).join('')
+            : '<p style="color:var(--mute);font-size:.82rem">No known allergies</p>'}
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── TAB: ENCOUNTERS ───────────────────────────────────────────────────────────
+async function renderTabEncounters(patientId) {
+  const pane = document.getElementById('tab-encounters');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const encs = await api(`/api/encounters?patientid=${patientId}`);
+    pane.innerHTML = `
+      <div class="flex-center" style="margin-bottom:12px">
+        <button class="btn pri" onclick="openModal('modal-admit')">＋ Admit Patient</button>
+      </div>
+      ${!encs.length ? '<div class="empty">No encounters on record.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Type</th><th>Ward / Bed</th><th>Physician</th><th>Admitted</th><th>Discharged</th><th>Status</th><th></th></tr></thead>
+        <tbody>${encs.map(e=>`
+          <tr>
+            <td>${esc(e.encountertype)}</td>
+            <td>${esc(e.ward||'—')} / ${esc(e.bed||'—')}</td>
+            <td>${esc(e.attendingphysician||'—')}</td>
+            <td>${fmtDate(e.admitdate)}</td>
+            <td>${fmtDate(e.dischargedate)}</td>
+            <td>${statusBadge(e.status)}</td>
+            <td>${e.status==='active'?`<button class="btn sm danger" onclick="dischargeEncounter(${e.id})">Discharge</button>`:''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+async function submitAdmit(e) {
+  e.preventDefault();
+  if (!currentPatient) return;
+  try {
+    await api('/api/encounters', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...formData('form-admit'), patientid: currentPatient.id }) });
+    closeModal('modal-admit'); document.getElementById('form-admit').reset();
+    toast('Patient admitted', 'ok'); renderTabEncounters(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+async function dischargeEncounter(encId) {
+  if (!confirm('Discharge this encounter?')) return;
+  try {
+    await api(`/api/encounters/${encId}`, { method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ status: 'discharged' }) });
+    toast('Discharged', 'ok'); renderTabEncounters(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── TAB: ORDERS ───────────────────────────────────────────────────────────────
+async function renderTabOrders(patientId) {
+  const pane = document.getElementById('tab-orders');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const orders = await api(`/api/orders?patientid=${patientId}`);
+    pane.innerHTML = `
+      <div class="flex-center" style="margin-bottom:12px">
+        <button class="btn pri" onclick="openModal('modal-order');renderOrderDetail('LAB')">＋ New Order</button>
+      </div>
+      ${!orders.length ? '<div class="empty">No orders placed yet.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Type</th><th>Detail</th><th>Priority</th><th>Physician</th><th>Status</th><th>Ext. Ref</th><th>Date</th></tr></thead>
+        <tbody>${orders.map(o => {
+          let detail = '';
+          try { const d = typeof o.orderdetail==='string' ? JSON.parse(o.orderdetail) : o.orderdetail;
+                detail = d ? Object.entries(d).map(([k,v])=>`${k}: ${v}`).join(' · ') : ''; } catch {}
+          return `<tr>
+            <td><strong>${esc(o.ordertype)}</strong></td>
+            <td style="color:var(--mute);font-size:.75rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(detail)}</td>
+            <td>${esc(o.priority)}</td>
+            <td>${esc(o.requestingphysician||'—')}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${o.externalref?`<code style="font-size:.72rem;color:var(--link)">${esc(o.externalref)}</code>`:'—'}</td>
+            <td>${fmtDate(o.createdat)}</td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+function renderOrderDetail(type) {
+  const f = {
+    LAB: `<div class="form-row">
+      <div class="form-group full"><label>Test Panel</label>
+        <select name="detail_testcode">
+          <option value="CBC">CBC — Complete Blood Count</option>
+          <option value="BMP">BMP — Basic Metabolic Panel</option>
+          <option value="CMP">CMP — Comprehensive Metabolic Panel</option>
+          <option value="LFT">LFT — Liver Function Tests</option>
+          <option value="LIPID">LIPID — Lipid Panel</option>
+          <option value="TSH">TSH — Thyroid Stimulating Hormone</option>
+          <option value="TROPONIN">TROPONIN — Troponin I</option>
+          <option value="HBA1C">HBA1C — HbA1c</option>
+          <option value="COAG">COAG — Coagulation Screen</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Specimen Type</label>
+        <select name="detail_specimen_type">
+          <option value="blood">Blood</option><option value="urine">Urine</option>
+          <option value="csf">CSF</option><option value="swab">Swab</option>
+        </select>
+      </div>
+    </div>`,
+    IMAGING: `<div class="form-row">
+      <div class="form-group"><label>Modality</label>
+        <select name="detail_modality">
+          <option value="CR">CR — Chest X-Ray</option><option value="CT">CT — CT Scan</option>
+          <option value="MR">MR — MRI</option><option value="US">US — Ultrasound</option>
+          <option value="DX">DX — Digital X-Ray</option><option value="PT">PT — PET Scan</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Body Part</label><input name="detail_bodypart" placeholder="e.g. CHEST, ABDOMEN, KNEE"></div>
+      <div class="form-group full"><label>Clinical Info</label><input name="detail_clinicalinfo" placeholder="Clinical indication…"></div>
+    </div>`,
+    PHARMACY: `<div class="form-row">
+      <div class="form-group full"><label>Medication *</label><input name="detail_medication" placeholder="e.g. Amoxicillin 500mg"></div>
+      <div class="form-group"><label>Dose</label><input name="detail_dose" placeholder="e.g. 500mg"></div>
+      <div class="form-group"><label>Route</label>
+        <select name="detail_route"><option value="oral">Oral</option><option value="IV">IV</option><option value="IM">IM</option><option value="topical">Topical</option></select>
+      </div>
+      <div class="form-group"><label>Frequency</label><input name="detail_frequency" placeholder="e.g. TDS"></div>
+    </div>`,
+    REFERRAL: `<div class="form-row">
+      <div class="form-group full"><label>Specialty</label><input name="detail_specialty" placeholder="e.g. Cardiology"></div>
+      <div class="form-group full"><label>Reason</label><textarea name="detail_reason"></textarea></div>
+    </div>`
+  };
+  document.getElementById('order-detail-fields').innerHTML = f[type] || '';
+}
+async function submitOrder(e) {
+  e.preventDefault();
+  if (!currentPatient) return;
+  const raw = formData('form-order');
+  const detail = {}, body = { patientid: currentPatient.id };
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('detail_')) detail[k.replace('detail_', '')] = v;
+    else body[k] = v;
+  }
+  body.orderdetail = detail;
+  try {
+    await api('/api/orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    closeModal('modal-order'); document.getElementById('form-order').reset();
+    toast('Order placed', 'ok'); renderTabOrders(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── TAB: ALLERGIES & DIAGNOSES ────────────────────────────────────────────────
+async function renderTabAllergy(patientId) {
+  const pane = document.getElementById('tab-allergy');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const [allergies, diagnoses] = await Promise.all([
+      api(`/api/patients/${patientId}/allergies`),
+      api(`/api/patients/${patientId}/diagnoses`)
+    ]);
+    pane.innerHTML = `
+      <div class="two-col">
+        <div class="card">
+          <div class="flex-center" style="margin-bottom:10px">
+            <div class="card-title" style="margin:0;flex:1">Known Allergies</div>
+            <button class="btn pri sm" onclick="openModal('modal-allergy')">＋ Add</button>
+          </div>
+          ${!allergies.length ? '<div class="empty" style="padding:16px">None on record</div>' :
+            allergies.map(a=>`<div class="cdss-row">
+              <div style="flex:1">
+                <strong style="font-size:.82rem">${esc(a.substance)}</strong> ${severityBadge(a.severity)}
+                <div class="cdss-meta">${esc(a.reaction||'No reaction noted')}</div>
+              </div>
+              <button class="btn sm danger" onclick="deleteAllergy(${a.id})">✕</button>
+            </div>`).join('')}
+        </div>
+        <div class="card">
+          <div class="flex-center" style="margin-bottom:10px">
+            <div class="card-title" style="margin:0;flex:1">Diagnoses</div>
+            <button class="btn pri sm" onclick="openModal('modal-diagnosis')">＋ Add</button>
+          </div>
+          ${!diagnoses.length ? '<div class="empty" style="padding:16px">None on record</div>' :
+            diagnoses.map(d=>`<div class="cdss-row">
+              <div style="flex:1">
+                <code style="color:var(--orange);font-size:.8rem">${esc(d.icd10code)}</code>
+                <span style="font-size:.82rem;margin-left:6px">${esc(d.description||'')}</span>
+                <div class="cdss-meta">${statusBadge(d.status)} · Added ${fmtDate(d.createdat)}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+async function submitAllergy(e) {
+  e.preventDefault(); if (!currentPatient) return;
+  try {
+    await api(`/api/patients/${currentPatient.id}/allergies`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(formData('form-allergy')) });
+    closeModal('modal-allergy'); document.getElementById('form-allergy').reset();
+    toast('Allergy added', 'ok'); renderTabAllergy(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+async function deleteAllergy(allergyId) {
+  if (!confirm('Remove this allergy?')) return;
+  try {
+    await api(`/api/patients/${currentPatient.id}/allergies/${allergyId}`, { method:'DELETE' });
+    toast('Allergy removed', 'ok'); renderTabAllergy(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+async function submitDiagnosis(e) {
+  e.preventDefault(); if (!currentPatient) return;
+  try {
+    await api(`/api/patients/${currentPatient.id}/diagnoses`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(formData('form-diagnosis')) });
+    closeModal('modal-diagnosis'); document.getElementById('form-diagnosis').reset();
+    toast('Diagnosis added', 'ok'); renderTabAllergy(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── TAB: SCHEDULING ───────────────────────────────────────────────────────────
+async function renderTabScheduling(patientId) {
+  const pane = document.getElementById('tab-scheduling');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const appts = await api(`/api/appointments?patientid=${patientId}`);
+    pane.innerHTML = `
+      <div class="flex-center" style="margin-bottom:12px">
+        <button class="btn pri" onclick="openModal('modal-appointment')">＋ Schedule Appointment</button>
+      </div>
+      ${!appts.length ? '<div class="empty">No appointments scheduled.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Date / Time</th><th>Provider</th><th>Department</th><th>Duration</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+        <tbody>${appts.map(a=>`<tr>
+          <td>${fmtDate(a.scheduleddate)}</td>
+          <td>${esc(a.provider||'—')}</td>
+          <td>${esc(a.department||'—')}</td>
+          <td>${a.durationminutes} min</td>
+          <td style="color:var(--mute);font-size:.75rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.notes||'—')}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td>${a.status==='scheduled'?`<button class="btn sm danger" onclick="cancelAppt(${a.id})">Cancel</button>`:''}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+async function submitAppointment(e) {
+  e.preventDefault(); if (!currentPatient) return;
+  try {
+    await api('/api/appointments', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...formData('form-appointment'), patientid: currentPatient.id }) });
+    closeModal('modal-appointment'); document.getElementById('form-appointment').reset();
+    toast('Appointment scheduled', 'ok'); renderTabScheduling(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+async function cancelAppt(apptId) {
+  if (!confirm('Cancel this appointment?')) return;
+  try {
+    await api(`/api/appointments/${apptId}`, { method:'DELETE' });
+    toast('Appointment cancelled', 'ok'); renderTabScheduling(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── TAB: BILLING ──────────────────────────────────────────────────────────────
+async function renderTabBilling(patientId) {
+  const pane = document.getElementById('tab-billing');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const records = await api(`/api/billing?patientid=${patientId}`);
+    const total = records.reduce((s,r)=>s+(r.amount||0),0);
+    const paid  = records.filter(r=>r.status==='paid').reduce((s,r)=>s+(r.amount||0),0);
+    pane.innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="stat-val">€${total.toFixed(2)}</div><div class="stat-label">Total Billed</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--green)">€${paid.toFixed(2)}</div><div class="stat-label">Paid</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--orange)">€${(total-paid).toFixed(2)}</div><div class="stat-label">Outstanding</div></div>
+      </div>
+      <div class="flex-center" style="margin-bottom:12px">
+        <button class="btn pri" onclick="openModal('modal-billing')">＋ Add Record</button>
+      </div>
+      ${!records.length ? '<div class="empty">No billing records.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>CPT Code</th><th>Description</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <tbody>${records.map(r=>`<tr>
+          <td><code style="color:var(--orange)">${esc(r.cptcode)}</code></td>
+          <td>${esc(r.description||'—')}</td>
+          <td>€${(r.amount||0).toFixed(2)}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td>${fmtDate(r.createdat)}</td>
+          <td>${r.status!=='paid'?`<button class="btn sm success" onclick="markPaid(${r.id})">Mark Paid</button>`:''}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+async function submitBilling(e) {
+  e.preventDefault(); if (!currentPatient) return;
+  const raw = formData('form-billing');
+  try {
+    await api('/api/billing', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...raw, patientid: currentPatient.id, amount: parseFloat(raw.amount) }) });
+    closeModal('modal-billing'); document.getElementById('form-billing').reset();
+    toast('Billing record added', 'ok'); renderTabBilling(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+async function markPaid(recordId) {
+  try {
+    await api(`/api/billing/${recordId}/status`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status:'paid' }) });
+    toast('Marked as paid', 'ok'); renderTabBilling(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── TAB: CDSS (per patient) ───────────────────────────────────────────────────
+async function renderTabCDSSPatient(patientId) {
+  const pane = document.getElementById('tab-cdss');
+  pane.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const alerts = await api(`/api/cdss/alerts?patientid=${patientId}`);
+    if (!alerts.length) { pane.innerHTML = '<div class="empty">✅ No CDSS alerts for this patient.</div>'; return; }
+    pane.innerHTML = `<div class="card">` + alerts.map(a=>`
+      <div class="cdss-row">
+        <div style="flex:1">
+          ${severityBadge(a.severity)}
+          <span style="font-size:.82rem;margin-left:6px">${esc(a.message)}</span>
+          <div class="cdss-meta">${fmtDate(a.createdat)} · Triggered by: ${esc(a.triggeredby||'—')}</div>
+        </div>
+        ${!a.acknowledged
+          ? `<button class="btn sm success" onclick="ackAlert(${a.id},'patient')">Acknowledge</button>`
+          : `<span style="color:var(--green);font-size:.75rem">✓ Acked</span>`}
+      </div>`).join('') + `</div>`;
+  } catch (err) { pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+async function ackAlert(alertId, ctx) {
+  try {
+    await api(`/api/cdss/alerts/${alertId}/acknowledge`, { method:'POST' });
+    toast('Alert acknowledged', 'ok');
+    if (ctx === 'patient' && currentPatient) renderTabCDSSPatient(currentPatient.id);
+    else renderCDSS();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── CDSS GLOBAL VIEW ──────────────────────────────────────────────────────────
+async function renderCDSS() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn sm" onclick="renderCDSS()">↻ Refresh</button>`;
+  try {
+    const alerts = await api('/api/cdss/alerts');
+    const unacked   = alerts.filter(a=>!a.acknowledged);
+    const critical  = unacked.filter(a=>a.severity==='critical');
+    el.innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="stat-val">${alerts.length}</div><div class="stat-label">Total Alerts</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--orange)">${unacked.length}</div><div class="stat-label">Unacknowledged</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--red)">${critical.length}</div><div class="stat-label">Critical</div></div>
+      </div>
+      <div class="filter-bar">
+        <select id="f-sev" onchange="filterAlerts()">
+          <option value="">All Severities</option>
+          <option value="critical">Critical</option><option value="warning">Warning</option>
+        </select>
+        <select id="f-acked" onchange="filterAlerts()">
+          <option value="">All</option>
+          <option value="0">Unacknowledged</option><option value="1">Acknowledged</option>
+        </select>
+      </div>
+      <div class="card" id="cdss-list">
+        ${!alerts.length ? '<div class="empty">No CDSS alerts.</div>' :
+          alerts.map(a=>`
+            <div class="cdss-row" data-sev="${esc(a.severity)}" data-acked="${a.acknowledged?1:0}">
+              <div style="flex:1">
+                ${severityBadge(a.severity)}
+                <strong style="font-size:.82rem;margin-left:6px">${esc(a.message)}</strong>
+                <div class="cdss-meta">
+                  Patient: <a href="#" onclick="openPatientChart('${esc(a.patientid)}')" style="color:var(--link)">${esc(a.patientid)}</a>
+                  · Type: ${esc(a.alerttype||'—')} · ${fmtDate(a.createdat)}
+                </div>
+              </div>
+              ${!a.acknowledged
+                ? `<button class="btn sm success" onclick="ackAlert(${a.id},'global')">Acknowledge</button>`
+                : `<span style="color:var(--green);font-size:.75rem">✓ Acked</span>`}
+            </div>`).join('')}
+      </div>`;
+    cdssRefreshTimer = setInterval(renderCDSS, 30000);
+  } catch (err) { el.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+function filterAlerts() {
+  const sev   = document.getElementById('f-sev').value;
+  const acked = document.getElementById('f-acked').value;
+  document.querySelectorAll('#cdss-list .cdss-row').forEach(row => {
+    row.style.display = (!sev||row.dataset.sev===sev) && (acked===''||row.dataset.acked===acked) ? '' : 'none';
+  });
+}
+
+// ── Edit Patient ──────────────────────────────────────────────────────────────
+function prefillEditPatient() {
+  const p = currentPatient;
+  const f = document.getElementById('form-edit-patient');
+  ['firstname','lastname','birthdate','sex','phone','insuranceid'].forEach(k => {
+    const el = f.elements[k]; if (el) el.value = p[k] || '';
+  });
+  openModal('modal-edit-patient');
+}
+async function submitEditPatient(e) {
+  e.preventDefault(); if (!currentPatient) return;
+  const data = formData('form-edit-patient');
+  try {
+    await api(`/api/patients/${currentPatient.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    closeModal('modal-edit-patient');
+    toast('Patient updated', 'ok');
+    openPatientChart(currentPatient.id);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── Delete Patient ────────────────────────────────────────────────────────────
+async function deletePatient(patientId) {
+  if (!confirm('Permanently delete this patient and all records?')) return;
+  try {
+    await api(`/api/patients/${patientId}`, { method:'DELETE' });
+    toast('Patient deleted', 'ok'); nav('patients');
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+renderPatients();
+</script>
+</body>
+</html>

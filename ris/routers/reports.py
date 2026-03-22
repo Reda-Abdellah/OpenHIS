@@ -1,4 +1,7 @@
 import datetime
+import httpx as _httpx
+
+import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -124,6 +127,22 @@ def update_report(report_id: int, body: ReportUpdate):
                    updated_at=datetime('now') WHERE id=?""",
                 (existing["order_id"],),
             )
+        
+        if finalizing:
+            _bridge = os.environ.get("FHIR_BRIDGE_URL", "")
+            if _bridge:
+                try:
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    async def _notify():
+                        async with _httpx.AsyncClient(timeout=3) as _c:
+                            await _c.post(
+                                f"{_bridge}/api/events/report-final",
+                                json={"report_id": report_id,
+                                        "order_id": existing["orderid"]})
+                    loop.create_task(_notify())
+                except Exception:
+                    pass
 
         row = db.execute(_FULL_SQL + "WHERE r.id=?", (report_id,)).fetchone()
     return row_to_dict(row)

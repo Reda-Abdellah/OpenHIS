@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LIS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --card: #161b22; --card-hover: #1c2128; --input: #21262d;
+      --border: #30363d; --text: #e6edf3; --mute: #8b949e;
+      --green: #3fb950; --red: #f85149; --orange: #ffa657; --yellow: #e3b341;
+      --blue: #58a6ff; --purple: #d2a8ff;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; }
+    .shell { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { width: 210px; min-width: 210px; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 0; }
+    .sidebar-logo { padding: 10px 16px 16px; font-size: .9rem; font-weight: 700; color: var(--green); letter-spacing: .02em; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 8px 16px; cursor: pointer; border-left: 3px solid transparent; transition: all .13s; font-size: .82rem; color: var(--mute); text-decoration: none; user-select: none; }
+    .nav-item:hover { background: var(--card-hover); color: var(--text); }
+    .nav-item.active { border-left-color: var(--green); color: var(--green); background: rgba(63,185,80,.07); }
+    .nav-icon { font-size: 1rem; width: 18px; text-align: center; }
+    .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+    .topbar { padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; background: var(--card); position: sticky; top: 0; z-index: 5; }
+    .topbar h2 { font-size: .93rem; font-weight: 600; flex: 1; }
+    .content { padding: 20px 24px; flex: 1; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 16px; margin-bottom: 14px; }
+    .card-title { font-size: .7rem; font-weight: 700; color: var(--mute); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+    .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 14px 18px; min-width: 110px; flex: 1; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; margin-bottom: 2px; }
+    .stat-label { font-size: .7rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    .tbl-wrap { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    thead tr { background: var(--card); }
+    thead th { padding: 8px 12px; text-align: left; font-size: .68rem; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid #1a1e25; transition: background .12s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--card-hover); }
+    td { padding: 8px 12px; vertical-align: middle; }
+    .btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: .78rem; cursor: pointer; font-family: inherit; transition: all .13s; text-decoration: none; user-select: none; }
+    .btn:hover { background: var(--card-hover); }
+    .btn.pri { background: #162316; border-color: #2a3d2a; color: var(--green); }
+    .btn.pri:hover { background: #1e2f1e; }
+    .btn.blue { background: #162040; border-color: #2a4a90; color: var(--blue); }
+    .btn.blue:hover { background: #1c2a58; }
+    .btn.danger { background: #200e10; border-color: #3d1820; color: var(--red); }
+    .btn.danger:hover { background: #2a1015; }
+    .btn.warn { background: #201a10; border-color: #5a3a00; color: var(--orange); }
+    .btn.warn:hover { background: #2a2010; }
+    .btn.sm { padding: 3px 10px; font-size: .72rem; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: .68rem; font-weight: 600; line-height: 1.5; }
+    .b-collected  { background: #162040; color: var(--blue);   border: 1px solid #2a4a90; }
+    .b-received   { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-pending    { background: #1a1e30; color: #7b90d4;       border: 1px solid #2a3558; }
+    .b-PENDING    { background: #1a1e30; color: #7b90d4;       border: 1px solid #2a3558; }
+    .b-INPROGRESS { background: #162040; color: var(--blue);   border: 1px solid #2a4a90; animation: pulse 1.4s infinite; }
+    .b-COMPLETED  { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-preliminary{ background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
+    .b-final      { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-running    { background: #162040; color: var(--blue);   border: 1px solid #2a4a90; animation: pulse 1.4s infinite; }
+    .b-completed  { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
+    .b-H  { background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
+    .b-HH { background: #200e10; color: var(--red);    border: 1px solid #3d1820; }
+    .b-L  { background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
+    .b-LL { background: #200e10; color: var(--red);    border: 1px solid #3d1820; }
+    .b-normal { background: #162316; color: var(--green); border: 1px solid #2a3d2a; }
+    .b-pass   { background: #162316; color: var(--green); border: 1px solid #2a3d2a; }
+    .b-warn   { background: #201a10; color: var(--yellow);border: 1px solid #4a3a00; }
+    .b-reject { background: #200e10; color: var(--red);   border: 1px solid #3d1820; }
+    .b-ROUTINE{ background: #1a1e30; color: #7b90d4;      border: 1px solid #2a3558; }
+    .b-URGENT { background: #201a10; color: var(--orange);border: 1px solid #5a3a00; }
+    .b-STAT   { background: #200e10; color: var(--red);   border: 1px solid #3d1820; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+    .form-group.full { flex: 1; min-width: 200px; }
+    .form-group label { font-size: .68rem; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    input, select, textarea { background: var(--input); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 6px 10px; font-size: .8rem; font-family: inherit; outline: none; transition: border .13s; width: 100%; }
+    input:focus, select:focus { border-color: var(--green); }
+    select option { background: var(--card); }
+    textarea { resize: vertical; min-height: 56px; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100; display: none; align-items: flex-start; justify-content: center; padding: 24px; overflow-y: auto; }
+    .overlay.open { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 9px; width: 100%; max-width: 660px; overflow: hidden; margin: auto; }
+    .modal.wide { max-width: 860px; }
+    .modal-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .modal-header h3 { flex: 1; font-size: .9rem; font-weight: 600; }
+    .modal-body { padding: 18px 20px; max-height: 78vh; overflow-y: auto; }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+    .filter-bar select, .filter-bar input { height: 30px; padding: 0 8px; font-size: .78rem; width: auto; }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; border-radius: 6px; font-size: .8rem; border: 1px solid; z-index: 200; max-width: 340px; display: none; }
+    .toast.ok   { background: #0d180d; border-color: #2a3d2a; color: var(--green); }
+    .toast.err  { background: #180d0d; border-color: #3d1a1a; color: var(--red); }
+    .toast.info { background: #0d1220; border-color: #2a3a60; color: var(--blue); }
+    .empty { padding: 36px; text-align: center; color: var(--mute); font-size: .85rem; }
+    .flex-center { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } .sidebar { width: 52px; min-width: 52px; } .nav-item span:not(.nav-icon) { display: none; } }
+    .result-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1a1e25; }
+    .result-row:last-child { border-bottom: none; }
+    .result-analyte { width: 120px; font-weight: 600; font-size: .8rem; }
+    .result-val { width: 80px; font-size: .82rem; }
+    .result-ref { width: 100px; font-size: .72rem; color: var(--mute); }
+    input.result-input { width: 90px; padding: 3px 7px; font-size: .8rem; }
+    .progress-bar-wrap { background: #1a1e25; border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden; }
+    .progress-bar { background: var(--green); height: 100%; transition: width .4s; border-radius: 4px; }
+    .custody-row { font-size: .75rem; color: var(--mute); padding: 3px 0; display: flex; gap: 10px; }
+    .custody-row strong { color: var(--text); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+    .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { padding: 7px 14px; font-size: .78rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--mute); transition: all .13s; user-select: none; }
+    .tab:hover { color: var(--text); }
+    .tab.active { border-bottom-color: var(--green); color: var(--green); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    .checkbox-cell input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--green); }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">🧬 LIS</div>
+    <a class="nav-item active" data-view="specimens" onclick="nav('specimens')">
+      <span class="nav-icon">🧪</span> <span>Specimens</span>
+    </a>
+    <a class="nav-item" data-view="orders" onclick="nav('orders')">
+      <span class="nav-icon">📋</span> <span>Orders</span>
+    </a>
+    <a class="nav-item" data-view="instruments" onclick="nav('instruments')">
+      <span class="nav-icon">⚙️</span> <span>Instruments</span>
+    </a>
+    <a class="nav-item" data-view="results" onclick="nav('results')">
+      <span class="nav-icon">📊</span> <span>Results</span>
+    </a>
+    <a class="nav-item" data-view="qc" onclick="nav('qc')">
+      <span class="nav-icon">✅</span> <span>QC Monitor</span>
+    </a>
+    <a class="nav-item" data-view="patients" onclick="nav('patients')">
+      <span class="nav-icon">👥</span> <span>Patients</span>
+    </a>
+    <div style="flex:1"></div>
+    <a class="nav-item" href="docs" target="_blank" style="font-size:.75rem">
+      <span class="nav-icon">📖</span> <span>API Docs</span>
+    </a>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Specimens</h2>
+      <div id="topbar-actions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ MODALS ═══════════════════════ -->
+
+<!-- Accession New Specimen -->
+<div class="overlay" id="modal-accession">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Accession New Specimen</h3>
+      <button class="btn sm" onclick="closeModal('modal-accession')">Close</button>
+    </div>
+    <div class="modal-body">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title">Step 1 — Find or Register Patient</div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Search by MRN or Name</label>
+            <input id="acc-patient-search" placeholder="Type MRN or name…" oninput="searchLabPatients()">
+          </div>
+          <button type="button" class="btn pri" onclick="searchLabPatients()" style="align-self:flex-end">Search</button>
+        </div>
+        <div id="acc-patient-results" style="margin-top:6px"></div>
+        <div id="acc-selected-patient" style="margin-top:8px;font-size:.82rem;color:var(--green)"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Step 2 — Specimen Details</div>
+        <form id="form-accession" onsubmit="submitAccession(event)">
+          <div class="form-row">
+            <div class="form-group full">
+              <label>Specimen Type *</label>
+              <select name="specimen_type" required>
+                <option value="blood">Blood</option><option value="urine">Urine</option>
+                <option value="csf">CSF</option><option value="swab">Swab</option><option value="tissue">Tissue</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label>Collection Date</label>
+              <input name="collectiondate" type="datetime-local">
+            </div>
+            <div class="form-group full">
+              <label>Collected By</label>
+              <input name="collectedby" placeholder="Nurse / Phlebotomist name">
+            </div>
+          </div>
+          <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+            <button type="button" class="btn" onclick="closeModal('modal-accession')">Cancel</button>
+            <button type="submit" class="btn pri" id="btn-accession-submit" disabled>Accession Specimen</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receive Specimen -->
+<div class="overlay" id="modal-receive">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Receive Specimen</h3>
+      <button class="btn sm" onclick="closeModal('modal-receive')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-receive" onsubmit="submitReceive(event)">
+        <p id="receive-accession-label" style="color:var(--mute);font-size:.82rem;margin-bottom:12px"></p>
+        <div class="form-row">
+          <div class="form-group full"><label>Received By</label><input name="receivedby" placeholder="Lab technician name"></div>
+          <div class="form-group full"><label>Lab Location</label><input name="location" placeholder="e.g. Hematology Lab"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-receive')">Cancel</button>
+          <button type="submit" class="btn pri">Confirm Receipt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Specimen Detail -->
+<div class="overlay" id="modal-specimen-detail">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="specimen-detail-title">Specimen Detail</h3>
+      <button class="btn sm" onclick="closeModal('modal-specimen-detail')">Close</button>
+    </div>
+    <div class="modal-body" id="specimen-detail-body"></div>
+  </div>
+</div>
+
+<!-- New Lab Order -->
+<div class="overlay" id="modal-new-order">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>New Lab Order</h3>
+      <button class="btn sm" onclick="closeModal('modal-new-order')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-new-order" onsubmit="submitNewOrder(event)">
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Specimen (Accession #) *</label>
+            <input id="order-spec-search" placeholder="Type accession or patient name…" oninput="searchSpecimens()" autocomplete="off">
+            <div id="order-spec-results" style="margin-top:4px"></div>
+            <input type="hidden" name="specimenid" id="order-specimenid-hidden">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Test Panel *</label>
+            <select name="testcode" id="order-testcode" required>
+              <option value="">Loading catalog…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Priority</label>
+            <select name="priority">
+              <option value="ROUTINE">Routine</option><option value="URGENT">Urgent</option><option value="STAT">STAT</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>Ordered By</label>
+            <input name="orderedby" placeholder="Dr. ...">
+          </div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-new-order')">Cancel</button>
+          <button type="submit" class="btn pri">Create Order</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Instrument Run -->
+<div class="overlay" id="modal-instrument-run">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="run-modal-title">Run Instrument</h3>
+      <button class="btn sm" onclick="closeModal('modal-instrument-run')">Close</button>
+    </div>
+    <div class="modal-body" id="run-modal-body"></div>
+  </div>
+</div>
+
+<!-- Result Entry & Validation -->
+<div class="overlay" id="modal-results">
+  <div class="modal wide">
+    <div class="modal-header">
+      <h3 id="results-modal-title">Results</h3>
+      <button class="btn sm" onclick="closeModal('modal-results')">Close</button>
+    </div>
+    <div class="modal-body" id="results-modal-body"></div>
+  </div>
+</div>
+
+<!-- Register Lab Patient -->
+<div class="overlay" id="modal-reg-patient">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Register Lab Patient</h3>
+      <button class="btn sm" onclick="closeModal('modal-reg-patient')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-reg-patient" onsubmit="submitRegPatient(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>MRN *</label><input name="mrn" required placeholder="e.g. MRN-001"></div>
+          <div class="form-group full"><label>Full Name *</label><input name="patientname" required placeholder="Last, First"></div>
+          <div class="form-group"><label>Date of Birth</label><input name="patientdob" type="date"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-reg-patient')">Cancel</button>
+          <button type="submit" class="btn pri">Register</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- QC Entry -->
+<div class="overlay" id="modal-qc">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Record QC Entry</h3>
+      <button class="btn sm" onclick="closeModal('modal-qc')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-qc" onsubmit="submitQC(event)">
+        <div class="form-row">
+          <div class="form-group full"><label>Instrument *</label>
+            <select name="instrumentid" id="qc-instrument" required>
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="form-group full"><label>Test Code *</label><input name="testcode" required placeholder="e.g. CBC"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full"><label>Lot Number *</label><input name="lotnumber" required placeholder="e.g. LOT-2026-A"></div>
+          <div class="form-group"><label>QC Level *</label>
+            <select name="qclevel" required>
+              <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Result Value *</label><input name="resultvalue" type="number" step="any" required></div>
+          <div class="form-group"><label>Expected Mean *</label><input name="expectedmean" type="number" step="any" required></div>
+          <div class="form-group"><label>Expected SD *</label><input name="expectedsd" type="number" step="any" min="0.0001" required></div>
+        </div>
+        <div id="qc-preview" style="margin:8px 0;font-size:.82rem;min-height:24px"></div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-qc')">Cancel</button>
+          <button type="submit" class="btn pri">Submit QC</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let selectedAccessionPatient = null;
+let selectedOrderSpecimen   = null;
+let runPollTimer = null;
+let catalog = {};
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const r = await fetch('/lis' + path, opts);
+  if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${t}`); }
+  if (r.status === 204) return null;
+  return r.json();
+}
+function toast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.className = `toast ${type}`; t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3200);
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function fmtDate(s) { return s ? s.replace('T', ' ').slice(0, 16) : '—'; }
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function formData(formId) {
+  const fd = new FormData(document.getElementById(formId)), obj = {};
+  fd.forEach((v, k) => { if (v !== '') obj[k] = v; });
+  return obj;
+}
+function priorityBadge(p) {
+  return `<span class="badge b-${p||'ROUTINE'}">${esc(p||'ROUTINE')}</span>`;
+}
+function statusBadge(s) {
+  return `<span class="badge b-${s}">${esc(s)}</span>`;
+}
+function flagBadge(f) {
+  if (!f || f === 'normal') return `<span class="badge b-normal">normal</span>`;
+  return `<span class="badge b-${f}">${esc(f)}</span>`;
+}
+function westgardBadge(flag) {
+  if (!flag || flag === 'pass') return `<span class="badge b-pass">PASS</span>`;
+  if (flag.includes('2s'))      return `<span class="badge b-warn">${esc(flag)} ⚠</span>`;
+  return `<span class="badge b-reject">${esc(flag)} ✖</span>`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function nav(view) {
+  clearInterval(runPollTimer);
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+  const titles = { specimens:'Specimens', orders:'Lab Orders', instruments:'Instruments', results:'Result Validation', qc:'QC Monitor', patients:'Lab Patients' };
+  document.getElementById('page-title').textContent = titles[view] || view;
+  document.getElementById('topbar-actions').innerHTML = '';
+  ({ specimens:renderSpecimens, orders:renderOrders, instruments:renderInstruments,
+     results:renderResults, qc:renderQC, patients:renderLabPatients }[view] || renderSpecimens)();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPECIMENS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderSpecimens() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn pri" onclick="openAccessionModal()">＋ Accession Specimen</button>`;
+  try {
+    const [specimens, health] = await Promise.all([
+      api('/api/specimens'),
+      api('/api/health')
+    ]);
+    const counts = health.counts || {};
+    el.innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="stat-val">${counts.patients||0}</div><div class="stat-label">Lab Patients</div></div>
+        <div class="stat"><div class="stat-val">${counts.specimens||0}</div><div class="stat-label">Specimens</div></div>
+        <div class="stat"><div class="stat-val">${counts.orders||0}</div><div class="stat-label">Orders</div></div>
+        <div class="stat"><div class="stat-val">${counts.results||0}</div><div class="stat-label">Results</div></div>
+      </div>
+      <div class="filter-bar">
+        <select id="spec-status-filter" onchange="filterSpecimens()">
+          <option value="">All Statuses</option>
+          <option value="collected">Collected</option>
+          <option value="received">Received</option>
+        </select>
+        <input id="spec-search" placeholder="🔍 Search accession or patient…" oninput="filterSpecimens()" style="width:230px">
+      </div>
+      ${!specimens.length ? '<div class="empty">No specimens accessioned yet.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Accession #</th><th>Patient</th><th>MRN</th><th>Type</th><th>Collected</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spec-tbody">
+          ${specimens.map(s=>`<tr data-status="${s.status}" data-text="${esc((s.accession+' '+s.patientname+' '+s.mrn).toLowerCase())}">
+            <td><code style="color:var(--green);font-size:.78rem">${esc(s.accession)}</code></td>
+            <td><strong>${esc(s.patientname||'—')}</strong></td>
+            <td>${esc(s.mrn||'—')}</td>
+            <td>${esc(s.specimen_type)}</td>
+            <td>${fmtDate(s.collectiondate)}</td>
+            <td>${statusBadge(s.status)}</td>
+            <td class="flex-center">
+              ${s.status==='collected'?`<button class="btn sm pri" onclick="openReceiveModal(${s.id},'${esc(s.accession)}')">Receive</button>`:''}
+              <button class="btn sm" onclick="openSpecimenDetail(${s.id})">Detail</button>
+              <button class="btn sm blue" onclick="openNewOrderFromSpecimen(${s.id},'${esc(s.accession)}')">＋ Order</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+
+function filterSpecimens() {
+  const q = (document.getElementById('spec-search').value||'').toLowerCase();
+  const st = document.getElementById('spec-status-filter').value;
+  document.querySelectorAll('#spec-tbody tr').forEach(r => {
+    const okQ  = !q  || r.dataset.text.includes(q);
+    const okSt = !st || r.dataset.status === st;
+    r.style.display = okQ && okSt ? '' : 'none';
+  });
+}
+
+function openAccessionModal() {
+  selectedAccessionPatient = null;
+  document.getElementById('acc-patient-search').value = '';
+  document.getElementById('acc-patient-results').innerHTML = '';
+  document.getElementById('acc-selected-patient').textContent = '';
+  document.getElementById('btn-accession-submit').disabled = true;
+  document.getElementById('form-accession').reset();
+  openModal('modal-accession');
+}
+
+async function searchLabPatients() {
+  const q = document.getElementById('acc-patient-search').value.trim();
+  if (q.length < 2) { document.getElementById('acc-patient-results').innerHTML = ''; return; }
+  try {
+    const pts = await api(`/api/lab-patients?q=${encodeURIComponent(q)}`);
+    const res = document.getElementById('acc-patient-results');
+    if (!pts.length) {
+      res.innerHTML = `<p style="color:var(--mute);font-size:.78rem">No match. <a href="#" onclick="openRegPatientFromAccession()" style="color:var(--green)">Register new patient</a></p>`;
+      return;
+    }
+    res.innerHTML = pts.map(p=>`
+      <div onclick="selectAccessionPatient(${p.id},'${esc(p.patientname)}','${esc(p.mrn)}')"
+           style="padding:6px 10px;cursor:pointer;border-radius:5px;font-size:.82rem;border:1px solid var(--border);margin-bottom:4px;background:var(--input)"
+           onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background='var(--input)'">
+        <strong>${esc(p.patientname)}</strong> <span style="color:var(--mute)">MRN: ${esc(p.mrn)}</span>
+      </div>`).join('');
+  } catch {}
+}
+
+function openRegPatientFromAccession() {
+  document.getElementById('acc-patient-results').innerHTML = '';
+  openModal('modal-reg-patient');
+}
+
+function selectAccessionPatient(id, name, mrn) {
+  selectedAccessionPatient = { id, name, mrn };
+  document.getElementById('acc-selected-patient').innerHTML =
+    `✓ Selected: <strong>${esc(name)}</strong> (MRN: ${esc(mrn)})`;
+  document.getElementById('acc-patient-results').innerHTML = '';
+  document.getElementById('btn-accession-submit').disabled = false;
+}
+
+async function submitAccession(e) {
+  e.preventDefault();
+  if (!selectedAccessionPatient) { toast('Please select a patient first', 'err'); return; }
+  const data = formData('form-accession');
+  data.patient_id = selectedAccessionPatient.id;
+  try {
+    const spec = await api('/api/specimens', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    closeModal('modal-accession');
+    toast(`Specimen accessioned: ${spec.accession}`, 'ok');
+    renderSpecimens();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+function openReceiveModal(specimenId, accession) {
+  document.getElementById('receive-accession-label').textContent = `Receiving specimen: ${accession}`;
+  document.getElementById('form-receive').dataset.specimenid = specimenId;
+  document.getElementById('form-receive').reset();
+  openModal('modal-receive');
+}
+
+async function submitReceive(e) {
+  e.preventDefault();
+  const specimenId = e.target.dataset.specimenid;
+  const data = formData('form-receive');
+  try {
+    await api(`/api/specimens/${specimenId}/receive`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    closeModal('modal-receive');
+    toast('Specimen received in lab', 'ok');
+    renderSpecimens();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+async function openSpecimenDetail(specimenId) {
+  const body = document.getElementById('specimen-detail-body');
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  openModal('modal-specimen-detail');
+  try {
+    const s = await api(`/api/specimens/${specimenId}`);
+    document.getElementById('specimen-detail-title').textContent = `Specimen ${s.accession}`;
+    let custodyRows = '';
+    try {
+      const log = typeof s.custodylog === 'string' ? JSON.parse(s.custodylog) : s.custodylog;
+      custodyRows = (log||[]).map(c=>`<div class="custody-row">
+        <strong>${fmtDate(c.timestamp)}</strong>
+        <span>${esc(c.action)} by ${esc(c.actor||'system')} @ ${esc(c.location||'—')}</span>
+      </div>`).join('') || '<p style="color:var(--mute);font-size:.78rem">No custody log</p>';
+    } catch {}
+    const orders = s.orders || [];
+    body.innerHTML = `
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">Specimen Info</div>
+          ${[['Accession',s.accession],['Type',s.specimen_type],['Status',s.status],
+             ['Patient',s.patientname],['MRN',s.mrn],['EHR ID',s.ehrpatientid||'—'],
+             ['Collected',fmtDate(s.collectiondate)],['Collected By',s.collectedby||'—'],
+             ['Received',fmtDate(s.receiveddate)],['Received By',s.receivedby||'—']]
+            .map(([k,v])=>`<div style="display:flex;padding:3px 0;font-size:.8rem"><span style="color:var(--mute);width:120px">${k}</span><span>${esc(v)}</span></div>`).join('')}
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-title">Chain of Custody</div>
+            ${custodyRows}
+          </div>
+          <div class="card">
+            <div class="card-title">Associated Orders (${orders.length})</div>
+            ${!orders.length ? '<p style="color:var(--mute);font-size:.78rem">None</p>' :
+              `<div class="tbl-wrap" style="margin:0"><table><thead><tr><th>Test</th><th>Priority</th><th>Status</th></tr></thead>
+               <tbody>${orders.map(o=>`<tr><td>${esc(o.testname||o.testcode)}</td><td>${priorityBadge(o.priority)}</td><td>${statusBadge(o.status)}</td></tr>`).join('')}</tbody>
+               </table></div>`}
+          </div>
+        </div>
+      </div>`;
+  } catch (err) { body.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ORDERS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderOrders() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn pri" onclick="openNewOrderModal()">＋ New Order</button>`;
+  await loadCatalog();
+  try {
+    const orders = await api('/api/lab-orders');
+    el.innerHTML = `
+      <div class="filter-bar">
+        <select id="order-status-filter" onchange="filterOrders()">
+          <option value="">All Statuses</option>
+          <option value="PENDING">Pending</option><option value="INPROGRESS">In Progress</option><option value="COMPLETED">Completed</option>
+        </select>
+        <select id="order-priority-filter" onchange="filterOrders()">
+          <option value="">All Priorities</option>
+          <option value="STAT">STAT</option><option value="URGENT">Urgent</option><option value="ROUTINE">Routine</option>
+        </select>
+        <input id="order-search" placeholder="🔍 Patient or accession…" oninput="filterOrders()" style="width:210px">
+      </div>
+      ${!orders.length ? '<div class="empty">No lab orders.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>ID</th><th>Test Panel</th><th>Accession</th><th>Patient</th><th>Priority</th><th>Ordered By</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <tbody id="order-tbody">
+          ${orders.map(o=>`<tr data-status="${o.status}" data-priority="${o.priority}"
+              data-text="${esc((o.testcode+' '+(o.patientname||'')+' '+(o.accession||'')).toLowerCase())}">
+            <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
+            <td><strong>${esc(o.testname||o.testcode)}</strong></td>
+            <td><code style="color:var(--green);font-size:.75rem">${esc(o.accession||'—')}</code></td>
+            <td>${esc(o.patientname||'—')}</td>
+            <td>${priorityBadge(o.priority)}</td>
+            <td>${esc(o.orderedby||'—')}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${fmtDate(o.createdat)}</td>
+            <td><button class="btn sm" onclick="openResultsModal(${o.id},'${esc(o.testname||o.testcode)}','${o.status}')">Results</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+
+function filterOrders() {
+  const st = document.getElementById('order-status-filter').value;
+  const pr = document.getElementById('order-priority-filter').value;
+  const q  = (document.getElementById('order-search').value||'').toLowerCase();
+  document.querySelectorAll('#order-tbody tr').forEach(r => {
+    r.style.display = (!st||r.dataset.status===st) && (!pr||r.dataset.priority===pr) && (!q||r.dataset.text.includes(q)) ? '' : 'none';
+  });
+}
+
+async function loadCatalog() {
+  if (Object.keys(catalog).length) return;
+  try {
+    const raw = await api('/api/lab-orders/catalog');
+    raw.forEach(i => catalog[i.code] = i.name);
+  } catch {}
+}
+
+async function openNewOrderModal() {
+  await loadCatalog();
+  const sel = document.getElementById('order-testcode');
+  sel.innerHTML = Object.entries(catalog).map(([k,v])=>`<option value="${k}">${k} — ${v}</option>`).join('');
+  selectedOrderSpecimen = null;
+  document.getElementById('order-spec-search').value = '';
+  document.getElementById('order-spec-results').innerHTML = '';
+  document.getElementById('order-specimenid-hidden').value = '';
+  document.getElementById('form-new-order').reset();
+  openModal('modal-new-order');
+}
+
+function openNewOrderFromSpecimen(specId, accession) {
+  openNewOrderModal().then(() => {
+    document.getElementById('order-spec-search').value = accession;
+    document.getElementById('order-specimenid-hidden').value = specId;
+    selectedOrderSpecimen = { id: specId, accession };
+    document.getElementById('order-spec-results').innerHTML =
+      `<p style="color:var(--green);font-size:.78rem">✓ ${esc(accession)}</p>`;
+  });
+}
+
+async function searchSpecimens() {
+  const q = document.getElementById('order-spec-search').value.trim();
+  if (q.length < 2) { document.getElementById('order-spec-results').innerHTML = ''; return; }
+  try {
+    const specs = await api('/api/specimens');
+    const filtered = specs.filter(s => s.accession.toLowerCase().includes(q.toLowerCase()) || (s.patientname||'').toLowerCase().includes(q.toLowerCase()));
+    document.getElementById('order-spec-results').innerHTML = filtered.slice(0,5).map(s=>`
+      <div onclick="selectOrderSpecimen(${s.id},'${esc(s.accession)}')"
+           style="padding:5px 10px;cursor:pointer;border-radius:5px;font-size:.78rem;border:1px solid var(--border);margin-bottom:3px;background:var(--input)"
+           onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background='var(--input)'">
+        <code style="color:var(--green)">${esc(s.accession)}</code> — ${esc(s.patientname||'—')} (${esc(s.specimen_type)})
+      </div>`).join('') || '<p style="color:var(--mute);font-size:.78rem">No specimens found</p>';
+  } catch {}
+}
+
+function selectOrderSpecimen(id, accession) {
+  selectedOrderSpecimen = { id, accession };
+  document.getElementById('order-specimenid-hidden').value = id;
+  document.getElementById('order-spec-search').value = accession;
+  document.getElementById('order-spec-results').innerHTML = `<p style="color:var(--green);font-size:.78rem">✓ ${esc(accession)}</p>`;
+}
+
+async function submitNewOrder(e) {
+  e.preventDefault();
+  const data = formData('form-new-order');
+  if (!data.specimenid) { toast('Please select a specimen', 'err'); return; }
+  data.specimenid = parseInt(data.specimenid);
+  try {
+    await api('/api/lab-orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    closeModal('modal-new-order');
+    toast('Lab order created', 'ok');
+    renderOrders();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSTRUMENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderInstruments() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const [instruments, runs, pendingOrders] = await Promise.all([
+      api('/api/instruments'),
+      api('/api/instruments/runs'),
+      api('/api/lab-orders?status=PENDING')
+    ]);
+    const recentRuns = runs.slice(0, 10);
+    el.innerHTML = `
+      <div class="two-col">
+        <div>
+          <div class="card">
+            <div class="card-title">Available Instruments</div>
+            ${Object.entries(instruments).map(([id,inst])=>`
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1a1e25">
+                <div style="flex:1">
+                  <strong style="font-size:.85rem">${esc(id)}</strong>
+                  <span style="color:var(--mute);font-size:.75rem;margin-left:8px">${esc(inst.type)}</span>
+                  <div style="color:var(--mute);font-size:.72rem;margin-top:2px">Tests: ${(inst.tests||[]).join(', ')}</div>
+                </div>
+                <button class="btn sm pri" onclick="openRunModal('${esc(id)}','${esc(inst.type)}')">▶ Run</button>
+              </div>`).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Recent Runs</div>
+          ${!recentRuns.length ? '<div class="empty" style="padding:16px">No runs yet</div>' :
+            `<div class="tbl-wrap" style="margin:0"><table>
+              <thead><tr><th>Instrument</th><th>Type</th><th>Started</th><th>Orders</th><th>Status</th></tr></thead>
+              <tbody>${recentRuns.map(r=>`<tr>
+                <td>${esc(r.instrumentid)}</td>
+                <td>${esc(r.instrumenttype)}</td>
+                <td>${fmtDate(r.runstarted)}</td>
+                <td>${r.ordersprocessed}</td>
+                <td>${statusBadge(r.status)}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>`}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pending Orders (${pendingOrders.length})</div>
+        ${!pendingOrders.length ? '<p style="color:var(--mute);font-size:.82rem">No pending orders</p>' :
+          pendingOrders.slice(0,8).map(o=>`
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a1e25;font-size:.8rem">
+              <code style="color:var(--mute);width:28px">#${o.id}</code>
+              <strong>${esc(o.testname||o.testcode)}</strong>
+              <span style="color:var(--mute)">${esc(o.patientname||'—')}</span>
+              ${priorityBadge(o.priority)}
+            </div>`).join('') + (pendingOrders.length>8?`<p style="color:var(--mute);font-size:.72rem;margin-top:6px">…and ${pendingOrders.length-8} more</p>`:'')}
+      </div>`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+
+async function openRunModal(instrumentId, instrumentType) {
+  const body = document.getElementById('run-modal-body');
+  document.getElementById('run-modal-title').textContent = `Run: ${instrumentId} (${instrumentType})`;
+  body.innerHTML = '<div class="empty">Loading pending orders…</div>';
+  openModal('modal-instrument-run');
+  try {
+    const orders = await api('/api/lab-orders?status=PENDING');
+    if (!orders.length) {
+      body.innerHTML = '<div class="empty">No PENDING orders to process.</div>';
+      return;
+    }
+    body.innerHTML = `
+      <p style="color:var(--mute);font-size:.82rem;margin-bottom:10px">Select orders to process on <strong style="color:var(--text)">${instrumentId}</strong>:</p>
+      <div class="flex-center" style="margin-bottom:8px">
+        <button class="btn sm" onclick="selectAllOrders(true)">Select All</button>
+        <button class="btn sm" onclick="selectAllOrders(false)">Deselect All</button>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th class="checkbox-cell"><input type="checkbox" id="chk-all" onchange="selectAllOrders(this.checked)"></th>
+          <th>ID</th><th>Test</th><th>Patient</th><th>Accession</th><th>Priority</th></tr></thead>
+        <tbody id="run-orders-tbody">
+          ${orders.map(o=>`<tr>
+            <td class="checkbox-cell"><input type="checkbox" class="order-chk" value="${o.id}"></td>
+            <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
+            <td>${esc(o.testname||o.testcode)}</td>
+            <td>${esc(o.patientname||'—')}</td>
+            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession||'—')}</code></td>
+            <td>${priorityBadge(o.priority)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div id="run-progress" style="margin-top:10px"></div>
+      <div class="form-row" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn" onclick="closeModal('modal-instrument-run')">Cancel</button>
+        <button class="btn pri" id="btn-run-start" onclick="startInstrumentRun('${esc(instrumentId)}')">▶ Start Run</button>
+      </div>`;
+  } catch (err) { body.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+
+function selectAllOrders(checked) {
+  document.querySelectorAll('.order-chk').forEach(c => c.checked = checked);
+  const chkAll = document.getElementById('chk-all');
+  if (chkAll) chkAll.checked = checked;
+}
+
+async function startInstrumentRun(instrumentId) {
+  const orderIds = [...document.querySelectorAll('.order-chk:checked')].map(c => parseInt(c.value));
+  if (!orderIds.length) { toast('Select at least one order', 'err'); return; }
+  const btn = document.getElementById('btn-run-start');
+  btn.disabled = true; btn.textContent = 'Running…';
+  const prog = document.getElementById('run-progress');
+  prog.innerHTML = `<p style="color:var(--mute);font-size:.82rem">Starting run on ${orderIds.length} order(s)…</p>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="run-pbar" style="width:10%"></div></div>`;
+  try {
+    const resp = await api('/api/instruments/run', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ instrumentid: instrumentId, orderids: orderIds }) });
+    toast(`Run queued: ${resp.ordercount} orders`, 'ok');
+    let pct = 15;
+    const bar = document.getElementById('run-pbar');
+    runPollTimer = setInterval(async () => {
+      try {
+        const runs = await api(`/api/instruments/runs?instrumentid=${instrumentId}`);
+        const latest = runs[0];
+        if (!latest) return;
+        if (latest.status === 'completed') {
+          clearInterval(runPollTimer);
+          if (bar) bar.style.width = '100%';
+          prog.innerHTML += `<p style="color:var(--green);font-size:.82rem;margin-top:6px">✓ Run completed — ${latest.ordersprocessed} orders processed.</p>`;
+          btn.textContent = '✓ Done'; btn.disabled = false;
+          renderInstruments();
+        } else {
+          pct = Math.min(pct + 15, 85);
+          if (bar) bar.style.width = pct + '%';
+        }
+      } catch {}
+    }, 1500);
+  } catch (err) {
+    btn.disabled = false; btn.textContent = '▶ Start Run';
+    toast('Error: ' + err.message, 'err');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESULTS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderResults() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn sm" onclick="renderResults()">↻ Refresh</button>`;
+  try {
+    const orders = await api('/api/lab-orders');
+    const withResults = orders.filter(o => o.status === 'INPROGRESS' || o.status === 'COMPLETED');
+    el.innerHTML = `
+      <div class="filter-bar">
+        <select id="res-status-filter" onchange="filterResultOrders()">
+          <option value="">All</option>
+          <option value="INPROGRESS">In Progress</option>
+          <option value="COMPLETED">Completed</option>
+        </select>
+        <input id="res-search" placeholder="🔍 Patient or test…" oninput="filterResultOrders()" style="width:210px">
+      </div>
+      ${!withResults.length ? '<div class="empty">No orders with results yet. Run an instrument first.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Order #</th><th>Test</th><th>Patient</th><th>Accession</th><th>Priority</th><th>Order Status</th><th>Updated</th><th></th></tr></thead>
+        <tbody id="res-tbody">
+          ${withResults.map(o=>`<tr data-status="${o.status}"
+              data-text="${esc(((o.patientname||'')+' '+(o.testcode||'')).toLowerCase())}">
+            <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
+            <td><strong>${esc(o.testname||o.testcode)}</strong></td>
+            <td>${esc(o.patientname||'—')}</td>
+            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession||'—')}</code></td>
+            <td>${priorityBadge(o.priority)}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${fmtDate(o.updatedat)}</td>
+            <td><button class="btn sm pri" onclick="openResultsModal(${o.id},'${esc(o.testname||o.testcode)}','${o.status}')">
+              ${o.status==='INPROGRESS'?'✏️ Validate':'👁 View'}
+            </button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+
+function filterResultOrders() {
+  const st = document.getElementById('res-status-filter').value;
+  const q  = (document.getElementById('res-search').value||'').toLowerCase();
+  document.querySelectorAll('#res-tbody tr').forEach(r => {
+    r.style.display = (!st||r.dataset.status===st) && (!q||r.dataset.text.includes(q)) ? '' : 'none';
+  });
+}
+
+async function openResultsModal(orderId, testName, orderStatus) {
+  const body = document.getElementById('results-modal-body');
+  document.getElementById('results-modal-title').textContent = `Results — ${testName} (Order #${orderId})`;
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  openModal('modal-results');
+  try {
+    const results = await api(`/api/results/${orderId}`);
+    const canValidate = orderStatus === 'INPROGRESS';
+    if (!results.length) {
+      body.innerHTML = '<div class="empty">No results recorded for this order.</div>';
+      return;
+    }
+    const allFinal = results.every(r => r.status === 'final');
+    body.innerHTML = `
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">${results.length} Analyte${results.length!==1?'s':''} · ${allFinal?'<span style="color:var(--green)">All Final</span>':'<span style="color:var(--orange)">Preliminary</span>'}</div>
+        ${results.map(r=>`
+          <div class="result-row">
+            <div class="result-analyte">${esc(r.analyte)}</div>
+            <div class="result-val">
+              ${canValidate && r.status==='preliminary'
+                ? `<input class="result-input" id="val-${r.id}" value="${esc(r.value)}" style="width:80px">`
+                : `<strong>${esc(r.value)}</strong>`}
+              <span style="color:var(--mute);font-size:.72rem"> ${esc(r.unit||'')}</span>
+            </div>
+            <div class="result-ref">${esc(r.referencerange||'')}</div>
+            <div style="width:80px">${flagBadge(r.flag)}</div>
+            <div style="width:70px">${statusBadge(r.status)}</div>
+            ${canValidate && r.status==='preliminary'
+              ? `<button class="btn sm pri" onclick="validateSingleResult(${r.id},${orderId},'${esc(testName)}','${orderStatus}')">Validate</button>`
+              : r.status==='final'?`<span style="color:var(--green);font-size:.72rem">✓ ${esc(r.validatedby||'')}</span>`:''}
+          </div>`).join('')}
+      </div>
+      ${canValidate ? `
+        <div class="flex-center" style="margin-top:14px;justify-content:flex-end">
+          <span style="color:var(--mute);font-size:.78rem">Validated by:</span>
+          <input id="validated-by" placeholder="Technician name" style="width:160px">
+          <button class="btn pri" onclick="validateAllResults(${orderId},'${esc(testName)}','${orderStatus}')">✓ Finalise All</button>
+        </div>` : ''}`;
+  } catch (err) { body.innerHTML = `<div class="empty" style="color:var(--red)">${esc(err.message)}</div>`; }
+}
+
+async function validateSingleResult(resultId, orderId, testName, orderStatus) {
+  try {
+    const validatedby = document.getElementById('validated-by')?.value || '';
+    await api(`/api/results/${resultId}/validate`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ validatedby }) });
+    toast('Result validated', 'ok');
+    openResultsModal(orderId, testName, orderStatus);
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+async function validateAllResults(orderId, testName) {
+  const validatedby = document.getElementById('validated-by')?.value || '';
+  try {
+    const results = await api(`/api/results/${orderId}`);
+    const prelim = results.filter(r => r.status === 'preliminary');
+    if (!prelim.length) { toast('No preliminary results to validate', 'info'); return; }
+    for (const r of prelim) {
+      const newVal = document.getElementById(`val-${r.id}`)?.value;
+      if (newVal && newVal !== r.value) {
+        // submit updated value first
+        await api('/api/results', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ orderid: orderId, results: [{ analyte: r.analyte, value: newVal, unit: r.unit, referencerange: r.referencerange }], validatedby, status: 'final' }) });
+      } else {
+        await api(`/api/results/${r.id}/validate`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ validatedby }) });
+      }
+    }
+    toast('All results finalised — FHIR bridge notified', 'ok');
+    closeModal('modal-results');
+    renderResults();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QC MONITOR
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderQC() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn pri" onclick="openQCModal()">＋ Record QC Entry</button>`;
+  try {
+    const [records, instruments] = await Promise.all([
+      api('/api/qc'),
+      api('/api/instruments')
+    ]);
+    const passes = records.filter(r=>r.pass===1).length;
+    const warns  = records.filter(r=>r.westgardflag&&r.westgardflag.includes('2s')).length;
+    const rejects= records.filter(r=>r.pass===0&&r.westgardflag&&!r.westgardflag.includes('2s')).length;
+    el.innerHTML = `
+      <div class="stats">
+        <div class="stat"><div class="stat-val">${records.length}</div><div class="stat-label">Total Records</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--green)">${passes}</div><div class="stat-label">Pass</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--yellow)">${warns}</div><div class="stat-label">Warning</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--red)">${rejects}</div><div class="stat-label">Reject</div></div>
+      </div>
+      <div class="filter-bar">
+        <select id="qc-inst-filter" onchange="filterQC()">
+          <option value="">All Instruments</option>
+          ${Object.keys(instruments).map(k=>`<option value="${k}">${k}</option>`).join('')}
+        </select>
+        <select id="qc-flag-filter" onchange="filterQC()">
+          <option value="">All Results</option>
+          <option value="pass">Pass</option>
+          <option value="warn">Warning</option>
+          <option value="reject">Reject</option>
+        </select>
+      </div>
+      ${!records.length ? '<div class="empty">No QC records yet.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Instrument</th><th>Test</th><th>Lot</th><th>Level</th><th>Result</th><th>Mean ± SD</th><th>Westgard Flag</th><th>Recorded</th></tr></thead>
+        <tbody id="qc-tbody">
+          ${records.map(r=>{
+            const flag = r.westgardflag||'pass';
+            const flagCls = flag==='pass'?'pass': flag.includes('2s')?'warn':'reject';
+            return `<tr data-inst="${esc(r.instrumentid)}" data-flag="${flagCls}">
+              <td>${esc(r.instrumentid)}</td>
+              <td>${esc(r.testcode)}</td>
+              <td><code style="font-size:.72rem">${esc(r.lotnumber)}</code></td>
+              <td>${esc(r.qclevel)}</td>
+              <td><strong>${r.resultvalue?.toFixed(2)}</strong></td>
+              <td style="color:var(--mute)">${r.expectedmean?.toFixed(2)} ± ${r.expectedsd?.toFixed(2)}</td>
+              <td>${westgardBadge(flag)}</td>
+              <td>${fmtDate(r.recordedat)}</td>
+            </tr>`;}).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+
+function filterQC() {
+  const inst = document.getElementById('qc-inst-filter').value;
+  const flag = document.getElementById('qc-flag-filter').value;
+  document.querySelectorAll('#qc-tbody tr').forEach(r => {
+    r.style.display = (!inst||r.dataset.inst===inst) && (!flag||r.dataset.flag===flag) ? '' : 'none';
+  });
+}
+
+async function openQCModal() {
+  try {
+    const instruments = await api('/api/instruments');
+    document.getElementById('qc-instrument').innerHTML =
+      Object.keys(instruments).map(k=>`<option value="${k}">${k}</option>`).join('');
+  } catch {}
+  document.getElementById('form-qc').reset();
+  document.getElementById('qc-preview').innerHTML = '';
+  ['resultvalue','expectedmean','expectedsd'].forEach(id => {
+    const el = document.getElementById('form-qc').elements[id];
+    if (el) el.addEventListener('input', previewWestgard);
+  });
+  openModal('modal-qc');
+}
+
+function previewWestgard() {
+  const f = document.getElementById('form-qc').elements;
+  const val  = parseFloat(f.resultvalue?.value);
+  const mean = parseFloat(f.expectedmean?.value);
+  const sd   = parseFloat(f.expectedsd?.value);
+  if (isNaN(val)||isNaN(mean)||isNaN(sd)||sd===0) { document.getElementById('qc-preview').innerHTML=''; return; }
+  const z = Math.abs((val - mean) / sd);
+  let flag, color;
+  if (z > 3)      { flag = '1-3s REJECT'; color = 'var(--red)'; }
+  else if (z > 2) { flag = '1-2s WARNING'; color = 'var(--yellow)'; }
+  else            { flag = 'PASS'; color = 'var(--green)'; }
+  document.getElementById('qc-preview').innerHTML =
+    `<span style="color:${color}">Preview → z=${z.toFixed(2)} — <strong>${flag}</strong></span>`;
+}
+
+async function submitQC(e) {
+  e.preventDefault();
+  const raw = formData('form-qc');
+  const data = { ...raw, resultvalue: parseFloat(raw.resultvalue), expectedmean: parseFloat(raw.expectedmean), expectedsd: parseFloat(raw.expectedsd) };
+  try {
+    await api('/api/qc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    closeModal('modal-qc');
+    toast('QC entry recorded', 'ok');
+    renderQC();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAB PATIENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderLabPatients() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('topbar-actions').innerHTML =
+    `<button class="btn pri" onclick="openModal('modal-reg-patient')">＋ Register Patient</button>`;
+  try {
+    const pts = await api('/api/lab-patients');
+    el.innerHTML = `
+      <div class="filter-bar">
+        <input id="pts-search" placeholder="🔍 Search name or MRN…" oninput="filterLabPts()" style="width:230px">
+      </div>
+      ${!pts.length ? '<div class="empty">No lab patients registered.</div>' : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>MRN</th><th>Name</th><th>DOB</th><th>EHR ID</th></tr></thead>
+        <tbody id="pts-tbody">
+          ${pts.map(p=>`<tr data-text="${esc((p.mrn+' '+p.patientname).toLowerCase())}">
+            <td><code style="color:var(--green);font-size:.78rem">${esc(p.mrn)}</code></td>
+            <td><strong>${esc(p.patientname)}</strong></td>
+            <td>${esc(p.patientdob||'—')}</td>
+            <td style="color:var(--mute);font-size:.75rem">${esc(p.ehrpatientid||'—')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}`;
+  } catch (e) { el.innerHTML = `<div class="empty" style="color:var(--red)">Error: ${esc(e.message)}</div>`; }
+}
+function filterLabPts() {
+  const q = document.getElementById('pts-search').value.toLowerCase();
+  document.querySelectorAll('#pts-tbody tr').forEach(r => r.style.display = r.dataset.text.includes(q) ? '' : 'none');
+}
+async function submitRegPatient(e) {
+  e.preventDefault();
+  try {
+    await api('/api/lab-patients', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(formData('form-reg-patient')) });
+    closeModal('modal-reg-patient');
+    document.getElementById('form-reg-patient').reset();
+    toast('Patient registered', 'ok');
+    renderLabPatients();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+renderSpecimens();
+</script>
+</body>
+</html>

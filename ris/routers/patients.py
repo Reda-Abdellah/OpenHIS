@@ -1,72 +1,119 @@
-import os
-import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 
-router      = APIRouter(prefix="/api/patients", tags=["patients"])
-ORTHANC_URL = os.environ.get("ORTHANC_URL", "http://orthanc:8042")
+router = APIRouter(prefix="/api/patients", tags=["patients"])
+
+
+class PatientCreate(BaseModel):
+    orthancid:   Optional[str] = None
+    patientid:   str                    # MRN
+    patientname: str
+    birthdate:   Optional[str] = None
+    sex:         Optional[str] = None
+
+
+class PatientUpdate(BaseModel):
+    patientname: Optional[str] = None
+    birthdate:   Optional[str] = None
+    sex:         Optional[str] = None
 
 
 @router.get("")
-def list_patients():
+def list_patients(q: Optional[str] = Query(None)):
     with get_db() as db:
-        rows = db.execute(
-            "SELECT * FROM patients ORDER BY patient_name"
-        ).fetchall()
-    return rows_to_list(rows)
+        if q:
+            like = f"%{q}%"
+            rows = db.execute(
+                "SELECT * FROM patients WHERE patientname LIKE ? OR patientid LIKE ?"
+                " ORDER BY patientname",
+                (like, like)).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT * FROM patients ORDER BY patientname").fetchall()
+        return rows_to_list(rows)
 
 
-@router.post("/sync")
-async def sync_patients():
-    """Pull all patients from Orthanc and upsert into local DB."""
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            ids_resp = await client.get(f"{ORTHANC_URL}/patients")
-            if ids_resp.status_code != 200:
-                raise HTTPException(502, "Orthanc /patients unreachable")
-            orthanc_ids: list[str] = ids_resp.json()
-
-            details = []
-            for oid in orthanc_ids:
-                r = await client.get(f"{ORTHANC_URL}/patients/{oid}")
-                if r.status_code == 200:
-                    details.append((oid, r.json()))
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Orthanc error: {e}")
-
-    added = updated = 0
+@router.get("/{patient_id}")
+def get_patient(patient_id: int):
     with get_db() as db:
-        for oid, data in details:
-            tags  = data.get("MainDicomTags", {})
-            pid   = tags.get("PatientID",        "")
-            pname = tags.get("PatientName",       "UNKNOWN")
-            dob   = tags.get("PatientBirthDate",  "")
-            sex   = tags.get("PatientSex",        "")
+        row = db.execute(
+            "SELECT * FROM patients WHERE id=?", (patient_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Patient not found")
+        return dict(row)
 
-            # format DOB 19850615 → 1985-06-15
-            if len(dob) == 8:
-                dob = f"{dob[:4]}-{dob[4:6]}-{dob[6:]}"
 
-            existing = db.execute(
-                "SELECT id FROM patients WHERE orthanc_id=?", (oid,)
-            ).fetchone()
+@router.post("", status_code=201)
+def create_patient(body: PatientCreate):
+    with get_db() as db:
+        if db.execute(
+                "SELECT 1 FROM patients WHERE patientid=?",
+                (body.patientid,)).fetchone():
+            raise HTTPException(409, f"MRN {body.patientid} already exists")
+        cur = db.execute(
+            "INSERT INTO patients(orthancid,patientid,patientname,birthdate,sex)"
+            " VALUES(?,?,?,?,?)",
+            (body.orthancid, body.patientid, body.patientname,
+             body.birthdate, body.sex))
+        return row_to_dict(db.execute(
+            "SELECT * FROM patients WHERE id=?", (cur.lastrowid,)).fetchone())
 
-            if existing:
-                db.execute(
-                    """UPDATE patients SET patient_id=?,patient_name=?,
-                       birth_date=?,sex=? WHERE orthanc_id=?""",
-                    (pid, pname, dob, sex, oid),
-                )
-                updated += 1
-            else:
-                db.execute(
-                    """INSERT INTO patients
-                       (orthanc_id, patient_id, patient_name, birth_date, sex)
-                       VALUES (?,?,?,?,?)""",
-                    (oid, pid, pname, dob, sex),
-                )
-                added += 1
 
-    return {"added": added, "updated": updated, "total": len(details)}
+@router.patch("/{patient_id}")
+def update_patient(patient_id: int, body: PatientUpdate):
+    allowed = {"patientname", "birthdate", "sex"}
+    updates = {k: v for k, v in body.model_dump().items()
+               if v is not None and k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+    sets = ", ".join(f"{k}=?" for k in updates)
+    with get_db() as db:
+        db.execute(f"UPDATE patients SET {sets} WHERE id=?",
+                   (*updates.values(), patient_id))
+        row = db.execute(
+            "SELECT * FROM patients WHERE id=?", (patient_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Patient not found")
+        return dict(row)
+
+
+@router.delete("/{patient_id}", status_code=204)
+def delete_patient(patient_id: int):
+    with get_db() as db:
+        db.execute("DELETE FROM patients WHERE id=?", (patient_id,))
+
+
+# ── NEW: receive patient pushed by EHR via FHIR bridge ───────────────────────
+
+class EHRPatientPush(BaseModel):
+    ehr_id:       Optional[str] = None
+    mrn:          str
+    patient_name: str
+    birth_date:   Optional[str] = None
+    sex:          Optional[str] = None
+
+
+@router.post("/from-ehr", status_code=200)
+def upsert_from_ehr(body: EHRPatientPush):
+    """
+    Upsert a patient pushed by the EHR via the FHIR bridge.
+    Matches on MRN (patientid); creates or updates the record.
+    """
+    with get_db() as db:
+        existing = db.execute(
+            "SELECT id FROM patients WHERE patientid=?",
+            (body.mrn,)).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE patients SET patientname=?, birthdate=?, sex=?"
+                " WHERE patientid=?",
+                (body.patient_name, body.birth_date, body.sex, body.mrn))
+            return {"action": "updated", "mrn": body.mrn}
+        db.execute(
+            "INSERT INTO patients(orthancid,patientid,patientname,birthdate,sex)"
+            " VALUES(?,?,?,?,?)",
+            (body.ehr_id or body.mrn, body.mrn,
+             body.patient_name, body.birth_date, body.sex))
+        return {"action": "created", "mrn": body.mrn}

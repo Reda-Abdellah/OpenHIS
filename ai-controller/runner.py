@@ -16,6 +16,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import httpx
 
 import docker
 import docker.errors
@@ -81,6 +82,14 @@ async def run_job(job_id: str):
         )
         log.info(f"Job {job_id} completed in {duration} ms")
         await _maybe_auto_saveback(job_id)
+        _bridge = os.environ.get("FHIR_BRIDGE_URL", "")
+        if _bridge:
+            try:
+                async with httpx.AsyncClient(timeout=3) as _c:
+                    await _c.post(f"{_bridge}/api/events/ai-job-completed",
+                                json={"job_id": job_id})
+            except Exception:
+                pass
     except Exception as exc:
         log.exception(f"Job {job_id} failed: {exc}")
         _set_job_status(job_id, "FAILED", finished_at=_now_iso(), error=str(exc)[:1000])

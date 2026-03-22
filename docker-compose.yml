@@ -10,6 +10,8 @@ volumes:
   ris-data:
   ai-jobs:
   ai-controller-db:
+  ehr-data:
+  lis-data:
 
 services:
 
@@ -42,6 +44,7 @@ services:
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__PYTHON_SCRIPT: /etc/orthanc/plugin.py
       AI_CONTROLLER_URL: http://ai-controller:8000
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005
     volumes:
       - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - ./orthanc/plugin.py:/etc/orthanc/plugin.py:ro
@@ -92,6 +95,7 @@ services:
       DOCKER_NETWORK: pacs-demo_pacs-net
       POC_XRAY_IMAGE: pacs-demo/poc-xray:latest
       POC_CT_IMAGE: pacs-demo/poc-ct:latest
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005
     volumes:
       - ai-jobs:/data/jobs
       - /var/run/docker.sock:/var/run/docker.sock
@@ -129,3 +133,75 @@ services:
     depends_on: [orthanc, ohif, simulator, ris, ai-controller]
     networks: [pacs-net]
     restart: unless-stopped
+
+  ehr:
+    build: ./ehr
+    environment:
+      DBPATH: /data/ehr.db
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005/api
+      RIS_URL: http://ris:8002/api
+      LIS_URL: http://lis:8004/api
+      ROOT_PATH: /ehr
+    volumes:
+      - ehr-data:/data
+    networks:
+      - pacs-net
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    healthcheck:
+      test: [CMD, curl, -f, "http://localhost:8003/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  lis:
+    build: ./lis
+    environment:
+      DBPATH: /data/lis.db
+      EHR_URL: http://ehr:8003/api
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005/api
+      ROOT_PATH: /lis
+    volumes:
+      - lis-data:/data
+    networks:
+      - pacs-net
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, curl, -f, "http://localhost:8004/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  fhir-bridge:
+    build: ./fhir-bridge
+    environment:
+      EHR_URL: http://ehr:8003/api
+      RIS_URL: http://ris:8002/api
+      LIS_URL: http://lis:8004/api
+      ORTHANC_URL: http://orthanc:8042
+      AI_CONTROLLER_URL: http://ai-controller:8000/api
+      FHIR_SERVER_URL: http://fhir-server:8080/fhir    # set empty to disable
+      FHIR_ENABLED: "true"
+    networks:
+      - pacs-net
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, curl, -f, "http://localhost:8005/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  fhir-server:
+    image: hapiproject/hapi:latest
+    volumes:
+      - ./fhir/application.yaml:/data/hapi/application.yaml:ro
+    environment:
+      SPRING_CONFIG_LOCATION: file:///data/hapi/application.yaml
+    networks:
+      - pacs-net
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    profiles:
+      - fhir    # opt-in: docker compose --profile fhir up -d
