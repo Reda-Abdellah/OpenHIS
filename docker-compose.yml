@@ -130,6 +130,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
+      - ./portal/index.html:/usr/share/nginx/html/index.html:ro
     depends_on: [orthanc, ohif, simulator, ris, ai-controller]
     networks: [pacs-net]
     restart: unless-stopped

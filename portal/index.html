@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PACS Demo — Platform Portal</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --bg-card: #161b22; --bg-hover: #1c2128;
+      --border: #30363d; --text: #e6edf3; --mute: #8b949e;
+      --link: #58a6ff; --green: #3fb950; --orange: #ffa657; --purple: #d2a8ff;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+      padding: 48px 24px 64px;
+    }
+    .hero { text-align: center; margin-bottom: 48px; }
+    .hero h1 { font-size: 1.7rem; font-weight: 700; color: var(--link); margin-bottom: 8px; }
+    .hero p  { font-size: .9rem; color: var(--mute); max-width: 520px; line-height: 1.65; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px; width: 100%; max-width: 1000px;
+    }
+    a.card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px 22px; text-decoration: none; color: inherit;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color .15s, background .15s;
+    }
+    a.card:hover { background: var(--bg-hover); border-color: var(--link); }
+    .card-header { display: flex; align-items: center; gap: 10px; }
+    .card-icon { font-size: 1.4rem; width: 32px; text-align: center; }
+    .card-name { font-size: .92rem; font-weight: 600; color: var(--text); }
+    .card-path { font-size: .72rem; color: var(--link); font-family: monospace; }
+    .card-desc { font-size: .8rem; color: var(--mute); line-height: 1.55; flex: 1; }
+    .card-tag {
+      display: inline-block; font-size: .65rem; font-weight: 600;
+      padding: 2px 8px; border-radius: 10px; width: fit-content; border: 1px solid;
+    }
+    .tag-clinical  { color: #3fb950; border-color: #2a3d2a; background: #162316; }
+    .tag-imaging   { color: #58a6ff; border-color: #2a4a90; background: #162040; }
+    .tag-ai        { color: #d2a8ff; border-color: #3a2060; background: #1a1a2e; }
+    .tag-infra     { color: #ffa657; border-color: #5a3a00; background: #201a10; }
+    .tag-fhir      { color: #79c0ff; border-color: #1a3a5a; background: #0d1e30; }
+    footer { margin-top: 56px; font-size: .73rem; color: var(--mute); }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>⚕ PACS Demo Platform</h1>
+    <p>Clinical integration stack — DICOM imaging, AI pipelines, EHR, LIS, RIS and FHIR R4 interoperability, all running locally via Docker Compose.</p>
+  </div>
+
+  <div class="grid">
+
+    <a class="card" href="/ohif/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🖼️</span>
+        <div>
+          <div class="card-name">OHIF Viewer</div>
+          <div class="card-path">/ohif/</div>
+        </div>
+      </div>
+      <div class="card-desc">Web-based DICOM viewer. Browse studies, view series, and inspect AI secondary-capture overlays and segmentation masks.</div>
+      <span class="card-tag tag-imaging">Imaging</span>
+    </a>
+
+    <a class="card" href="/orthanc/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🗄️</span>
+        <div>
+          <div class="card-name">Orthanc PACS</div>
+          <div class="card-path">/orthanc/</div>
+        </div>
+      </div>
+      <div class="card-desc">DICOM server (PACS). Stores all imaging studies. Exposes DICOMweb REST API consumed by OHIF and the AI Controller.</div>
+      <span class="card-tag tag-imaging">Imaging · DICOM</span>
+    </a>
+
+    <a class="card" href="/ris/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">📋</span>
+        <div>
+          <div class="card-name">RIS</div>
+          <div class="card-path">/ris/</div>
+        </div>
+      </div>
+      <div class="card-desc">Radiology Information System. Manages imaging orders, accession numbers and radiology reports (Draft → Preliminary → Final).</div>
+      <span class="card-tag tag-clinical">Clinical</span>
+    </a>
+
+    <a class="card" href="/ai-controller/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🤖</span>
+        <div>
+          <div class="card-name">AI Controller</div>
+          <div class="card-path">/ai-controller/</div>
+        </div>
+      </div>
+      <div class="card-desc">Manages AI analysis pipelines (POC X-Ray, POC CT). Configures auto-trigger rules by modality and saves results back to PACS.</div>
+      <span class="card-tag tag-ai">AI · Pipelines</span>
+    </a>
+
+    <a class="card" href="/ehr/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🏥</span>
+        <div>
+          <div class="card-name">EHR</div>
+          <div class="card-path">/ehr/</div>
+        </div>
+      </div>
+      <div class="card-desc">Electronic Health Records. Patient registration, encounter management, clinical orders, scheduling and CDSS alert evaluation.</div>
+      <span class="card-tag tag-clinical">Clinical</span>
+    </a>
+
+    <a class="card" href="/lis/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🧪</span>
+        <div>
+          <div class="card-name">LIS</div>
+          <div class="card-path">/lis/</div>
+        </div>
+      </div>
+      <div class="card-desc">Laboratory Information System. Specimen accessioning, instrument management and result validation with Westgard QC rules.</div>
+      <span class="card-tag tag-clinical">Clinical · Lab</span>
+    </a>
+
+    <a class="card" href="/simulator/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">⚡</span>
+        <div>
+          <div class="card-name">DICOM Simulator</div>
+          <div class="card-path">/simulator/</div>
+        </div>
+      </div>
+      <div class="card-desc">Generates synthetic DICOM series (CR, DX, CT, MR, US…) and pushes them directly to Orthanc to seed the demo with test data.</div>
+      <span class="card-tag tag-infra">Dev Tool</span>
+    </a>
+
+    <a class="card" href="/fhir-bridge/api/health" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🔗</span>
+        <div>
+          <div class="card-name">FHIR Bridge</div>
+          <div class="card-path">/fhir-bridge/</div>
+        </div>
+      </div>
+      <div class="card-desc">Translates internal clinical events into FHIR R4 resources (Patient, ImagingStudy, ServiceRequest, DiagnosticReport) and pushes to HAPI.</div>
+      <span class="card-tag tag-fhir">FHIR R4</span>
+    </a>
+
+  </div>
+
+  <footer>PACS Demo &mdash; local Docker Compose stack &mdash; all data is synthetic</footer>
+</body>
+</html>

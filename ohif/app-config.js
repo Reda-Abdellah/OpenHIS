@@ -1,5 +1,5 @@
 window.config = {
-  routerBasename: '/',
+  routerBasename: '/ohif',
   showStudyList: true,
   extensions: [],
   modes: [],
