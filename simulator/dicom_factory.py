@@ -39,8 +39,8 @@ def _base(sop_class, patient, study_uid, series_uid, sop_uid,
     ds.is_implicit_VR   = False
     ds.is_little_endian = True
 
-    ds.PatientName      = patient.get("patientName", "SIMULATOR^DEMO")
-    ds.PatientID        = patient.get("patientId",   "SIM-001")
+    ds.PatientName      = patient.get("patient_name", "SIMULATOR^DEMO")
+    ds.PatientID        = patient.get("patient_id",   "SIM-001")
     ds.PatientBirthDate = patient.get("dob", "").replace("-", "")
     ds.PatientSex       = patient.get("sex", "O")
 
@@ -49,7 +49,7 @@ def _base(sop_class, patient, study_uid, series_uid, sop_uid,
     ds.StudyTime              = time_str
     ds.StudyID                = "1"
     ds.AccessionNumber        = patient.get("accession",  "")
-    ds.StudyDescription       = patient.get("studyDesc",  "Simulated Exam")
+    ds.StudyDescription       = patient.get("study_desc",  "Simulated Exam")
     ds.ReferringPhysicianName = "SIMULATOR"
 
     ds.SeriesInstanceUID  = series_uid
@@ -345,11 +345,11 @@ def _build_cr(patient, params) -> list:
     ds  = _base(MODALITY_PRESETS["CR"]["sopClass"], patient,
                 generate_uid(), generate_uid(), uid, "CR", d, t)
     rows = int(params.get("rows", 2048)); cols = int(params.get("cols", 2048))
-    body = params.get("bodyPart", "CHEST")
-    ds.BodyPartExamined = body;  ds.ViewPosition = params.get("viewPosition","PA")
-    ds.PatientPosition  = params.get("viewPosition","PA")
-    ds.KVP = float(params.get("kvp",120)); ds.ExposureTime = int(params.get("exposureTime",20))
-    ds.PixelSpacing = [float(params.get("pixelSpacing",.148))]*2
+    body = params.get("body_part", "CHEST")
+    ds.BodyPartExamined = body;  ds.ViewPosition = params.get("view_position","PA")
+    ds.PatientPosition  = params.get("view_position","PA")
+    ds.KVP = float(params.get("kvp",120)); ds.ExposureTime = int(params.get("exposure_time",20))
+    ds.PixelSpacing = [float(params.get("pixel_spacing",.148))]*2
     _image_tags(ds, rows, cols, bits=12)
     ds.WindowCenter = 2048; ds.WindowWidth = 4096
     ds.RescaleIntercept = 0; ds.RescaleSlope = 1
@@ -364,11 +364,11 @@ def _build_dx(patient, params) -> list:
     ds  = _base(MODALITY_PRESETS["DX"]["sopClass"], patient,
                 generate_uid(), generate_uid(), uid, "DX", d, t)
     rows = int(params.get("rows", 2480)); cols = int(params.get("cols", 2560))
-    body = params.get("bodyPart", "CHEST")
-    ds.BodyPartExamined = body;  ds.ViewPosition = params.get("viewPosition","PA")
-    ds.PatientPosition  = params.get("viewPosition","PA")
-    ds.KVP = float(params.get("kvp",125)); ds.ExposureTime = int(params.get("exposureTime",16))
-    ds.PixelSpacing = [float(params.get("pixelSpacing",.139))]*2
+    body = params.get("body_part", "CHEST")
+    ds.BodyPartExamined = body;  ds.ViewPosition = params.get("view_position","PA")
+    ds.PatientPosition  = params.get("view_position","PA")
+    ds.KVP = float(params.get("kvp",125)); ds.ExposureTime = int(params.get("exposure_time",16))
+    ds.PixelSpacing = [float(params.get("pixel_spacing",.139))]*2
     _image_tags(ds, rows, cols, bits=12)
     ds.WindowCenter = 2048; ds.WindowWidth = 4096
     ds.RescaleIntercept = 0; ds.RescaleSlope = 1
@@ -387,12 +387,12 @@ def _build_ct(patient, params) -> list:
 
     rows    = int(params.get("rows", 512))
     cols    = int(params.get("cols", 512))
-    n       = int(params.get("sliceCount",   64))
-    thick   = float(params.get("sliceThickness", 1.25))
+    n       = int(params.get("slice_count",   64))
+    thick   = float(params.get("slice_thickness", 1.25))
     fov     = float(params.get("fov",    360))
     kvp     = float(params.get("kvp",    120))
     mas     = float(params.get("mas",    200))
-    body    = params.get("bodyPart", "CHEST")
+    body    = params.get("body_part", "CHEST")
     ps      = round(fov / rows, 4)
 
     instances = []
@@ -430,13 +430,13 @@ def _build_mr(patient, params) -> list:
 
     rows  = int(params.get("rows", 256))
     cols  = int(params.get("cols", 256))
-    n     = int(params.get("sliceCount",  20))
-    thick = float(params.get("sliceThickness", 5.0))
+    n     = int(params.get("slice_count",  20))
+    thick = float(params.get("slice_thickness", 5.0))
     tr    = float(params.get("tr",   500))
     te    = float(params.get("te",    15))
-    fa    = float(params.get("flipAngle", 90))
-    seq   = params.get("sequenceType", "SE")
-    body  = params.get("bodyPart",     "BRAIN")
+    fa    = float(params.get("flip_angle", 90))
+    seq   = params.get("sequence_type", "SE")
+    body  = params.get("body_part",     "BRAIN")
 
     instances = []
     for i in range(n):
@@ -475,8 +475,8 @@ def _build_us(patient, params) -> list:
 
     rows  = int(params.get("rows", 480))
     cols  = int(params.get("cols", 640))
-    body  = params.get("bodyPart",  "ABDOMEN")
-    probe = params.get("probeType", "Convex")
+    body  = params.get("body_part",  "ABDOMEN")
+    probe = params.get("probe_type", "Convex")
     depth = float(params.get("depth", 15))
     freq  = float(params.get("frequency", 3.5))
 

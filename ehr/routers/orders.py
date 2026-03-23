@@ -26,7 +26,7 @@ class OrderCreate(BaseModel):
 
 class OrderUpdate(BaseModel):
     status: Optional[str] = None
-    external_ref: Optional[str] = None
+    ehr_order_id: Optional[str] = None
     priority: Optional[str] = None
 
 @router.get("")
@@ -90,7 +90,7 @@ async def _notify_bridge(event: str, payload: dict):
 
 @router.patch("/{order_id}")
 def update_order(order_id: int, body: OrderUpdate):
-    allowed = {"status", "external_ref", "priority"}
+    allowed = {"status", "ehr_order_id", "priority"}
     updates = {k: v for k, v in body.model_dump().items() if v is not None and k in allowed}
     if not updates:
         raise HTTPException(400, "No fields to update")

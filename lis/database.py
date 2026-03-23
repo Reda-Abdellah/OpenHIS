@@ -1,4 +1,4 @@
-import sqlite3, os, random, datetime
+import sqlite3, os, uuid, random, string
 from contextlib import contextmanager
 
 DBPATH = os.environ.get("DBPATH", "data/lis.db")
@@ -7,33 +7,35 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS lab_patients (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ehr_patient_id  TEXT,
-    patient_name    TEXT,
-    patient_dob     TEXT,
-    mrn             TEXT UNIQUE
-);
-CREATE TABLE IF NOT EXISTS specimens (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    accession       TEXT UNIQUE NOT NULL,
-    patient_id      INTEGER REFERENCES lab_patients(id),
-    specimen_type   TEXT,
-    collection_date TEXT,
-    collected_by    TEXT,
-    received_date   TEXT,
-    received_by     TEXT,
-    status          TEXT DEFAULT 'collected',
-    custody_log     TEXT DEFAULT '[]',
+    patient_name    TEXT NOT NULL,
+    birth_date      TEXT,
+    mrn             TEXT UNIQUE,
     created_at      TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS specimens (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    accession_number TEXT UNIQUE NOT NULL,
+    patient_id       INTEGER NOT NULL REFERENCES lab_patients(id),
+    specimen_type    TEXT NOT NULL DEFAULT 'blood',
+    collection_date  TEXT,
+    collected_by     TEXT,
+    received_date    TEXT,
+    received_by      TEXT,
+    status           TEXT DEFAULT 'collected',
+    custody_log      TEXT DEFAULT '[]',
+    created_at       TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS lab_orders (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    ehr_order_id   TEXT,
-    specimen_id    INTEGER REFERENCES specimens(id),
-    test_code      TEXT NOT NULL,
-    test_name      TEXT,
-    priority       TEXT DEFAULT 'ROUTINE',
-    status         TEXT DEFAULT 'PENDING',
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ehr_order_id TEXT,
+    specimen_id  INTEGER REFERENCES specimens(id),
+    test_code    TEXT NOT NULL,
+    test_name    TEXT,
+    priority     TEXT DEFAULT 'ROUTINE',
+    status       TEXT DEFAULT 'PENDING',
+    ordered_by   TEXT,
+    notes          TEXT,
     instrument_id  TEXT,
-    ordered_by     TEXT,
     created_at     TEXT DEFAULT (datetime('now')),
     updated_at     TEXT DEFAULT (datetime('now'))
 );
@@ -45,43 +47,36 @@ CREATE TABLE IF NOT EXISTS lab_results (
     unit            TEXT,
     reference_range TEXT,
     flag            TEXT,
+    instrument_id   TEXT,
     status          TEXT DEFAULT 'preliminary',
     validated_by    TEXT,
     validated_at    TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS qc_records (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    instrument_id  TEXT,
-    test_code      TEXT,
-    lot_number     TEXT,
-    qc_level       TEXT,
-    result_value   REAL,
-    expected_mean  REAL,
-    expected_sd    REAL,
-    westgard_flag  TEXT,
-    pass           INTEGER,
-    recorded_at    TEXT DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    instrument_id TEXT NOT NULL,
+    test_code     TEXT NOT NULL,
+    lot_number    TEXT,
+    qc_level      TEXT,
+    result_value  REAL,
+    expected_mean REAL,
+    expected_sd   REAL,
+    westgard_flag TEXT,
+    passed        INTEGER DEFAULT 1,
+    recorded_at   TEXT DEFAULT (datetime('now'))
 );
-CREATE TABLE IF NOT EXISTS instrument_runs (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    instrument_id      TEXT,
-    instrument_type    TEXT,
-    run_started        TEXT,
-    run_finished       TEXT,
-    orders_processed   INTEGER DEFAULT 0,
-    status             TEXT DEFAULT 'running'
-);
-CREATE INDEX IF NOT EXISTS idx_specimens_patient ON specimens(patient_id);
-CREATE INDEX IF NOT EXISTS idx_orders_specimen   ON lab_orders(specimen_id);
-CREATE INDEX IF NOT EXISTS idx_results_order     ON lab_results(order_id);
-CREATE INDEX IF NOT EXISTS idx_qc_instrument     ON qc_records(instrument_id);
-"""
 
-def gen_accession():
-    d = datetime.date.today().strftime("%Y%m%d")
-    n = random.randint(1000, 9999)
-    return f"LAB-{d}-{n}"
+CREATE TABLE IF NOT EXISTS instrument_runs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    instrument_id     TEXT NOT NULL,
+    instrument_type   TEXT,
+    run_started       TEXT,
+    run_finished      TEXT,
+    orders_processed  INTEGER DEFAULT 0,
+    status            TEXT DEFAULT 'running'
+);
+"""
 
 @contextmanager
 def get_db():
@@ -103,8 +98,9 @@ def init_db():
     with get_db() as db:
         db.executescript(SCHEMA)
 
-def row_to_dict(row):
-    return dict(row) if row else None
+def row_to_dict(row):   return dict(row) if row else None
+def rows_to_list(rows): return [dict(r) for r in rows]
+def new_id():           return str(uuid.uuid4())
 
-def rows_to_list(rows):
-    return [dict(r) for r in rows]
+def gen_accession():
+    return "LAB" + "".join(random.choices(string.digits, k=8))

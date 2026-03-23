@@ -20,11 +20,11 @@ def to_fhir_observations_from_ai(job: dict) -> list:
             "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
                                        "code": "imaging"}]}],
             "code": {"text": f"AI Finding: {finding.get('type', 'finding')}"},
-            "subject": {"reference": f"Patient/{job.get('patientid', 'unknown')}"},
+            "subject": {"reference": f"Patient/{job.get('patient_id', 'unknown')}"},
             "issued": now,
             "valueString": finding.get("description"),
             "interpretation": [{"text": finding.get("severity", "unknown")}],
             "bodySite": {"text": finding.get("location")},
-            "note": [{"text": f"Pipeline: {job.get('pipelineid')} | Modality: {job.get('modality')}"}],
+            "note": [{"text": f"Pipeline: {job.get('pipeline_id')} | Modality: {job.get('modality')}"}],
         })
     return observations

@@ -450,7 +450,7 @@ async function renderPatients() {
         <td>${age(p.birth_date)}</td>
         <td>${esc(p.sex || '—')}</td>
         <td>${esc(p.phone || '—')}</td>
-        <td>${fmtDate(p.createdat)}</td>
+        <td>${fmtDate(p.created_at)}</td>
       </tr>`).join('');
     el.innerHTML = banner + `
       <div class="filter-bar">
@@ -567,8 +567,8 @@ function renderTabSummary(p) {
         <div class="card">
           <div class="card-title">Current Encounter</div>
           ${activeEnc
-            ? `<p style="font-size:.82rem">${esc(activeEnc.encountertype)} · Ward: <strong>${esc(activeEnc.ward||'—')}</strong> · Bed: <strong>${esc(activeEnc.bed||'—')}</strong></p>
-               <p style="font-size:.75rem;color:var(--mute);margin-top:4px">Admitted: ${fmtDate(activeEnc.admitdate)} · Dr. ${esc(activeEnc.attendingphysician||'—')}</p>`
+            ? `<p style="font-size:.82rem">${esc(activeEnc.encounter_type)} · Ward: <strong>${esc(activeEnc.ward||'—')}</strong> · Bed: <strong>${esc(activeEnc.bed||'—')}</strong></p>
+               <p style="font-size:.75rem;color:var(--mute);margin-top:4px">Admitted: ${fmtDate(activeEnc.admit_date)} · Dr. ${esc(activeEnc.attending_physician||'—')}</p>`
             : '<p style="color:var(--mute);font-size:.82rem">No active encounter</p>'}
         </div>
         <div class="card">
@@ -592,7 +592,7 @@ async function renderTabEncounters(patientId) {
   const pane = document.getElementById('tab-encounters');
   pane.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const encs = await api(`/api/encounters?patientid=${patientId}`);
+    const encs = await api(`/api/encounters?patient_id=${patientId}`);
     pane.innerHTML = `
       <div class="flex-center" style="margin-bottom:12px">
         <button class="btn pri" onclick="openModal('modal-admit')">＋ Admit Patient</button>
@@ -602,11 +602,11 @@ async function renderTabEncounters(patientId) {
         <thead><tr><th>Type</th><th>Ward / Bed</th><th>Physician</th><th>Admitted</th><th>Discharged</th><th>Status</th><th></th></tr></thead>
         <tbody>${encs.map(e=>`
           <tr>
-            <td>${esc(e.encountertype)}</td>
+            <td>${esc(e.encounter_type)}</td>
             <td>${esc(e.ward||'—')} / ${esc(e.bed||'—')}</td>
-            <td>${esc(e.attendingphysician||'—')}</td>
-            <td>${fmtDate(e.admitdate)}</td>
-            <td>${fmtDate(e.dischargedate)}</td>
+            <td>${esc(e.attending_physician||'—')}</td>
+            <td>${fmtDate(e.admit_date)}</td>
+            <td>${fmtDate(e.discharge_date)}</td>
             <td>${statusBadge(e.status)}</td>
             <td>${e.status==='active'?`<button class="btn sm danger" onclick="dischargeEncounter(${e.id})">Discharge</button>`:''}</td>
           </tr>`).join('')}
@@ -619,7 +619,7 @@ async function submitAdmit(e) {
   if (!currentPatient) return;
   try {
     await api('/api/encounters', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ...formData('form-admit'), patientid: currentPatient.id }) });
+      body: JSON.stringify({ ...formData('form-admit'), patient_id: currentPatient.id }) });
     closeModal('modal-admit'); document.getElementById('form-admit').reset();
     toast('Patient admitted', 'ok'); renderTabEncounters(currentPatient.id);
   } catch (err) { toast('Error: ' + err.message, 'err'); }
@@ -638,7 +638,7 @@ async function renderTabOrders(patientId) {
   const pane = document.getElementById('tab-orders');
   pane.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const orders = await api(`/api/orders?patientid=${patientId}`);
+    const orders = await api(`/api/orders?patient_id=${patientId}`);
     pane.innerHTML = `
       <div class="flex-center" style="margin-bottom:12px">
         <button class="btn pri" onclick="openModal('modal-order');renderOrderDetail('LAB')">＋ New Order</button>
@@ -648,16 +648,16 @@ async function renderTabOrders(patientId) {
         <thead><tr><th>Type</th><th>Detail</th><th>Priority</th><th>Physician</th><th>Status</th><th>Ext. Ref</th><th>Date</th></tr></thead>
         <tbody>${orders.map(o => {
           let detail = '';
-          try { const d = typeof o.orderdetail==='string' ? JSON.parse(o.orderdetail) : o.orderdetail;
+          try { const d = typeof o.order_detail==='string' ? JSON.parse(o.order_detail) : o.order_detail;
                 detail = d ? Object.entries(d).map(([k,v])=>`${k}: ${v}`).join(' · ') : ''; } catch {}
           return `<tr>
-            <td><strong>${esc(o.ordertype)}</strong></td>
+            <td><strong>${esc(o.order_type)}</strong></td>
             <td style="color:var(--mute);font-size:.75rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(detail)}</td>
             <td>${esc(o.priority)}</td>
-            <td>${esc(o.requestingphysician||'—')}</td>
+            <td>${esc(o.requesting_physician||'—')}</td>
             <td>${statusBadge(o.status)}</td>
-            <td>${o.externalref?`<code style="font-size:.72rem;color:var(--link)">${esc(o.externalref)}</code>`:'—'}</td>
-            <td>${fmtDate(o.createdat)}</td>
+            <td>${o.ehr_order_id?`<code style="font-size:.72rem;color:var(--link)">${esc(o.ehr_order_id)}</code>`:'—'}</td>
+            <td>${fmtDate(o.created_at)}</td>
           </tr>`;}).join('')}
         </tbody>
       </table></div>`}`;
@@ -716,12 +716,12 @@ async function submitOrder(e) {
   e.preventDefault();
   if (!currentPatient) return;
   const raw = formData('form-order');
-  const detail = {}, body = { patientid: currentPatient.id };
+  const detail = {}, body = { patient_id: currentPatient.id };
   for (const [k, v] of Object.entries(raw)) {
     if (k.startsWith('detail_')) detail[k.replace('detail_', '')] = v;
     else body[k] = v;
   }
-  body.orderdetail = detail;
+  body.order_detail = detail;
   try {
     await api('/api/orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     closeModal('modal-order'); document.getElementById('form-order').reset();
@@ -764,7 +764,7 @@ async function renderTabAllergy(patientId) {
               <div style="flex:1">
                 <code style="color:var(--orange);font-size:.8rem">${esc(d.icd10code)}</code>
                 <span style="font-size:.82rem;margin-left:6px">${esc(d.description||'')}</span>
-                <div class="cdss-meta">${statusBadge(d.status)} · Added ${fmtDate(d.createdat)}</div>
+                <div class="cdss-meta">${statusBadge(d.status)} · Added ${fmtDate(d.created_at)}</div>
               </div>
             </div>`).join('')}
         </div>
@@ -800,7 +800,7 @@ async function renderTabScheduling(patientId) {
   const pane = document.getElementById('tab-scheduling');
   pane.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const appts = await api(`/api/appointments?patientid=${patientId}`);
+    const appts = await api(`/api/appointments?patient_id=${patientId}`);
     pane.innerHTML = `
       <div class="flex-center" style="margin-bottom:12px">
         <button class="btn pri" onclick="openModal('modal-appointment')">＋ Schedule Appointment</button>
@@ -809,10 +809,10 @@ async function renderTabScheduling(patientId) {
       <div class="tbl-wrap"><table>
         <thead><tr><th>Date / Time</th><th>Provider</th><th>Department</th><th>Duration</th><th>Notes</th><th>Status</th><th></th></tr></thead>
         <tbody>${appts.map(a=>`<tr>
-          <td>${fmtDate(a.scheduleddate)}</td>
+          <td>${fmtDate(a.scheduled_date)}</td>
           <td>${esc(a.provider||'—')}</td>
           <td>${esc(a.department||'—')}</td>
-          <td>${a.durationminutes} min</td>
+          <td>${a.duration_minutes} min</td>
           <td style="color:var(--mute);font-size:.75rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.notes||'—')}</td>
           <td>${statusBadge(a.status)}</td>
           <td>${a.status==='scheduled'?`<button class="btn sm danger" onclick="cancelAppt(${a.id})">Cancel</button>`:''}</td>
@@ -825,7 +825,7 @@ async function submitAppointment(e) {
   e.preventDefault(); if (!currentPatient) return;
   try {
     await api('/api/appointments', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ...formData('form-appointment'), patientid: currentPatient.id }) });
+      body: JSON.stringify({ ...formData('form-appointment'), patient_id: currentPatient.id }) });
     closeModal('modal-appointment'); document.getElementById('form-appointment').reset();
     toast('Appointment scheduled', 'ok'); renderTabScheduling(currentPatient.id);
   } catch (err) { toast('Error: ' + err.message, 'err'); }
@@ -843,7 +843,7 @@ async function renderTabBilling(patientId) {
   const pane = document.getElementById('tab-billing');
   pane.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const records = await api(`/api/billing?patientid=${patientId}`);
+    const records = await api(`/api/billing?patient_id=${patientId}`);
     const total = records.reduce((s,r)=>s+(r.amount||0),0);
     const paid  = records.filter(r=>r.status==='paid').reduce((s,r)=>s+(r.amount||0),0);
     pane.innerHTML = `
@@ -859,11 +859,11 @@ async function renderTabBilling(patientId) {
       <div class="tbl-wrap"><table>
         <thead><tr><th>CPT Code</th><th>Description</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead>
         <tbody>${records.map(r=>`<tr>
-          <td><code style="color:var(--orange)">${esc(r.cptcode)}</code></td>
+          <td><code style="color:var(--orange)">${esc(r.cpt_code)}</code></td>
           <td>${esc(r.description||'—')}</td>
           <td>€${(r.amount||0).toFixed(2)}</td>
           <td>${statusBadge(r.status)}</td>
-          <td>${fmtDate(r.createdat)}</td>
+          <td>${fmtDate(r.created_at)}</td>
           <td>${r.status!=='paid'?`<button class="btn sm success" onclick="markPaid(${r.id})">Mark Paid</button>`:''}</td>
         </tr>`).join('')}
         </tbody>
@@ -875,7 +875,7 @@ async function submitBilling(e) {
   const raw = formData('form-billing');
   try {
     await api('/api/billing', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ...raw, patientid: currentPatient.id, amount: parseFloat(raw.amount) }) });
+      body: JSON.stringify({ ...raw, patient_id: currentPatient.id, amount: parseFloat(raw.amount) }) });
     closeModal('modal-billing'); document.getElementById('form-billing').reset();
     toast('Billing record added', 'ok'); renderTabBilling(currentPatient.id);
   } catch (err) { toast('Error: ' + err.message, 'err'); }
@@ -892,14 +892,14 @@ async function renderTabCDSSPatient(patientId) {
   const pane = document.getElementById('tab-cdss');
   pane.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const alerts = await api(`/api/cdss/alerts?patientid=${patientId}`);
+    const alerts = await api(`/api/cdss/alerts?patient_id=${patientId}`);
     if (!alerts.length) { pane.innerHTML = '<div class="empty">✅ No CDSS alerts for this patient.</div>'; return; }
     pane.innerHTML = `<div class="card">` + alerts.map(a=>`
       <div class="cdss-row">
         <div style="flex:1">
           ${severityBadge(a.severity)}
           <span style="font-size:.82rem;margin-left:6px">${esc(a.message)}</span>
-          <div class="cdss-meta">${fmtDate(a.createdat)} · Triggered by: ${esc(a.triggeredby||'—')}</div>
+          <div class="cdss-meta">${fmtDate(a.created_at)} · Triggered by: ${esc(a.triggered_by||'—')}</div>
         </div>
         ${!a.acknowledged
           ? `<button class="btn sm success" onclick="ackAlert(${a.id},'patient')">Acknowledge</button>`
@@ -950,8 +950,8 @@ async function renderCDSS() {
                 ${severityBadge(a.severity)}
                 <strong style="font-size:.82rem;margin-left:6px">${esc(a.message)}</strong>
                 <div class="cdss-meta">
-                  Patient: <a href="#" onclick="openPatientChart('${esc(a.patientid)}')" style="color:var(--link)">${esc(a.patientid)}</a>
-                  · Type: ${esc(a.alerttype||'—')} · ${fmtDate(a.createdat)}
+                  Patient: <a href="#" onclick="openPatientChart('${esc(a.patient_id)}')" style="color:var(--link)">${esc(a.patient_id)}</a>
+                  · Type: ${esc(a.alert_type||'—')} · ${fmtDate(a.created_at)}
                 </div>
               </div>
               ${!a.acknowledged

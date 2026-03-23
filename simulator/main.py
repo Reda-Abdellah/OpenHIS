@@ -82,7 +82,7 @@ async def generate(req: GenerateRequest):
         raise HTTPException(500, f"Build error: {e}")
 
     log.info("Built %d %s instance(s)  body=%s",
-             len(dicom_list), mod, req.params.get("bodyPart","?"))
+             len(dicom_list), mod, req.params.get("body_part","?"))
 
     # 2 — upload each instance to Orthanc
     instance_ids: list[str] = []
@@ -106,8 +106,8 @@ async def generate(req: GenerateRequest):
 
     log.info("Stored %d instance(s) → %s", len(instance_ids), instance_ids)
 
-    patient_name = str(req.patient.get("patientName", "UNKNOWN"))
-    body_part    = str(req.params.get("bodyPart", ""))
+    patient_name = str(req.patient.get("patient_name", "UNKNOWN"))
+    body_part    = str(req.params.get("body_part", ""))
     is_xray      = mod in ("CR", "DX")
 
     # 3 — record in job history
@@ -115,10 +115,10 @@ async def generate(req: GenerateRequest):
         "id"          : str(uuid.uuid4())[:8],
         "timestamp"   : datetime.now().isoformat(timespec="seconds"),
         "modality"    : mod,
-        "bodyPart"    : body_part,
-        "patientName" : patient_name,
+        "body_part"   : body_part,
+        "patient_name": patient_name,
         "count"       : len(instance_ids),
-        "instance_id" : instance_ids,
+        "instance_ids": instance_ids,
         "size_bytes"  : total_bytes,
         "ohif_url"    : "/",
         "ai_panel_url": f"/ai-panel.html?instance_id={instance_ids[0]}"

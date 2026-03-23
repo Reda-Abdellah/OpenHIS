@@ -7,7 +7,7 @@ from database import get_db, rows_to_list, row_to_dict
 router = APIRouter(prefix="/api/lab-orders", tags=["lab-orders"])
 
 ORDER_SQL = """
-    SELECT lo.*, s.accession, s.specimen_type, s.status AS specimen_status,
+    SELECT lo.*, s.accession_number, s.specimen_type, s.status AS specimen_status,
            lp.patient_name, lp.mrn, lp.ehr_patient_id
     FROM lab_orders lo
     JOIN specimens s ON s.id = lo.specimen_id
@@ -49,6 +49,10 @@ def list_orders(status: Optional[str] = None, specimen_id: Optional[int] = None)
     with get_db() as db:
         return rows_to_list(db.execute(f"{ORDER_SQL} {where} ORDER BY lo.created_at DESC", params).fetchall())
 
+@router.get("/catalog")
+def get_catalog():
+    return [{"code": k, "name": v} for k, v in TEST_CATALOG.items()]
+
 @router.get("/{order_id}")
 def get_order(order_id: int):
     with get_db() as db:
@@ -80,7 +84,3 @@ def update_order(order_id: int, body: LabOrderUpdate):
     with get_db() as db:
         db.execute(f"UPDATE lab_orders SET {sets} WHERE id=?", (*updates.values(), order_id))
         return row_to_dict(db.execute(f"{ORDER_SQL} WHERE lo.id=?", (order_id,)).fetchone())
-
-@router.get("/catalog")
-def get_catalog():
-    return [{"code": k, "name": v} for k, v in TEST_CATALOG.items()]

@@ -305,12 +305,12 @@ function patientFset() {
     <div class="fset">
       <div class="fleg">Patient Information</div>
       <div class="fbody">
-        ${fi('patientName','Patient Name','text','SIMULATOR^DEMO')}
-        ${fi('patientId',  'Patient ID',  'text','SIM-001')}
+        ${fi('patient_name','Patient Name','text','SIMULATOR^DEMO')}
+        ${fi('patient_id',  'Patient ID',  'text','SIM-001')}
         ${fi('dob',        'Date of Birth','date','1985-06-15')}
         ${fs('sex','Sex',[['M','Male'],['F','Female'],['O','Other']],'M')}
         ${fi('accession',  'Accession #', 'text','','auto-generated')}
-        ${fi('studyDesc',  'Study Desc.', 'text','Simulated Exam')}
+        ${fi('study_desc',  'Study Desc.', 'text','Simulated Exam')}
       </div>
     </div>`;
 }
@@ -343,14 +343,14 @@ function acqFsets(mod){
 /* ── collect form ── */
 function collectForm(){
   const patient={};
-  ['patientName','patientId','dob','sex','accession','studyDesc'].forEach(id=>{
+  ['patient_name','patient_id','dob','sex','accession','study_desc'].forEach(id=>{
     const el=document.getElementById('f-'+id); if(el) patient[id]=el.value;});
   const params={};
   (presets[activeMod]?.groups||[]).forEach(g=>
     g.fields.forEach(f=>{
       const el=document.getElementById('f-'+f.id); if(!el) return;
-      params[f.id]=f.type==='number'?parseFloat(el.value):el.value;}));
-  return {patient,params};}
+      params[f.id]=f.type==='number'?parseFloat(el.value):el.value;}))
+  return {patient,params};};
 
 /* ── generate ── */
 btnGen.addEventListener('click', async()=>{
@@ -384,8 +384,8 @@ function showOk(d){
   rcardEl.innerHTML=`
     <div class="rhead"><span>✅</span><span class="rtitle ok">Stored in Orthanc</span></div>
     <div class="rmeta">
-      <span><b>${d.modality}</b>${multi} · ${d.bodyPart||'—'}</span>
-      <span>Patient: <b>${esc(d.patientName)}</b></span>
+      <span><b>${d.modality}</b>${multi} · ${d.body_part||'—'}</span>
+      <span>Patient: <b>${esc(d.patient_name)}</b></span>
       <span>Size: <b>${kb} KB</b></span>
     </div>
     <div class="rlinks">
@@ -419,7 +419,7 @@ function renderJobs(jobs){
     jdBody.innerHTML='<div style="padding:16px;text-align:center;color:var(--mute);font-size:.76rem">No acquisitions yet</div>';
     sbLast.textContent='—';return;}
   const latest=jobs[0];
-  sbLast.textContent=`Last: ${latest.modality} ${latest.bodyPart||''} · ${latest.timestamp.slice(11,19)}`;
+  sbLast.textContent=`Last: ${latest.modality} ${latest.body_part||''} · ${latest.timestamp.slice(11,19)}`;
   jdBody.innerHTML=jobs.map(j=>{
     const col=MOD_COLORS[j.modality]||'#888';
     const kb=(j.size_bytes/1024).toFixed(0);
@@ -429,8 +429,8 @@ function renderJobs(jobs){
         <span class="job-mod" style="background:${col}22;color:${col};border:1px solid ${col}44">${j.modality}</span>
         <div class="job-info">
           <div class="ji-top">
-            <span class="ji-patient">${esc(fmtName(j.patientName))}</span>
-            <span style="font-size:.65rem;color:var(--mute)">${j.bodyPart||''}${multi}</span>
+            <span class="ji-patient">${esc(fmtName(j.patient_name))}</span>
+            <span style="font-size:.65rem;color:var(--mute)">${j.body_part||''}${multi}</span>
           </div>
           <div class="ji-meta">${j.timestamp.slice(0,19).replace('T',' ')} · ${kb} KB</div>
           <div class="job-links">

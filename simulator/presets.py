@@ -9,10 +9,10 @@ MODALITY_PRESETS = {
             {
                 "name": "Anatomy",
                 "fields": [
-                    {"id": "bodyPart",    "label": "Body Part",     "type": "select",
+                    {"id": "body_part",    "label": "Body Part",     "type": "select",
                      "options": ["CHEST","HAND","KNEE","FOOT","PELVIS","SPINE","SKULL","SHOULDER","ELBOW","WRIST","HIP","ANKLE"],
                      "default": "CHEST"},
-                    {"id": "viewPosition","label": "View Position", "type": "select",
+                    {"id": "view_position","label": "View Position", "type": "select",
                      "options": ["PA","AP","LAT","OBLIQUE"],         "default": "PA"},
                 ]
             },
@@ -21,7 +21,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "rows",        "label": "Rows",          "type": "number", "min": 512, "max": 4096, "step": 1,    "default": 2048, "unit": "px"},
                     {"id": "cols",        "label": "Columns",       "type": "number", "min": 512, "max": 4096, "step": 1,    "default": 2048, "unit": "px"},
-                    {"id": "pixelSpacing","label": "Pixel Spacing", "type": "number", "min": 0.05,"max": 1.0,  "step": 0.01, "default": 0.148,"unit": "mm"},
+                    {"id": "pixel_spacing","label": "Pixel Spacing", "type": "number", "min": 0.05,"max": 1.0,  "step": 0.01, "default": 0.148,"unit": "mm"},
                 ]
             },
             {
@@ -29,7 +29,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "kvp",         "label": "kVp",           "type": "number", "min": 40,  "max": 150,  "step": 1,    "default": 120,  "unit": "kV"},
                     {"id": "mas",         "label": "mAs",           "type": "number", "min": 0.5, "max": 200,  "step": 0.5,  "default": 4,    "unit": "mAs"},
-                    {"id": "exposureTime","label": "Exposure Time", "type": "number", "min": 1,   "max": 500,  "step": 1,    "default": 20,   "unit": "ms"},
+                    {"id": "exposure_time","label": "Exposure Time", "type": "number", "min": 1,   "max": 500,  "step": 1,    "default": 20,   "unit": "ms"},
                 ]
             }
         ]
@@ -45,10 +45,10 @@ MODALITY_PRESETS = {
             {
                 "name": "Anatomy",
                 "fields": [
-                    {"id": "bodyPart",    "label": "Body Part",     "type": "select",
+                    {"id": "body_part",    "label": "Body Part",     "type": "select",
                      "options": ["CHEST","HAND","KNEE","FOOT","PELVIS","SPINE","SKULL"],
                      "default": "CHEST"},
-                    {"id": "viewPosition","label": "View Position", "type": "select",
+                    {"id": "view_position","label": "View Position", "type": "select",
                      "options": ["PA","AP","LAT","OBLIQUE"],         "default": "PA"},
                 ]
             },
@@ -57,7 +57,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "rows",        "label": "Rows",          "type": "number", "min": 512, "max": 4096, "step": 1,   "default": 2480, "unit": "px"},
                     {"id": "cols",        "label": "Columns",       "type": "number", "min": 512, "max": 4096, "step": 1,   "default": 2560, "unit": "px"},
-                    {"id": "pixelSpacing","label": "Pixel Spacing", "type": "number", "min": 0.05,"max": 1.0,  "step":0.01, "default": 0.139,"unit": "mm"},
+                    {"id": "pixel_spacing","label": "Pixel Spacing", "type": "number", "min": 0.05,"max": 1.0,  "step":0.01, "default": 0.139,"unit": "mm"},
                 ]
             },
             {
@@ -65,7 +65,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "kvp",         "label": "kVp",           "type": "number", "min": 40,  "max": 150,  "step": 1,   "default": 125,  "unit": "kV"},
                     {"id": "mas",         "label": "mAs",           "type": "number", "min": 0.5, "max": 200,  "step": 0.5, "default": 3.2,  "unit": "mAs"},
-                    {"id": "exposureTime","label": "Exposure Time", "type": "number", "min": 1,   "max": 500,  "step": 1,   "default": 16,   "unit": "ms"},
+                    {"id": "exposure_time","label": "Exposure Time", "type": "number", "min": 1,   "max": 500,  "step": 1,   "default": 16,   "unit": "ms"},
                 ]
             }
         ]
@@ -81,11 +81,11 @@ MODALITY_PRESETS = {
             {
                 "name": "Protocol",
                 "fields": [
-                    {"id": "bodyPart",       "label": "Body Part",       "type": "select",
+                    {"id": "body_part",       "label": "Body Part",       "type": "select",
                      "options": ["CHEST","ABDOMEN","HEAD","NECK","SPINE","PELVIS","EXTREMITY"],
                      "default": "CHEST"},
-                    {"id": "sliceCount",     "label": "Slice Count",     "type": "number", "min": 1,   "max": 512,  "step": 1,    "default": 64},
-                    {"id": "sliceThickness", "label": "Slice Thickness", "type": "number", "min": 0.5, "max": 10,   "step": 0.25, "default": 1.25, "unit": "mm"},
+                    {"id": "slice_count",     "label": "Slice Count",     "type": "number", "min": 1,   "max": 512,  "step": 1,    "default": 64},
+                    {"id": "slice_thickness", "label": "Slice Thickness", "type": "number", "min": 0.5, "max": 10,   "step": 0.25, "default": 1.25, "unit": "mm"},
                     {"id": "pitch",          "label": "Pitch",           "type": "number", "min": 0.5, "max": 2.0,  "step": 0.1,  "default": 1.0},
                 ]
             },
@@ -102,7 +102,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "kvp",          "label": "kVp",           "type": "number", "min": 80,  "max": 140, "step": 5,   "default": 120, "unit": "kV"},
                     {"id": "mas",          "label": "mAs",           "type": "number", "min": 10,  "max": 500, "step": 10,  "default": 200, "unit": "mAs"},
-                    {"id": "rotationTime", "label": "Rotation Time", "type": "number", "min": 0.3, "max": 1.0, "step": 0.1, "default": 0.5, "unit": "s"},
+                    {"id": "rotation_time", "label": "Rotation Time", "type": "number", "min": 0.3, "max": 1.0, "step": 0.1, "default": 0.5, "unit": "s"},
                 ]
             }
         ]
@@ -118,14 +118,14 @@ MODALITY_PRESETS = {
             {
                 "name": "Protocol",
                 "fields": [
-                    {"id": "bodyPart",       "label": "Body Part",     "type": "select",
+                    {"id": "body_part",       "label": "Body Part",     "type": "select",
                      "options": ["BRAIN","SPINE","KNEE","SHOULDER","ABDOMEN","PELVIS","CARDIAC"],
                      "default": "BRAIN"},
-                    {"id": "sequenceType",   "label": "Sequence",      "type": "select",
+                    {"id": "sequence_type",   "label": "Sequence",      "type": "select",
                      "options": ["SE","GRE","EPI","FLAIR","DWI","STIR","MPRAGE"],
                      "default": "SE"},
-                    {"id": "sliceCount",     "label": "Slice Count",   "type": "number", "min": 1,  "max": 200, "step": 1,   "default": 20},
-                    {"id": "sliceThickness", "label": "Slice Thick.",  "type": "number", "min": 0.5,"max": 10,  "step": 0.5, "default": 5, "unit": "mm"},
+                    {"id": "slice_count",     "label": "Slice Count",   "type": "number", "min": 1,  "max": 200, "step": 1,   "default": 20},
+                    {"id": "slice_thickness", "label": "Slice Thick.",  "type": "number", "min": 0.5,"max": 10,  "step": 0.5, "default": 5, "unit": "mm"},
                 ]
             },
             {
@@ -133,7 +133,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "rows",          "label": "Rows",          "type": "number", "min": 64, "max": 512, "step": 1, "default": 256, "unit": "px"},
                     {"id": "cols",          "label": "Columns",       "type": "number", "min": 64, "max": 512, "step": 1, "default": 256, "unit": "px"},
-                    {"id": "fieldStrength", "label": "Field Strength","type": "select",
+                    {"id": "field_strength", "label": "Field Strength","type": "select",
                      "options": ["1.5","3.0","7.0"],                                              "default": "1.5", "unit": "T"},
                 ]
             },
@@ -142,7 +142,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "tr",         "label": "TR",         "type": "number", "min": 10,  "max": 10000,"step": 10,  "default": 500, "unit": "ms"},
                     {"id": "te",         "label": "TE",         "type": "number", "min": 1,   "max": 500,  "step": 1,   "default": 15,  "unit": "ms"},
-                    {"id": "flipAngle",  "label": "Flip Angle", "type": "number", "min": 1,   "max": 180,  "step": 1,   "default": 90,  "unit": "°"},
+                    {"id": "flip_angle",  "label": "Flip Angle", "type": "number", "min": 1,   "max": 180,  "step": 1,   "default": 90,  "unit": "°"},
                 ]
             }
         ]
@@ -158,10 +158,10 @@ MODALITY_PRESETS = {
             {
                 "name": "Protocol",
                 "fields": [
-                    {"id": "bodyPart",  "label": "Body Part",   "type": "select",
+                    {"id": "body_part",  "label": "Body Part",   "type": "select",
                      "options": ["ABDOMEN","PELVIS","CARDIAC","THYROID","CAROTID","BREAST","VASCULAR"],
                      "default": "ABDOMEN"},
-                    {"id": "probeType", "label": "Probe Type",  "type": "select",
+                    {"id": "probe_type", "label": "Probe Type",  "type": "select",
                      "options": ["Convex","Linear","Phased","Endocavitary"],
                      "default": "Convex"},
                 ]
@@ -172,7 +172,7 @@ MODALITY_PRESETS = {
                     {"id": "rows",      "label": "Rows",        "type": "number", "min": 240, "max": 1080, "step": 1,   "default": 480, "unit": "px"},
                     {"id": "cols",      "label": "Columns",     "type": "number", "min": 320, "max": 1920, "step": 1,   "default": 640, "unit": "px"},
                     {"id": "depth",     "label": "Depth",       "type": "number", "min": 2,   "max": 30,   "step": 0.5, "default": 15,  "unit": "cm"},
-                    {"id": "frameRate", "label": "Frame Rate",  "type": "number", "min": 5,   "max": 60,   "step": 1,   "default": 30,  "unit": "fps"},
+                    {"id": "frame_rate", "label": "Frame Rate",  "type": "number", "min": 5,   "max": 60,   "step": 1,   "default": 30,  "unit": "fps"},
                 ]
             },
             {
@@ -180,7 +180,7 @@ MODALITY_PRESETS = {
                 "fields": [
                     {"id": "frequency",    "label": "Frequency",    "type": "number", "min": 1,  "max": 15,  "step": 0.5, "default": 3.5, "unit": "MHz"},
                     {"id": "gain",         "label": "Gain",         "type": "number", "min": 0,  "max": 100, "step": 1,   "default": 50,  "unit": "dB"},
-                    {"id": "dynamicRange", "label": "Dynamic Range","type": "number", "min": 40, "max": 100, "step": 1,   "default": 60,  "unit": "dB"},
+                    {"id": "dynamic_range", "label": "Dynamic Range","type": "number", "min": 40, "max": 100, "step": 1,   "default": 60,  "unit": "dB"},
                 ]
             }
         ]

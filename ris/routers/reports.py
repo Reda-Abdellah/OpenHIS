@@ -21,7 +21,7 @@ JOIN patients p ON p.id = o.patient_id
 
 _FULL_SQL = """SELECT r.*, o.accession_number, o.modality, o.body_part, o.priority,
        o.status AS order_status, o.clinical_info, o.requesting_physician,
-       o.scheduled_date, p.patient_name, p.patient_id AS patient_id_ext,
+       o.scheduled_date, p.patient_name, p.mrn,
        p.birth_date, p.sex
 FROM reports r
 JOIN orders   o ON o.id = r.order_id

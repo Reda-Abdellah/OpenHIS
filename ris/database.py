@@ -7,7 +7,7 @@ SCHEMA = '''
 CREATE TABLE IF NOT EXISTS patients (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     orthanc_id   TEXT    UNIQUE,
-    patient_id   TEXT,
+    mrn          TEXT,
     patient_name TEXT    NOT NULL,
     birth_date   TEXT,
     sex          TEXT,

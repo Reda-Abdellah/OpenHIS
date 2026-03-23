@@ -64,7 +64,7 @@ async def submit_results(body: ResultsSubmit, bg: BackgroundTasks):
                        (now, body.order_id))
         # Collect for FHIR bridge notification
         order_row = db.execute(
-            "SELECT lo.*, lp.ehr_patient_id, lp.patient_name, s.accession "
+            "SELECT lo.*, lp.ehr_patient_id, lp.patient_name, s.accession_number "
             "FROM lab_orders lo JOIN specimens s ON s.id=lo.specimen_id "
             "JOIN lab_patients lp ON lp.id=s.patient_id WHERE lo.id=?",
             (body.order_id,)).fetchone()
@@ -76,7 +76,7 @@ async def submit_results(body: ResultsSubmit, bg: BackgroundTasks):
             "order_id": body.order_id,
             "ehr_patient_id": dict(order_row).get("ehr_patient_id"),
             "patient_name": dict(order_row).get("patient_name"),
-            "accession": dict(order_row).get("accession"),
+            "accession_number": dict(order_row).get("accession_number"),
             "test_code": dict(order_row).get("test_code"),
             "results": result_rows,
         }

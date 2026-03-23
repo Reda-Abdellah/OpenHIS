@@ -87,7 +87,7 @@ async def _handle_patient_created(payload: dict):
     await _post(f"{LIS_URL}/lab-patients", {
         "ehr_patient_id": payload.get("id"),
         "patient_name":   f"{payload.get('last_name', '')}, {payload.get('first_name', '')}",
-        "patient_dob":    payload.get("birth_date"),
+        "birth_date":     payload.get("birth_date"),
         "mrn":            payload.get("mrn"),
     })
 
@@ -116,7 +116,7 @@ async def _handle_imaging_order(payload: dict):
         "requesting_physician": payload.get("requesting_physician"),
         "clinical_info":        detail.get("clinical_info"),
         "scheduled_date":       detail.get("scheduled_date"),
-        "patientid":            1,   # TODO: resolve via MRN lookup
+        "patient_id":            1,   # TODO: resolve via MRN lookup
     }
     resp_data = {}
     try:
@@ -127,11 +127,11 @@ async def _handle_imaging_order(payload: dict):
         log.warning(f"RIS order creation failed: {e}")
         return
 
-    accession = resp_data.get("accessionnumber")
+    accession = resp_data.get("accession_number")
     if accession and payload.get("id"):
         # FIX: use PATCH not POST — EHR order update endpoint is PATCH
         await _patch(f"{EHR_URL}/orders/{payload['id']}",
-                     {"external_ref": accession, "status": "SENT"})
+                     {"ehr_order_id": accession, "status": "SENT"})
 
 
 @router.post("/lab-order")

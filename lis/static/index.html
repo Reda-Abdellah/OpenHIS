@@ -192,11 +192,11 @@
             </div>
             <div class="form-group full">
               <label>Collection Date</label>
-              <input name="collectiondate" type="datetime-local">
+              <input name="collection_date" type="datetime-local">
             </div>
             <div class="form-group full">
               <label>Collected By</label>
-              <input name="collectedby" placeholder="Nurse / Phlebotomist name">
+              <input name="collected_by" placeholder="Nurse / Phlebotomist name">
             </div>
           </div>
           <div class="form-row" style="justify-content:flex-end;margin-top:6px">
@@ -220,7 +220,7 @@
       <form id="form-receive" onsubmit="submitReceive(event)">
         <p id="receive-accession-label" style="color:var(--mute);font-size:.82rem;margin-bottom:12px"></p>
         <div class="form-row">
-          <div class="form-group full"><label>Received By</label><input name="receivedby" placeholder="Lab technician name"></div>
+          <div class="form-group full"><label>Received By</label><input name="received_by" placeholder="Lab technician name"></div>
           <div class="form-group full"><label>Lab Location</label><input name="location" placeholder="e.g. Hematology Lab"></div>
         </div>
         <div class="form-row" style="justify-content:flex-end;margin-top:6px">
@@ -257,13 +257,13 @@
             <label>Specimen (Accession #) *</label>
             <input id="order-spec-search" placeholder="Type accession or patient name…" oninput="searchSpecimens()" autocomplete="off">
             <div id="order-spec-results" style="margin-top:4px"></div>
-            <input type="hidden" name="specimenid" id="order-specimenid-hidden">
+            <input type="hidden" name="specimen_id" id="order-specimen-id-hidden">
           </div>
         </div>
         <div class="form-row">
           <div class="form-group full">
             <label>Test Panel *</label>
-            <select name="testcode" id="order-testcode" required>
+            <select name="test_code" id="order-testcode" required>
               <option value="">Loading catalog…</option>
             </select>
           </div>
@@ -275,7 +275,7 @@
           </div>
           <div class="form-group full">
             <label>Ordered By</label>
-            <input name="orderedby" placeholder="Dr. ...">
+            <input name="ordered_by" placeholder="Dr. ...">
           </div>
         </div>
         <div class="form-row" style="justify-content:flex-end;margin-top:6px">
@@ -320,8 +320,8 @@
       <form id="form-reg-patient" onsubmit="submitRegPatient(event)">
         <div class="form-row">
           <div class="form-group full"><label>MRN *</label><input name="mrn" required placeholder="e.g. MRN-001"></div>
-          <div class="form-group full"><label>Full Name *</label><input name="patientname" required placeholder="Last, First"></div>
-          <div class="form-group"><label>Date of Birth</label><input name="patientdob" type="date"></div>
+          <div class="form-group full"><label>Full Name *</label><input name="patient_name" required placeholder="Last, First"></div>
+          <div class="form-group"><label>Date of Birth</label><input name="birth_date" type="date"></div>
         </div>
         <div class="form-row" style="justify-content:flex-end;margin-top:6px">
           <button type="button" class="btn" onclick="closeModal('modal-reg-patient')">Cancel</button>
@@ -347,7 +347,7 @@
               <option value="">Loading…</option>
             </select>
           </div>
-          <div class="form-group full"><label>Test Code *</label><input name="testcode" required placeholder="e.g. CBC"></div>
+          <div class="form-group full"><label>Test Code *</label><input name="test_code" required placeholder="e.g. CBC"></div>
         </div>
         <div class="form-row">
           <div class="form-group full"><label>Lot Number *</label><input name="lotnumber" required placeholder="e.g. LOT-2026-A"></div>
@@ -513,10 +513,10 @@ async function searchLabPatients() {
       return;
     }
     res.innerHTML = pts.map(p=>`
-      <div onclick="selectAccessionPatient(${p.id},'${esc(p.patientname)}','${esc(p.mrn)}')"
+      <div onclick="selectAccessionPatient(${p.id},'${esc(p.patient_name)}','${esc(p.mrn)}')"
            style="padding:6px 10px;cursor:pointer;border-radius:5px;font-size:.82rem;border:1px solid var(--border);margin-bottom:4px;background:var(--input)"
            onmouseover="this.style.background='var(--card-hover)'" onmouseout="this.style.background='var(--input)'">
-        <strong>${esc(p.patientname)}</strong> <span style="color:var(--mute)">MRN: ${esc(p.mrn)}</span>
+        <strong>${esc(p.patient_name)}</strong> <span style="color:var(--mute)">MRN: ${esc(p.mrn)}</span>
       </div>`).join('');
   } catch {}
 }
@@ -549,14 +549,14 @@ async function submitAccession(e) {
 
 function openReceiveModal(specimenId, accession) {
   document.getElementById('receive-accession-label').textContent = `Receiving specimen: ${accession}`;
-  document.getElementById('form-receive').dataset.specimenid = specimenId;
+  document.getElementById('form-receive').dataset.specimen_id = specimenId;
   document.getElementById('form-receive').reset();
   openModal('modal-receive');
 }
 
 async function submitReceive(e) {
   e.preventDefault();
-  const specimenId = e.target.dataset.specimenid;
+  const specimenId = e.target.dataset.specimen_id;
   const data = formData('form-receive');
   try {
     await api(`/api/specimens/${specimenId}/receive`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
@@ -601,7 +601,7 @@ async function openSpecimenDetail(specimenId) {
             <div class="card-title">Associated Orders (${orders.length})</div>
             ${!orders.length ? '<p style="color:var(--mute);font-size:.78rem">None</p>' :
               `<div class="tbl-wrap" style="margin:0"><table><thead><tr><th>Test</th><th>Priority</th><th>Status</th></tr></thead>
-               <tbody>${orders.map(o=>`<tr><td>${esc(o.testname||o.testcode)}</td><td>${priorityBadge(o.priority)}</td><td>${statusBadge(o.status)}</td></tr>`).join('')}</tbody>
+               <tbody>${orders.map(o=>`<tr><td>${esc(o.test_name||o.test_code)}</td><td>${priorityBadge(o.priority)}</td><td>${statusBadge(o.status)}</td></tr>`).join('')}</tbody>
                </table></div>`}
           </div>
         </div>
@@ -637,16 +637,16 @@ async function renderOrders() {
         <thead><tr><th>ID</th><th>Test Panel</th><th>Accession</th><th>Patient</th><th>Priority</th><th>Ordered By</th><th>Status</th><th>Created</th><th></th></tr></thead>
         <tbody id="order-tbody">
           ${orders.map(o=>`<tr data-status="${o.status}" data-priority="${o.priority}"
-              data-text="${esc((o.testcode+' '+(o.patientname||'')+' '+(o.accession||'')).toLowerCase())}">
+              data-text="${esc((o.test_code+' '+(o.patient_name||'')+' '+(o.accession_number||'')).toLowerCase())}">
             <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
-            <td><strong>${esc(o.testname||o.testcode)}</strong></td>
-            <td><code style="color:var(--green);font-size:.75rem">${esc(o.accession||'—')}</code></td>
-            <td>${esc(o.patientname||'—')}</td>
+            <td><strong>${esc(o.test_name||o.test_code)}</strong></td>
+            <td><code style="color:var(--green);font-size:.75rem">${esc(o.accession_number||'—')}</code></td>
+            <td>${esc(o.patient_name||'—')}</td>
             <td>${priorityBadge(o.priority)}</td>
-            <td>${esc(o.orderedby||'—')}</td>
+            <td>${esc(o.ordered_by||'—')}</td>
             <td>${statusBadge(o.status)}</td>
-            <td>${fmtDate(o.createdat)}</td>
-            <td><button class="btn sm" onclick="openResultsModal(${o.id},'${esc(o.testname||o.testcode)}','${o.status}')">Results</button></td>
+            <td>${fmtDate(o.created_at)}</td>
+            <td><button class="btn sm" onclick="openResultsModal(${o.id},'${esc(o.test_name||o.test_code)}','${o.status}')">Results</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>`}`;
@@ -677,7 +677,7 @@ async function openNewOrderModal() {
   selectedOrderSpecimen = null;
   document.getElementById('order-spec-search').value = '';
   document.getElementById('order-spec-results').innerHTML = '';
-  document.getElementById('order-specimenid-hidden').value = '';
+  document.getElementById('order-specimen-id-hidden').value = '';
   document.getElementById('form-new-order').reset();
   openModal('modal-new-order');
 }
@@ -685,7 +685,7 @@ async function openNewOrderModal() {
 function openNewOrderFromSpecimen(specId, accession) {
   openNewOrderModal().then(() => {
     document.getElementById('order-spec-search').value = accession;
-    document.getElementById('order-specimenid-hidden').value = specId;
+    document.getElementById('order-specimen-id-hidden').value = specId;
     selectedOrderSpecimen = { id: specId, accession };
     document.getElementById('order-spec-results').innerHTML =
       `<p style="color:var(--green);font-size:.78rem">✓ ${esc(accession)}</p>`;
@@ -709,7 +709,7 @@ async function searchSpecimens() {
 
 function selectOrderSpecimen(id, accession) {
   selectedOrderSpecimen = { id, accession };
-  document.getElementById('order-specimenid-hidden').value = id;
+  document.getElementById('order-specimen-id-hidden').value = id;
   document.getElementById('order-spec-search').value = accession;
   document.getElementById('order-spec-results').innerHTML = `<p style="color:var(--green);font-size:.78rem">✓ ${esc(accession)}</p>`;
 }
@@ -717,8 +717,8 @@ function selectOrderSpecimen(id, accession) {
 async function submitNewOrder(e) {
   e.preventDefault();
   const data = formData('form-new-order');
-  if (!data.specimenid) { toast('Please select a specimen', 'err'); return; }
-  data.specimenid = parseInt(data.specimenid);
+  if (!data.specimen_id) { toast('Please select a specimen', 'err'); return; }
+  data.specimen_id = parseInt(data.specimen_id);
   try {
     await api('/api/lab-orders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     closeModal('modal-new-order');
@@ -762,10 +762,10 @@ async function renderInstruments() {
             `<div class="tbl-wrap" style="margin:0"><table>
               <thead><tr><th>Instrument</th><th>Type</th><th>Started</th><th>Orders</th><th>Status</th></tr></thead>
               <tbody>${recentRuns.map(r=>`<tr>
-                <td>${esc(r.instrumentid)}</td>
-                <td>${esc(r.instrumenttype)}</td>
-                <td>${fmtDate(r.runstarted)}</td>
-                <td>${r.ordersprocessed}</td>
+                <td>${esc(r.instrument_id)}</td>
+                <td>${esc(r.instrument_type)}</td>
+                <td>${fmtDate(r.run_started)}</td>
+                <td>${r.orders_processed}</td>
                 <td>${statusBadge(r.status)}</td>
               </tr>`).join('')}</tbody>
             </table></div>`}
@@ -777,8 +777,8 @@ async function renderInstruments() {
           pendingOrders.slice(0,8).map(o=>`
             <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a1e25;font-size:.8rem">
               <code style="color:var(--mute);width:28px">#${o.id}</code>
-              <strong>${esc(o.testname||o.testcode)}</strong>
-              <span style="color:var(--mute)">${esc(o.patientname||'—')}</span>
+              <strong>${esc(o.test_name||o.test_code)}</strong>
+              <span style="color:var(--mute)">${esc(o.patient_name||'—')}</span>
               ${priorityBadge(o.priority)}
             </div>`).join('') + (pendingOrders.length>8?`<p style="color:var(--mute);font-size:.72rem;margin-top:6px">…and ${pendingOrders.length-8} more</p>`:'')}
       </div>`;
@@ -809,9 +809,9 @@ async function openRunModal(instrumentId, instrumentType) {
           ${orders.map(o=>`<tr>
             <td class="checkbox-cell"><input type="checkbox" class="order-chk" value="${o.id}"></td>
             <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
-            <td>${esc(o.testname||o.testcode)}</td>
-            <td>${esc(o.patientname||'—')}</td>
-            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession||'—')}</code></td>
+            <td>${esc(o.test_name||o.test_code)}</td>
+            <td>${esc(o.patient_name||'—')}</td>
+            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession_number||'—')}</code></td>
             <td>${priorityBadge(o.priority)}</td>
           </tr>`).join('')}
         </tbody>
@@ -892,15 +892,15 @@ async function renderResults() {
         <thead><tr><th>Order #</th><th>Test</th><th>Patient</th><th>Accession</th><th>Priority</th><th>Order Status</th><th>Updated</th><th></th></tr></thead>
         <tbody id="res-tbody">
           ${withResults.map(o=>`<tr data-status="${o.status}"
-              data-text="${esc(((o.patientname||'')+' '+(o.testcode||'')).toLowerCase())}">
+              data-text="${esc(((o.patient_name||'')+' '+(o.test_code||'')).toLowerCase())}">
             <td style="color:var(--mute);font-size:.75rem">#${o.id}</td>
-            <td><strong>${esc(o.testname||o.testcode)}</strong></td>
-            <td>${esc(o.patientname||'—')}</td>
-            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession||'—')}</code></td>
+            <td><strong>${esc(o.test_name||o.test_code)}</strong></td>
+            <td>${esc(o.patient_name||'—')}</td>
+            <td><code style="font-size:.72rem;color:var(--green)">${esc(o.accession_number||'—')}</code></td>
             <td>${priorityBadge(o.priority)}</td>
             <td>${statusBadge(o.status)}</td>
-            <td>${fmtDate(o.updatedat)}</td>
-            <td><button class="btn sm pri" onclick="openResultsModal(${o.id},'${esc(o.testname||o.testcode)}','${o.status}')">
+            <td>${fmtDate(o.updated_at)}</td>
+            <td><button class="btn sm pri" onclick="openResultsModal(${o.id},'${esc(o.test_name||o.test_code)}','${o.status}')">
               ${o.status==='INPROGRESS'?'✏️ Validate':'👁 View'}
             </button></td>
           </tr>`).join('')}
@@ -942,12 +942,12 @@ async function openResultsModal(orderId, testName, orderStatus) {
                 : `<strong>${esc(r.value)}</strong>`}
               <span style="color:var(--mute);font-size:.72rem"> ${esc(r.unit||'')}</span>
             </div>
-            <div class="result-ref">${esc(r.referencerange||'')}</div>
+            <div class="result-ref">${esc(r.reference_range||'')}</div>
             <div style="width:80px">${flagBadge(r.flag)}</div>
             <div style="width:70px">${statusBadge(r.status)}</div>
             ${canValidate && r.status==='preliminary'
               ? `<button class="btn sm pri" onclick="validateSingleResult(${r.id},${orderId},'${esc(testName)}','${orderStatus}')">Validate</button>`
-              : r.status==='final'?`<span style="color:var(--green);font-size:.72rem">✓ ${esc(r.validatedby||'')}</span>`:''}
+              : r.status==='final'?`<span style="color:var(--green);font-size:.72rem">✓ ${esc(r.validated_by||'')}</span>`:''}
           </div>`).join('')}
       </div>
       ${canValidate ? `
@@ -979,7 +979,7 @@ async function validateAllResults(orderId, testName) {
       if (newVal && newVal !== r.value) {
         // submit updated value first
         await api('/api/results', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ orderid: orderId, results: [{ analyte: r.analyte, value: newVal, unit: r.unit, referencerange: r.referencerange }], validatedby, status: 'final' }) });
+          body: JSON.stringify({ orderid: orderId, results: [{ analyte: r.analyte, value: newVal, unit: r.unit, referencerange: r.reference_range }], validatedby, status: 'final' }) });
       } else {
         await api(`/api/results/${r.id}/validate`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ validatedby }) });
       }
@@ -1004,8 +1004,8 @@ async function renderQC() {
       api('/api/instruments')
     ]);
     const passes = records.filter(r=>r.pass===1).length;
-    const warns  = records.filter(r=>r.westgardflag&&r.westgardflag.includes('2s')).length;
-    const rejects= records.filter(r=>r.pass===0&&r.westgardflag&&!r.westgardflag.includes('2s')).length;
+    const warns  = records.filter(r=>r.westgard_flag&&r.westgard_flag.includes('2s')).length;
+    const rejects= records.filter(r=>r.pass===0&&r.westgard_flag&&!r.westgard_flag.includes('2s')).length;
     el.innerHTML = `
       <div class="stats">
         <div class="stat"><div class="stat-val">${records.length}</div><div class="stat-label">Total Records</div></div>
@@ -1030,17 +1030,17 @@ async function renderQC() {
         <thead><tr><th>Instrument</th><th>Test</th><th>Lot</th><th>Level</th><th>Result</th><th>Mean ± SD</th><th>Westgard Flag</th><th>Recorded</th></tr></thead>
         <tbody id="qc-tbody">
           ${records.map(r=>{
-            const flag = r.westgardflag||'pass';
+            const flag = r.westgard_flag||'pass';
             const flagCls = flag==='pass'?'pass': flag.includes('2s')?'warn':'reject';
-            return `<tr data-inst="${esc(r.instrumentid)}" data-flag="${flagCls}">
-              <td>${esc(r.instrumentid)}</td>
+            return `<tr data-inst="${esc(r.instrument_id)}" data-flag="${flagCls}">
+              <td>${esc(r.instrument_id)}</td>
               <td>${esc(r.testcode)}</td>
-              <td><code style="font-size:.72rem">${esc(r.lotnumber)}</code></td>
-              <td>${esc(r.qclevel)}</td>
-              <td><strong>${r.resultvalue?.toFixed(2)}</strong></td>
-              <td style="color:var(--mute)">${r.expectedmean?.toFixed(2)} ± ${r.expectedsd?.toFixed(2)}</td>
+              <td><code style="font-size:.72rem">${esc(r.lot_number)}</code></td>
+              <td>${esc(r.qc_level)}</td>
+              <td><strong>${r.result_value?.toFixed(2)}</strong></td>
+              <td style="color:var(--mute)">${r.expected_mean?.toFixed(2)} ± ${r.expected_sd?.toFixed(2)}</td>
               <td>${westgardBadge(flag)}</td>
-              <td>${fmtDate(r.recordedat)}</td>
+              <td>${fmtDate(r.recorded_at)}</td>
             </tr>`;}).join('')}
         </tbody>
       </table></div>`}`;
@@ -1115,11 +1115,11 @@ async function renderLabPatients() {
       <div class="tbl-wrap"><table>
         <thead><tr><th>MRN</th><th>Name</th><th>DOB</th><th>EHR ID</th></tr></thead>
         <tbody id="pts-tbody">
-          ${pts.map(p=>`<tr data-text="${esc((p.mrn+' '+p.patientname).toLowerCase())}">
+          ${pts.map(p=>`<tr data-text="${esc((p.mrn+' '+p.patient_name).toLowerCase())}">
             <td><code style="color:var(--green);font-size:.78rem">${esc(p.mrn)}</code></td>
-            <td><strong>${esc(p.patientname)}</strong></td>
-            <td>${esc(p.patientdob||'—')}</td>
-            <td style="color:var(--mute);font-size:.75rem">${esc(p.ehrpatientid||'—')}</td>
+            <td><strong>${esc(p.patient_name)}</strong></td>
+            <td>${esc(p.birth_date||'—')}</td>
+            <td style="color:var(--mute);font-size:.75rem">${esc(p.ehr_patient_id||'—')}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>`}`;

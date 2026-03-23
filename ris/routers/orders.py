@@ -53,7 +53,7 @@ _WORKLIST_SQL = """SELECT
     o.created_at,
     o.updated_at,
     p.patient_name,
-    p.patient_id   AS patient_id_ext,
+    p.mrn,
     p.birth_date,
     p.sex,
     r.status       AS report_status,

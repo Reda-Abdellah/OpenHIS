@@ -34,7 +34,7 @@ def health():
         counts = dict(
             patients   = db.execute("SELECT count(*) FROM patients").fetchone()[0],
             encounters = db.execute("SELECT count(*) FROM encounters").fetchone()[0],
-            orders     = db.execute("SELECT count(*) FROM clinicalorders").fetchone()[0],
-            cdssalerts = db.execute("SELECT count(*) FROM cdssalerts WHERE acknowledged=0").fetchone()[0],
+            orders     = db.execute("SELECT count(*) FROM clinical_orders").fetchone()[0],
+            cdssalerts = db.execute("SELECT count(*) FROM cdss_alerts WHERE acknowledged=0").fetchone()[0],
         )
     return {"status": "ok", "service": "ehr", "version": "1.0.0", "counts": counts}

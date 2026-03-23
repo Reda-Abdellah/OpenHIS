@@ -6,59 +6,59 @@ DBPATH = os.environ.get("DBPATH", "data/ehr.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patients (
     id TEXT PRIMARY KEY, mrn TEXT UNIQUE NOT NULL,
-    firstname TEXT NOT NULL, lastname TEXT NOT NULL,
-    birthdate TEXT, sex TEXT, phone TEXT, insurance_id TEXT,
-    createdat TEXT DEFAULT (datetime('now'))
+    first_name TEXT NOT NULL, last_name TEXT NOT NULL,
+    birth_date TEXT, sex TEXT, phone TEXT, insurance_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS encounters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    encountertype TEXT DEFAULT 'outpatient', admitdate TEXT,
-    dischargedate TEXT, ward TEXT, bed TEXT, attendingphysician TEXT,
-    status TEXT DEFAULT 'active', createdat TEXT DEFAULT (datetime('now'))
+    patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    encounter_type TEXT DEFAULT 'outpatient', admit_date TEXT,
+    discharge_date TEXT, ward TEXT, bed TEXT, attending_physician TEXT,
+    status TEXT DEFAULT 'active', created_at TEXT DEFAULT (datetime('now'))
 );
-CREATE TABLE IF NOT EXISTS clinicalorders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, ordertype TEXT NOT NULL,
-    patientid TEXT NOT NULL REFERENCES patients(id),
-    encounterid INTEGER REFERENCES encounters(id),
-    requestingphysician TEXT, orderdetail TEXT DEFAULT '{}',
+CREATE TABLE IF NOT EXISTS clinical_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, order_type TEXT NOT NULL,
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    encounter_id INTEGER REFERENCES encounters(id),
+    requesting_physician TEXT, order_detail TEXT DEFAULT '{}',
     priority TEXT DEFAULT 'ROUTINE', status TEXT DEFAULT 'PENDING',
-    externalref TEXT, createdat TEXT DEFAULT (datetime('now')),
-    updatedat TEXT DEFAULT (datetime('now'))
+    ehr_order_id TEXT, created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
 );
-CREATE TABLE IF NOT EXISTS cdssalerts (
+CREATE TABLE IF NOT EXISTS cdss_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id),
-    alerttype TEXT, severity TEXT DEFAULT 'warning',
-    message TEXT, triggeredby TEXT, acknowledged INTEGER DEFAULT 0,
-    createdat TEXT DEFAULT (datetime('now'))
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    alert_type TEXT, severity TEXT DEFAULT 'warning',
+    message TEXT, triggered_by TEXT, acknowledged INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS allergies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
     substance TEXT NOT NULL, reaction TEXT, severity TEXT DEFAULT 'mild',
-    createdat TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS diagnoses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    encounterid INTEGER REFERENCES encounters(id),
-    icd10code TEXT NOT NULL, description TEXT, status TEXT DEFAULT 'active',
-    createdat TEXT DEFAULT (datetime('now'))
+    patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    encounter_id INTEGER REFERENCES encounters(id),
+    icd10_code TEXT NOT NULL, description TEXT, status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    provider TEXT, department TEXT, scheduleddate TEXT NOT NULL,
-    durationminutes INTEGER DEFAULT 30, notes TEXT,
-    status TEXT DEFAULT 'scheduled', createdat TEXT DEFAULT (datetime('now'))
+    patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    provider TEXT, department TEXT, scheduled_date TEXT NOT NULL,
+    duration_minutes INTEGER DEFAULT 30, notes TEXT,
+    status TEXT DEFAULT 'scheduled', created_at TEXT DEFAULT (datetime('now'))
 );
-CREATE TABLE IF NOT EXISTS billingrecords (
+CREATE TABLE IF NOT EXISTS billing_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patientid TEXT NOT NULL REFERENCES patients(id),
-    encounterid INTEGER REFERENCES encounters(id),
-    cptcode TEXT NOT NULL, description TEXT, amount REAL NOT NULL,
-    status TEXT DEFAULT 'pending', createdat TEXT DEFAULT (datetime('now'))
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    encounter_id INTEGER REFERENCES encounters(id),
+    cpt_code TEXT NOT NULL, description TEXT, amount REAL NOT NULL,
+    status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now'))
 );
 """
 
@@ -90,10 +90,3 @@ def rows_to_list(rows):
 
 def new_id():
     return str(uuid.uuid4())
-
-# camelCase aliases used by main.py / health check
-getdb      = get_db
-initdb     = init_db
-rowtodict  = row_to_dict
-rowstolist = rows_to_list
-newid      = new_id

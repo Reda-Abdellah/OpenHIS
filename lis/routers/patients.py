@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/lab-patients", tags=["lab-patients"])
 class LabPatientUpsert(BaseModel):
     ehr_patient_id: Optional[str] = None
     patient_name: str
-    patient_dob: Optional[str] = None
+    birth_date: Optional[str] = None
     mrn: str
 
 @router.get("")
@@ -29,12 +29,12 @@ def upsert_patient(body: LabPatientUpsert):
         existing = db.execute("SELECT id FROM lab_patients WHERE mrn=?", (body.mrn,)).fetchone()
         if existing:
             db.execute(
-                "UPDATE lab_patients SET ehr_patient_id=?,patient_name=?,patient_dob=? WHERE mrn=?",
-                (body.ehr_patient_id, body.patient_name, body.patient_dob, body.mrn))
+                "UPDATE lab_patients SET ehr_patient_id=?,patient_name=?,birth_date=? WHERE mrn=?",
+                (body.ehr_patient_id, body.patient_name, body.birth_date, body.mrn))
             row = db.execute("SELECT * FROM lab_patients WHERE mrn=?", (body.mrn,)).fetchone()
         else:
             cur = db.execute(
-                "INSERT INTO lab_patients(ehr_patient_id,patient_name,patient_dob,mrn) VALUES(?,?,?,?)",
-                (body.ehr_patient_id, body.patient_name, body.patient_dob, body.mrn))
+                "INSERT INTO lab_patients(ehr_patient_id,patient_name,birth_date,mrn) VALUES(?,?,?,?)",
+                (body.ehr_patient_id, body.patient_name, body.birth_date, body.mrn))
             row = db.execute("SELECT * FROM lab_patients WHERE id=?", (cur.lastrowid,)).fetchone()
         return dict(row)
