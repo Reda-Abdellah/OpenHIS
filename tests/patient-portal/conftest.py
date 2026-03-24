@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh patient-portal database for each test"""
-    portal_path = str(Path(__file__).parent.parent.parent / "patient-portal")
+    portal_path = str(Path(__file__).parent.parent.parent / "services" / "patient-portal")
     test_db = "/tmp/test_portal.db"
     
     # Clear cached modules

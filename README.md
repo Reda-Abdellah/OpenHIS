@@ -1,68 +1,117 @@
-# PACS Demo Platform
+# OpenHIS
 
-A full clinical integration stack running entirely via Docker Compose — DICOM imaging, AI pipelines, EHR, LIS, RIS, Pharmacy, MPI, HL7 and FHIR R4 interoperability. All data is synthetic and intended for local development and demonstration only.
+A full hospital information system running entirely via Docker Compose — EHR, RIS, LIS, Pharmacy, MPI, Admin, Patient Portal, Analytics, HL7 v2, FHIR R4, DICOM/PACS, and AI imaging pipelines. All data is synthetic; intended for local development and demonstration only.
 
 ---
 
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Prerequisites](#prerequisites)
-3. [Quick Start](#quick-start)
-4. [Service URLs](#service-urls)
-5. [API Quick Reference](#api-quick-reference)
-6. [Generating Sample Data](#generating-sample-data)
-7. [AI Pipelines](#ai-pipelines)
-8. [Optional: HAPI FHIR Server](#optional-hapi-fhir-server)
-9. [Environment Variables](#environment-variables)
-10. [Data Persistence](#data-persistence)
-11. [Starting & Stopping](#starting--stopping)
-12. [Troubleshooting](#troubleshooting)
+1. [Architecture](#architecture)
+2. [Repository Layout](#repository-layout)
+3. [Prerequisites](#prerequisites)
+4. [Quick Start](#quick-start)
+5. [Service URLs](#service-urls)
+6. [API Quick Reference](#api-quick-reference)
+7. [Generating Sample Data](#generating-sample-data)
+8. [AI Pipelines](#ai-pipelines)
+9. [Optional: HAPI FHIR Server](#optional-hapi-fhir-server)
+10. [Configuration](#configuration)
+11. [Data Persistence](#data-persistence)
+12. [Developer Commands](#developer-commands)
+13. [Testing](#testing)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
 Browser
    │
    ▼
-┌─────────────────────────────────────────────────┐
-│  nginx  (port 80)  — reverse proxy + portal     │
-└──┬──────┬──────┬──────┬──────┬──────┬──────┬───┘
+┌──────────────────────────────────────────────────────┐
+│  nginx  (port 80)  — reverse proxy + portal          │
+└──┬──────┬──────┬──────┬──────┬──────┬──────┬─────────┘
    │      │      │      │      │      │      │
-  EHR    RIS    LIS   AI-Ctrl  MPI   HL7  Pharmacy
+  EHR    RIS    LIS  AI-Ctrl  MPI   HL7  Pharmacy
          │             │
        Orthanc ◄── AI Runner (poc-xray / poc-ct)
          │
        OHIF Viewer
-         │
-    FHIR Bridge ──► HAPI FHIR Server (optional)
+              \
+          FHIR Bridge ──► HAPI FHIR Server (optional)
 ```
 
-All services communicate **internally** over the `pacs-net` Docker bridge network using container names. The nginx reverse proxy is the **only** public entry point, listening on **port 80**.
+All services communicate **internally** over the `openhis-net` Docker bridge network using container names. The nginx reverse proxy is the **only** public entry point on **port 80**.
 
 ### Services at a glance
 
-| Service | Language / Framework | Database |
-|---|---|---|
-| portal | Static HTML | — |
-| nginx | nginx 1.25 | — |
-| admin | Python / FastAPI | SQLite |
-| ehr | Python / FastAPI | SQLite |
-| ris | Python / FastAPI | SQLite |
-| lis | Python / FastAPI | SQLite |
-| ai-controller | Python / FastAPI | SQLite |
-| analytics | Python / FastAPI | SQLite |
-| mpi | Python / FastAPI | SQLite |
-| hl7 | Python / FastAPI | SQLite |
-| pharmacy | Python / FastAPI | SQLite |
-| patient-portal | Python / FastAPI | SQLite |
-| fhir-bridge | Python / FastAPI | — (stateless router) |
-| simulator | Python / FastAPI | in-memory |
-| orthanc | Orthanc PACS | PostgreSQL |
-| ohif | OHIF Viewer (nginx) | — |
-| postgres | PostgreSQL 15 | — |
+| Service | Framework | Database | Port (internal) |
+|---|---|---|---|
+| nginx | nginx 1.25 | — | 80 |
+| admin | Python / FastAPI | SQLite | 8011 |
+| ehr | Python / FastAPI | SQLite | 8003 |
+| ris | Python / FastAPI | SQLite | 8002 |
+| lis | Python / FastAPI | SQLite | 8004 |
+| ai-controller | Python / FastAPI | SQLite | 8000 |
+| analytics | Python / FastAPI | SQLite | 8008 |
+| mpi | Python / FastAPI | SQLite | 8007 |
+| hl7 | Python / FastAPI | SQLite | 8009 |
+| pharmacy | Python / FastAPI | SQLite | 8006 |
+| patient-portal | Python / FastAPI | SQLite | 8010 |
+| fhir-bridge | Python / FastAPI | — (stateless) | 8005 |
+| simulator | Python / FastAPI | in-memory | 8001 |
+| orthanc | Orthanc PACS | PostgreSQL | 8042 |
+| ohif | OHIF Viewer | — | 80 (internal) |
+| postgres | PostgreSQL 15 | — | 5432 |
+
+---
+
+## Repository Layout
+
+```
+openhis/
+├── services/          # 12 FastAPI microservices (one directory each)
+│   ├── admin/
+│   ├── ai-controller/
+│   ├── analytics/
+│   ├── ehr/
+│   ├── fhir-bridge/
+│   ├── hl7/
+│   ├── lis/
+│   ├── mpi/
+│   ├── patient-portal/
+│   ├── pharmacy/
+│   ├── ris/
+│   └── simulator/
+├── pipelines/         # AI batch containers (spawned by ai-controller)
+│   ├── poc-ct/
+│   └── poc-xray/
+├── infra/             # Third-party / infrastructure configuration
+│   ├── fhir/          #   HAPI FHIR server (application.yaml)
+│   ├── nginx/         #   Reverse proxy (nginx.conf)
+│   ├── ohif/          #   DICOM viewer (app-config.js)
+│   ├── orthanc/       #   PACS server + Python plugin
+│   ├── portal/        #   Landing page (index.html)
+│   └── postgres/      #   DB init scripts
+├── tests/             # Pytest suites (one directory per service)
+├── docker-compose.yml
+├── .env.example       # Document all configurable environment variables
+├── Makefile           # Developer shortcuts
+└── README.md
+```
+
+Each service directory follows the same structure:
+
+```
+services/<name>/
+├── Dockerfile
+├── requirements.txt
+├── main.py
+├── database.py
+├── routers/
+└── static/index.html
+```
 
 ---
 
@@ -80,27 +129,32 @@ All services communicate **internally** over the `pacs-net` Docker bridge networ
 ## Quick Start
 
 ```bash
-# 1. Clone and enter the repository
+# 1. Clone the repository
 git clone <repo-url>
-cd <repo-name>
+cd openhis
 
-# 2. Start the core stack
-docker compose up -d
+# 2. (Optional) copy and customise credentials
+cp .env.example .env
+# Edit .env — at minimum change POSTGRES_PASSWORD, ADMIN_PASS
 
-# Postgres initialises first — the init-databases.sh script runs automatically
-# on a fresh volume and creates both the orthanc and hapifhir databases.
+# 3. Start the stack
+make up
+# or: docker compose up -d
 
-# 3. Wait ~20 s for all services to be healthy, then open the portal
+# PostgreSQL initialises first; infra/postgres/init-databases.sh
+# creates the orthanc and hapi_fhir databases automatically on a fresh volume.
+
+# 4. Wait ~20 s for all services to become healthy, then open the portal
 open http://localhost
 ```
 
-The portal at `http://localhost/` links to every module. No further configuration is required for a basic run.
+The portal at `http://localhost/` links to every module. No further configuration is needed for a basic run.
 
 ---
 
 ## Service URLs
 
-All services are accessible through nginx on **port 80**. Internal container-to-container calls bypass nginx entirely and use direct hostnames (e.g. `http://ehr:8003`).
+All services are accessed through nginx on **port 80**.
 
 ### Frontend UIs
 
@@ -123,29 +177,29 @@ All services are accessible through nginx on **port 80**. Internal container-to-
 
 ### API & Health Endpoints
 
-Every FastAPI service exposes its API under `/<module>/api/` and its Swagger docs at `/<module>/docs`.
+Every FastAPI service exposes its API under `/<service>/api/` and Swagger docs at `/<service>/docs`.
 
-| Service | Health check | Swagger |
+| Service | Health | Swagger |
 |---|---|---|
-| EHR | `http://localhost/ehr/api/health` | `http://localhost/ehr/docs` |
-| RIS | `http://localhost/ris/api/health` | `http://localhost/ris/docs` |
-| LIS | `http://localhost/lis/api/health` | `http://localhost/lis/docs` |
-| AI Controller | `http://localhost/ai-controller/api/health` | `http://localhost/ai-controller/docs` |
-| Analytics | `http://localhost/analytics/api/health` | `http://localhost/analytics/docs` |
-| MPI | `http://localhost/mpi/api/health` | `http://localhost/mpi/docs` |
-| HL7 | `http://localhost/hl7/api/health` | `http://localhost/hl7/docs` |
-| Pharmacy | `http://localhost/pharmacy/api/health` | `http://localhost/pharmacy/docs` |
-| Patient Portal | `http://localhost/patient-portal/api/health` | `http://localhost/patient-portal/docs` |
-| FHIR Bridge | `http://localhost/fhir-bridge/api/health` | `http://localhost/fhir-bridge/docs` |
-| Admin | `http://localhost/admin/api/health` | `http://localhost/admin/docs` |
-| Simulator | `http://localhost/simulator/api/health` | `http://localhost/simulator/docs` |
-| Orthanc | `http://localhost/orthanc/system` | — |
+| EHR | `/ehr/api/health` | `/ehr/docs` |
+| RIS | `/ris/api/health` | `/ris/docs` |
+| LIS | `/lis/api/health` | `/lis/docs` |
+| AI Controller | `/ai-controller/api/health` | `/ai-controller/docs` |
+| Analytics | `/analytics/api/health` | `/analytics/docs` |
+| MPI | `/mpi/api/health` | `/mpi/docs` |
+| HL7 | `/hl7/api/health` | `/hl7/docs` |
+| Pharmacy | `/pharmacy/api/health` | `/pharmacy/docs` |
+| Patient Portal | `/patient-portal/api/health` | `/patient-portal/docs` |
+| FHIR Bridge | `/fhir-bridge/api/health` | `/fhir-bridge/docs` |
+| Admin | `/admin/api/health` | `/admin/docs` |
+| Simulator | `/simulator/api/health` | `/simulator/docs` |
+| Orthanc | `/orthanc/system` | — |
 
 ### Special Ports (non-HTTP)
 
 | Protocol | Port | Service | Purpose |
 |---|---|---|---|
-| DICOM C-STORE | `4242` | Orthanc | DICOM push from external tools |
+| DICOM C-STORE | `4242` | Orthanc | DICOM push from external modalities |
 | MLLP | `2575` | HL7 Gateway | HL7 v2 message ingestion |
 
 ---
@@ -203,7 +257,7 @@ Every FastAPI service exposes its API under `/<module>/api/` and its Swagger doc
 
 ### FHIR Bridge — `/fhir-bridge/api`
 
-All endpoints receive domain events POSTed by other services and translate them to FHIR R4.
+All endpoints receive domain events from other services and translate them to FHIR R4 resources.
 
 | Event path | Source | FHIR resource |
 |---|---|---|
@@ -223,137 +277,154 @@ All endpoints receive domain events POSTed by other services and translate them 
 
 1. Open the **DICOM Simulator** at `http://localhost/simulator/`
 2. Select a modality (CR, DX, CT, MR, US, PT) and configure parameters
-3. Click **Generate & Push** — synthetic DICOM instances are built and pushed directly to Orthanc
-4. The Orthanc plugin fires an event to the AI Controller, which queues an AI job automatically if a matching rule exists
-5. Results appear in the **AI Controller** jobs view and as a secondary-capture series in **OHIF**
+3. Click **Generate & Push** — synthetic DICOM instances are built in memory and pushed to Orthanc
+4. The Orthanc plugin notifies the AI Controller, which queues a job automatically if a matching rule exists
+5. Results appear in the AI Controller jobs view and as a secondary-capture series in OHIF
 
-To generate data via the API directly:
+To generate data via the API:
 
 ```bash
 curl -X POST http://localhost/simulator/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"modality": "CR", "patient": {"patientname": "DOE^JOHN", "patientid": "P001"}, "params": {"bodypart": "CHEST"}}'
+  -d '{"modality":"CR","patient":{"patientname":"DOE^JOHN","patientid":"P001"},"params":{"bodypart":"CHEST"}}'
 ```
 
 ---
 
 ## AI Pipelines
 
-Two proof-of-concept pipelines are included. They run as isolated Docker containers spawned by the AI Controller.
+Two proof-of-concept pipelines are included. They run as isolated Docker containers spawned on demand by the AI Controller.
 
 | Pipeline ID | Image | Modalities | Output |
 |---|---|---|---|
-| `poc-xray` | `pipelines/poc-xray` | CR, DX | Findings JSON + overlay DICOM |
-| `poc-ct` | `pipelines/poc-ct` | CT | Findings JSON + segmentation mask DICOM |
+| `poc-xray` | `openhis/poc-xray:latest` | CR, DX | Findings JSON + overlay DICOM |
+| `poc-ct` | `openhis/poc-ct:latest` | CT | Findings JSON + segmentation mask DICOM |
 
 > **Note:** Findings are randomly generated for demonstration purposes only.
 
 ### Adding a new pipeline
 
-1. Create a new directory under `pipelines/` with a `Dockerfile` and `run.py`
-2. `run.py` must read `$JOBID` and use `$JOBSDATADIR/$JOBID/input/` for inputs and `$JOBSDATADIR/$JOBID/output/result.json` for outputs
-3. Add the image build to `docker-compose.yml`
-4. Register the pipeline via the AI Controller UI or API (`POST /ai-controller/api/pipelines`)
-5. Add a trigger rule for the desired modality (`POST /ai-controller/api/rules`)
+1. Create a directory under `pipelines/` with a `Dockerfile` and `run.py`
+2. `run.py` reads `$JOB_ID` and uses `$JOBS_DATA_DIR/$JOB_ID/input/` for inputs and `$JOBS_DATA_DIR/$JOB_ID/output/result.json` for outputs
+3. Add an image build entry to `docker-compose.yml` (see `poc-xray-pipeline` as a template)
+4. Register the pipeline via `POST /ai-controller/api/pipelines`
+5. Add a trigger rule for the desired modality via `POST /ai-controller/api/rules`
 
 ---
 
 ## Optional: HAPI FHIR Server
 
-A HAPI FHIR R4 server is available as an optional profile. It requires the PostgreSQL `hapifhir` database, which is created automatically by `postgres/init-databases.sh`.
+A HAPI FHIR R4 server is available as an opt-in Docker Compose profile. The `hapi_fhir` database is created automatically by `infra/postgres/init-databases.sh` on first boot.
 
 ```bash
 # Start with HAPI FHIR
-docker compose --profile fhir up -d
+make up-fhir
+# or: docker compose --profile fhir up -d
 
-# HAPI will auto-create its schema on first boot (~30 s)
-# Access the FHIR UI at:
+# HAPI creates its schema on first start (~30 s)
 open http://localhost:8080/fhir
 ```
 
-Enable the bridge to push resources to HAPI by setting these environment variables on the `fhir-bridge` service:
-
-```yaml
-FHIRSERVERURL: http://fhir-server:8080/fhir
-FHIRENABLED: "true"
-```
+The FHIR Bridge is already configured to push to HAPI when `FHIR_SERVER_URL` is set in the environment. See `.env.example` for details.
 
 ---
 
-## Environment Variables
+## Configuration
+
+Copy `.env.example` to `.env` and adjust before first start. Docker Compose automatically loads `.env` from the project root.
 
 | Variable | Service(s) | Default | Description |
 |---|---|---|---|
-| `ROOTPATH` | all FastAPI services | (module name) | FastAPI `root_path` — must match the nginx location prefix |
-| `DBPATH` | ehr, lis, ris, ai-controller, mpi, hl7, pharmacy, admin | `data/<svc>.db` | SQLite file path inside the container |
-| `ORTHANCURL` | fhir-bridge, ai-controller, simulator, orthanc plugin | `http://orthanc:8042` | Orthanc REST base URL |
-| `FHIRBRIDGEURL` | ehr, lis, ris, ai-controller, orthanc plugin, pharmacy | `http://fhir-bridge:8005/api` | FHIR Bridge event bus URL (must include `/api`) |
-| `FHIRSERVERURL` | fhir-bridge | — | HAPI FHIR server URL; leave blank to disable push |
-| `FHIRENABLED` | fhir-bridge | `true` | Set to `false` to disable FHIR push without stopping the bridge |
-| `EHRURL` | fhir-bridge, pharmacy | `http://ehr:8003/api` | EHR internal API base URL |
-| `RISURL` | fhir-bridge, ai-controller | `http://ris:8002/api` | RIS internal API base URL |
-| `LISURL` | fhir-bridge | `http://lis:8004/api` | LIS internal API base URL |
-| `PHARMACYURL` | fhir-bridge | `http://pharmacy:8006/api` | Pharmacy internal API base URL |
-| `AICONTROLLERURL` | orthanc plugin | `http://ai-controller:8000` | AI Controller URL (no `/api`) |
-| `JOBSDATADIR` | ai-controller, pipelines | `data/jobs` | Shared volume path for pipeline I/O artifacts |
-| `HL7URL` | fhir-bridge | — | HL7 Gateway URL for ADT notifications |
-| `DOCSDIR` | ehr | `data/documents` | File upload storage directory |
-
-> ⚠️ `FHIRBRIDGEURL` must always end in `/api`. All services except `pharmacy` already have this correctly set — `pharmacy` needs to be updated from `http://fhir-bridge:8005` to `http://fhir-bridge:8005/api`.
+| `POSTGRES_PASSWORD` | postgres, orthanc | `orthanc` | PostgreSQL password |
+| `ADMIN_USER` | admin | `admin` | Admin dashboard username |
+| `ADMIN_PASS` | admin | `admin123` | Admin dashboard password |
+| `DB_PATH` | all SQLite services | `/data/<svc>.db` | SQLite file path inside the container |
+| `ROOT_PATH` | all FastAPI services | `/<service>` | FastAPI `root_path`; must match the nginx location prefix |
+| `FHIR_BRIDGE_URL` | ehr, lis, ris, ai-controller, orthanc plugin | `http://fhir-bridge:8005` | FHIR Bridge base URL (services append `/api/events/…` themselves) |
+| `FHIR_SERVER_URL` | fhir-bridge | `http://fhir-server:8080/fhir` | HAPI FHIR server URL; leave blank to disable push |
+| `FHIR_ENABLED` | fhir-bridge | `true` | Set `false` to disable FHIR push without stopping the bridge |
+| `ORTHANC_URL` | ai-controller, simulator, ris | `http://orthanc:8042` | Orthanc REST base URL |
+| `JOBS_DATA_DIR` | ai-controller, pipelines | `/data/jobs` | Shared volume path for pipeline I/O |
+| `JOBS_VOLUME_NAME` | ai-controller | `openhis_ai-jobs` | Docker volume name for job artifacts |
+| `DOCKER_NETWORK` | ai-controller | `openhis_openhis-net` | Docker network for spawned pipeline containers |
+| `SESSION_TTL_HOURS` | admin, patient-portal | `12` / `24` | Session expiry in hours |
+| `COLLECT_INTERVAL_MIN` | analytics | `5` | Metrics collection interval (minutes) |
+| `MLLP_PORT` | hl7 | `2575` | MLLP listener port |
 
 ---
 
 ## Data Persistence
 
-All stateful data is stored in named Docker volumes. Containers can be restarted freely without data loss.
+All stateful data lives in named Docker volumes. Containers can be restarted freely without data loss.
 
 | Volume | Used by | Contents |
 |---|---|---|
 | `pg-data` | postgres | Orthanc index, HAPI FHIR resources |
 | `orthanc-data` | orthanc | DICOM pixel data |
-| `ris-data` | ris | RIS SQLite database |
-| `ai-jobs` | ai-controller, pipelines | Pipeline job I/O artifacts |
-| `ai-controller-db` | ai-controller | AI Controller SQLite database |
 | `ehr-data` | ehr | EHR SQLite database + uploaded documents |
+| `ris-data` | ris | RIS SQLite database |
 | `lis-data` | lis | LIS SQLite database |
-| `pharmacydata` | pharmacy | Pharmacy SQLite database |
-| `mpidata` | mpi | MPI SQLite database |
+| `pharmacy_data` | pharmacy | Pharmacy SQLite database |
+| `mpi_data` | mpi | MPI SQLite database |
 | `analytics-data` | analytics | Analytics SQLite database |
 | `hl7-data` | hl7 | HL7 message store |
-| `admin-data` | admin | Admin users, config, audit log |
+| `ai-jobs` | ai-controller, pipelines | Pipeline job I/O artifacts |
+| `ai-controller-db` | ai-controller | AI Controller SQLite database |
+| `admin-data` | admin | Users, config, audit log |
 | `portal-sessions` | patient-portal | Patient session tokens |
 
 ```bash
 # Full reset — destroys ALL data
-docker compose down -v
+make clean
+# or: docker compose down -v
 ```
 
 ---
 
-## Starting & Stopping
+## Developer Commands
+
+A `Makefile` at the project root provides common shortcuts:
 
 ```bash
-# Start everything
-docker compose up -d
+make up            # Start all services (detached)
+make down          # Stop all services (data preserved)
+make build         # Rebuild all images
+make up-build      # Rebuild and start
 
-# Start with HAPI FHIR server
-docker compose --profile fhir up -d
+make logs          # Tail logs for all services
+make logs-service SVC=ehr   # Tail logs for one service
 
-# Stop everything (data preserved in volumes)
-docker compose down
+make restart SVC=ehr        # Restart a single service
+make ps            # Show service status
 
-# Stop and delete all data (full reset)
-docker compose down -v
+make up-fhir       # Start with optional HAPI FHIR profile
+make clean         # Stop and remove all volumes (destructive)
+```
 
-# Rebuild a single service after a code change
+To rebuild and restart a single service after a code change:
+
+```bash
 docker compose build ehr
 docker compose up -d --no-deps ehr
-
-# View logs
-docker compose logs -f ehr
-docker compose logs -f nginx
-docker compose logs -f fhir-bridge
 ```
+
+---
+
+## Testing
+
+Tests live in `tests/` with one sub-directory per service:
+
+```bash
+# Run the full suite
+make test
+# or: python -m pytest tests/ -v
+
+# Run tests for a single service
+make test-service SVC=ehr
+# or: python -m pytest tests/ehr/ -v
+```
+
+All tests use a fresh in-memory or `/tmp` SQLite database per test and disable outbound HTTP calls (FHIR Bridge URL is set to empty string in fixtures). No running Docker containers are required to run the tests.
 
 ---
 
@@ -361,13 +432,12 @@ docker compose logs -f fhir-bridge
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `http://localhost` returns 404 or connection refused | nginx port not mapped to host | Ensure `docker-compose.yml` has `ports: - "80:80"` under the `nginx` service |
-| Module UI loads but API calls return 404 | `BASE` constant in `static/index.html` missing leading `/` | Change `const BASE = "ehr"` to `const BASE = "/ehr"` in each module's `static/index.html` |
-| nginx returns 502 for any module | Trailing slash missing on nginx location | Ensure `location /ehr/ { proxy_pass http://ehr/; }` — both must have trailing slashes |
-| OHIF viewer shows blank or wrong routes | `routerBasename` not set | Add `routerBasename: '/ohif/'` to `ohif/app-config.js` |
-| Pharmacy FHIR events silently fail | Missing `/api` suffix on `FHIRBRIDGEURL` | Set `FHIRBRIDGEURL: http://fhir-bridge:8005/api` in `docker-compose.yml` |
-| `fhir-server` crash-loops on first start | `hapifhir` database missing | Run `docker compose exec postgres psql -U orthanc -c "CREATE DATABASE hapifhir;"` |
-| AI findings never appear in FHIR | Missing FHIR callback in `runner.py` | Ensure `runner.py` posts to `FHIRBRIDGEURL/events/ai-job-completed` on job completion |
-| Services start before upstreams are ready | `nginx` `depends_on` incomplete | Add all 14 services to the `depends_on` list of the `nginx` service |
-| EHR or LIS crash on startup | Missing `static/` directory | Ensure `static/index.html` exists in each module directory |
-| OpenAPI docs show wrong base path | `ROOTPATH` env var not set | Each FastAPI service must have `ROOTPATH=<module-name>` matching its nginx location prefix |
+| `http://localhost` returns 404 or connection refused | nginx port not mapped | Ensure `ports: ["80:80"]` is present under the `nginx` service in `docker-compose.yml` |
+| Module UI loads but API calls return 404 | `BASE` constant missing leading `/` | Change `const BASE = "ehr"` to `const BASE = "/ehr"` in the module's `static/index.html` |
+| nginx returns 502 for any module | Trailing slash missing on nginx location | Both the location and `proxy_pass` must have a trailing slash: `location /ehr/ { proxy_pass http://ehr/; }` |
+| OHIF viewer shows blank or wrong routes | `routerBasename` not set | Add `routerBasename: '/ohif/'` to `infra/ohif/app-config.js` |
+| `fhir-server` crash-loops on first start | `hapi_fhir` database missing | Run `docker compose exec postgres psql -U orthanc -c "CREATE DATABASE hapi_fhir;"` |
+| AI findings never appear in FHIR | FHIR Bridge URL misconfigured | `FHIR_BRIDGE_URL` must be the base URL only (e.g. `http://fhir-bridge:8005`) — each service appends `/api/events/…` itself |
+| OpenAPI docs show wrong base path | `ROOT_PATH` not set | Each FastAPI service must have `ROOT_PATH=/<service>` matching its nginx location prefix |
+| EHR or LIS crash on startup | Missing `static/` directory | Ensure `services/<name>/static/index.html` exists |
+| Pipeline containers fail to start | Wrong volume or network name | Verify `JOBS_VOLUME_NAME` and `DOCKER_NETWORK` match the Docker Compose project name (`openhis_ai-jobs`, `openhis_openhis-net`) |

@@ -6,8 +6,8 @@ Covers: CRUD, type validation, sign workflow, amendment chain,
 """
 import os, sys, io, tempfile, pytest
 
-_EHR_DIR  = os.path.join(os.path.dirname(__file__), '..', '..', 'ehr')
-_FHIR_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'fhir-bridge')
+_EHR_DIR  = os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'ehr')
+_FHIR_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'fhir-bridge')
 sys.path.insert(0, os.path.abspath(_FHIR_DIR))
 sys.path.insert(0, os.path.abspath(_EHR_DIR))
 

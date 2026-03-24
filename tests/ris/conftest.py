@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh ris database for each test"""
-    ris_path = str(Path(__file__).parent.parent.parent / "ris")
+    ris_path = str(Path(__file__).parent.parent.parent / "services" / "ris")
     test_db = "/tmp/test_ris.db"
     
     # Clear cached modules

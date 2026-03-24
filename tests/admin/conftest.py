@@ -15,7 +15,7 @@ def fresh_db(tmp_path, monkeypatch):
                       or m in ('main', 'auth', 'users', 'services', 'config', 'announcements', 'audit')]
     for mod in mods_to_remove:
         del sys.modules[mod]
-    admin_path = str(Path(__file__).parent.parent.parent / "admin")
+    admin_path = str(Path(__file__).parent.parent.parent / "services" / "admin")
     if admin_path in sys.path:
         sys.path.remove(admin_path)
     sys.path.insert(0, admin_path)
@@ -43,7 +43,7 @@ def client(tmp_path, monkeypatch):
         del sys.modules[mod]
     
     # Put admin service at front of path
-    admin_path = str(Path(__file__).parent.parent.parent / "admin")
+    admin_path = str(Path(__file__).parent.parent.parent / "services" / "admin")
     if admin_path in sys.path:
         sys.path.remove(admin_path)
     sys.path.insert(0, admin_path)
@@ -92,7 +92,7 @@ def token(tmp_path, monkeypatch):
         del sys.modules[mod]
     
     # Put admin service at front of path
-    admin_path = str(Path(__file__).parent.parent.parent / "admin")
+    admin_path = str(Path(__file__).parent.parent.parent / "services" / "admin")
     if admin_path in sys.path:
         sys.path.remove(admin_path)
     sys.path.insert(0, admin_path)

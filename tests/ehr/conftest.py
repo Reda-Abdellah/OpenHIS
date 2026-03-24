@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh ehr database for each test"""
-    ehr_path = str(Path(__file__).parent.parent.parent / "ehr")
+    ehr_path = str(Path(__file__).parent.parent.parent / "services" / "ehr")
     test_db = "/tmp/test_ehr.db"
     
     # Clear cached modules

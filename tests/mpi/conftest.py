@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh mpi database for each test"""
-    mpi_path = str(Path(__file__).parent.parent.parent / "mpi")
+    mpi_path = str(Path(__file__).parent.parent.parent / "services" / "mpi")
     test_db = "/tmp/test_mpi.db"
     
     # Clear cached modules

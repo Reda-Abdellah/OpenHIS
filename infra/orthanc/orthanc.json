@@ -1,5 +1,5 @@
 {
-  "Name"                  : "PACS Demo",
+  "Name"                  : "OpenHIS",
   "StorageDirectory"      : "/var/lib/orthanc/db",
   "HttpServerEnabled"     : true,
   "HttpPort"              : 8042,

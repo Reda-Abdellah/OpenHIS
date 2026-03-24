@@ -1,7 +1,7 @@
-name: pacs-demo
+name: openhis
 
 networks:
-  pacs-net:
+  openhis-net:
     driver: bridge
 
 
@@ -31,7 +31,7 @@ services:
       POSTGRES_PASSWORD: orthanc
     volumes:
       - pg-data:/var/lib/postgresql/data
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U orthanc"]
@@ -54,12 +54,12 @@ services:
       AI_CONTROLLER_URL: http://ai-controller:8000
       FHIR_BRIDGE_URL: http://fhir-bridge:8005
     volumes:
-      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
-      - ./orthanc/plugin.py:/etc/orthanc/plugin.py:ro
+      - ./infra/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./infra/orthanc/plugin.py:/etc/orthanc/plugin.py:ro
       - orthanc-data:/var/lib/orthanc/db
     ports:
       - "4242:4242"
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
@@ -71,16 +71,16 @@ services:
   ohif:
     image: ohif/app:latest
     volumes:
-      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
-    networks: [pacs-net]
+      - ./infra/ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+    networks: [openhis-net]
     restart: unless-stopped
 
   simulator:
-    build: ./simulator
+    build: ./services/simulator
     environment:
       ORTHANC_URL: http://orthanc:8042
       ROOT_PATH: /simulator
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
@@ -90,7 +90,7 @@ services:
       start_period: 15s
 
   ris:
-    build: ./ris
+    build: ./services/ris
     environment:
       DB_PATH: /data/ris.db
       ORTHANC_URL: http://orthanc:8042
@@ -98,7 +98,7 @@ services:
       ROOT_PATH: /ris
     volumes:
       - ris-data:/data
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
@@ -108,22 +108,22 @@ services:
       start_period: 10s
 
   ai-controller:
-    build: ./ai-controller
+    build: ./services/ai-controller
     environment:
       ORTHANC_URL: http://orthanc:8042
       RIS_URL: http://ris:8002/api
       DB_PATH: /data/ai-controller.db
       JOBS_DATA_DIR: /data/jobs
-      JOBS_VOLUME_NAME: pacs-demo_ai-jobs
-      DOCKER_NETWORK: pacs-demo_pacs-net
-      POC_XRAY_IMAGE: pacs-demo/poc-xray:latest
-      POC_CT_IMAGE: pacs-demo/poc-ct:latest
+      JOBS_VOLUME_NAME: openhis_ai-jobs
+      DOCKER_NETWORK: openhis_openhis-net
+      POC_XRAY_IMAGE: openhis/poc-xray:latest
+      POC_CT_IMAGE: openhis/poc-ct:latest
       FHIR_BRIDGE_URL: http://fhir-bridge:8005
     volumes:
       - ai-jobs:/data/jobs
       - /var/run/docker.sock:/var/run/docker.sock
       - ai-controller-db:/data
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -134,32 +134,32 @@ services:
 
   poc-xray-pipeline:
     build: ./pipelines/poc-xray
-    image: pacs-demo/poc-xray:latest
+    image: openhis/poc-xray:latest
     restart: "no"
     command: ["true"]
-    networks: [pacs-net]
+    networks: [openhis-net]
 
   poc-ct-pipeline:
     build: ./pipelines/poc-ct
-    image: pacs-demo/poc-ct:latest
+    image: openhis/poc-ct:latest
     restart: "no"
     command: ["true"]
-    networks: [pacs-net]
+    networks: [openhis-net]
 
   nginx:
     image: nginx:1.25-alpine
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
-      - ./portal/index.html:/usr/share/nginx/html/index.html:ro
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
+      - ./infra/portal/index.html:/usr/share/nginx/html/index.html:ro
     depends_on: [orthanc, ohif, simulator, ris, ai-controller]
-    networks: [pacs-net]
+    networks: [openhis-net]
     restart: unless-stopped
 
   ehr:
-    build: ./ehr
+    build: ./services/ehr
     environment:
       DB_PATH: /data/ehr.db
       FHIR_BRIDGE_URL: http://fhir-bridge:8005
@@ -169,7 +169,7 @@ services:
     volumes:
       - ehr-data:/data
     networks:
-      - pacs-net
+      - openhis-net
     restart: unless-stopped
     depends_on:
       - postgres
@@ -180,7 +180,7 @@ services:
       retries: 3
 
   lis:
-    build: ./lis
+    build: ./services/lis
     environment:
       DB_PATH: /data/lis.db
       EHR_URL: http://ehr:8003/api
@@ -189,7 +189,7 @@ services:
     volumes:
       - lis-data:/data
     networks:
-      - pacs-net
+      - openhis-net
     restart: unless-stopped
     healthcheck:
       test: [CMD, curl, -f, "http://localhost:8004/api/health"]
@@ -198,7 +198,7 @@ services:
       retries: 3
 
   fhir-bridge:
-    build: ./fhir-bridge
+    build: ./services/fhir-bridge
     environment:
       EHR_URL: http://ehr:8003/api
       RIS_URL: http://ris:8002/api
@@ -208,7 +208,7 @@ services:
       FHIR_SERVER_URL: http://fhir-server:8080/fhir    # set empty to disable
       FHIR_ENABLED: "true"
     networks:
-      - pacs-net
+      - openhis-net
     restart: unless-stopped
     healthcheck:
       test: [CMD, curl, -f, "http://localhost:8005/api/health"]
@@ -217,8 +217,8 @@ services:
       retries: 3
 
   pharmacy:
-    build: ./pharmacy
-    container_name: pacs-demo-pharmacy
+    build: ./services/pharmacy
+    container_name: openhis-pharmacy
     restart: unless-stopped
     environment:
       - DB_PATH=/data/pharmacy.db
@@ -230,7 +230,7 @@ services:
     depends_on:
       - ehr
     networks:
-      - pacs-net
+      - openhis-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8006/api/health"]
       interval: 20s
@@ -241,11 +241,11 @@ services:
   fhir-server:
     image: hapiproject/hapi:latest
     volumes:
-      - ./fhir/application.yaml:/data/hapi/application.yaml:ro
+      - ./infra/fhir/application.yaml:/data/hapi/application.yaml:ro
     environment:
       SPRING_CONFIG_LOCATION: file:///data/hapi/application.yaml
     networks:
-      - pacs-net
+      - openhis-net
     restart: unless-stopped
     depends_on:
       - postgres
@@ -253,8 +253,8 @@ services:
       - fhir    # opt-in: docker compose --profile fhir up -d
 
   mpi:
-    build: ./mpi
-    container_name: pacs-demo-mpi
+    build: ./services/mpi
+    container_name: openhis-mpi
     restart: unless-stopped
     environment:
       - DB_PATH=/data/mpi.db
@@ -262,7 +262,7 @@ services:
     volumes:
       - mpi_data:/data
     networks:
-      - pacs-net
+      - openhis-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8007/api/health"]
       interval: 30s
@@ -271,8 +271,8 @@ services:
       start_period: 20s
 
   analytics:
-    build: ./analytics
-    container_name: pacs-demo-analytics
+    build: ./services/analytics
+    container_name: openhis-analytics
     restart: unless-stopped
     environment:
       - DB_PATH=/data/analytics.db
@@ -286,7 +286,7 @@ services:
     volumes:
       - analytics-data:/data
     networks:
-      - pacs-net
+      - openhis-net
     depends_on:
       - ehr
     healthcheck:
@@ -297,8 +297,8 @@ services:
       start_period: 20s
 
   hl7:
-    build: ./hl7
-    container_name: pacs-demo-hl7
+    build: ./services/hl7
+    container_name: openhis-hl7
     restart: unless-stopped
     environment:
       - DB_PATH=/data/hl7.db
@@ -313,7 +313,7 @@ services:
     ports:
       - "2575:2575"
     networks:
-      - pacs-net
+      - openhis-net
     depends_on:
       - ehr
     healthcheck:
@@ -324,8 +324,8 @@ services:
       start_period: 15s
 
   patient-portal:
-    build: ./patient-portal
-    container_name: pacs-demo-patient-portal
+    build: ./services/patient-portal
+    container_name: openhis-patient-portal
     restart: unless-stopped
     environment:
       - DB_PATH=/data/portal.db
@@ -336,7 +336,7 @@ services:
     volumes:
       - portal-sessions:/data
     networks:
-      - pacs-net
+      - openhis-net
     depends_on:
       - ehr
     healthcheck:
@@ -347,8 +347,8 @@ services:
       start_period: 15s
 
   admin:
-    build: ./admin
-    container_name: pacs-demo-admin
+    build: ./services/admin
+    container_name: openhis-admin
     restart: unless-stopped
     environment:
       - DB_PATH=/data/admin.db
@@ -368,7 +368,7 @@ services:
     volumes:
       - admin-data:/data
     networks:
-      - pacs-net
+      - openhis-net
     depends_on:
       - ehr
     healthcheck:

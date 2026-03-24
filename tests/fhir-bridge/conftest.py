@@ -1,7 +1,7 @@
 import os, sys, pytest
 from fastapi.testclient import TestClient
 
-SERVICE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'fhir-bridge'))
+SERVICE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'fhir-bridge'))
 if SERVICE not in sys.path:
     sys.path.insert(0, SERVICE)
 

@@ -27,8 +27,8 @@ from database import get_db, rows_to_list
 log = logging.getLogger("runner")
 
 JOBS_DATA_DIR    = os.environ.get("JOBS_DATA_DIR", "/data/jobs")
-JOBS_VOLUME      = os.environ.get("JOBS_VOLUME_NAME", "pacs-demo_ai-jobs")
-DOCKER_NETWORK   = os.environ.get("DOCKER_NETWORK", "pacs-demo_pacs-net")
+JOBS_VOLUME      = os.environ.get("JOBS_VOLUME_NAME", "openhis_ai-jobs")
+DOCKER_NETWORK   = os.environ.get("DOCKER_NETWORK", "openhis_openhis-net")
 CONTAINER_TIMEOUT = int(os.environ.get("CONTAINER_TIMEOUT_S", "300"))
 
 

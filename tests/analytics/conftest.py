@@ -4,7 +4,7 @@ from pathlib import Path
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh analytics database for each test"""
-    analytics_path = str(Path(__file__).parent.parent.parent / "analytics")
+    analytics_path = str(Path(__file__).parent.parent.parent / "services" / "analytics")
     test_db = "/tmp/test_analytics.db"
     
     # Clear cached modules
