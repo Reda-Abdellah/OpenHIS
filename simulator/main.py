@@ -15,7 +15,8 @@ from dicom_factory import build_dicom, SUPPORTED
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("simulator")
 
-app = FastAPI(title="DICOM Acquisition Simulator", version="2.3.0")
+ROOT_PATH = os.environ.get("ROOT_PATH", "")
+app = FastAPI(title="DICOM Acquisition Simulator", version="2.3.0", root_path=ROOT_PATH)
 
 STATIC_DIR  = os.path.join(os.path.dirname(__file__), "static")
 ORTHANC_URL = os.environ.get("ORTHANC_URL", "http://orthanc:8042")

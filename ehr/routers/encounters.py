@@ -15,7 +15,7 @@ async def _notify_encounter(event: str, encounter: dict):
         return
     try:
         async with httpx.AsyncClient(timeout=4.0) as c:
-            await c.post(f"{FHIR_BRIDGE_URL}/events/{event}", json=encounter)
+            await c.post(f"{FHIR_BRIDGE_URL}/api/events/{event}", json=encounter)
     except Exception:
         pass
 

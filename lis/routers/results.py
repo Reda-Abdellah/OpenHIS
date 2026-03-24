@@ -87,7 +87,7 @@ async def submit_results(body: ResultsSubmit, bg: BackgroundTasks):
 async def _notify_bridge(payload: dict):
     try:
         async with httpx.AsyncClient(timeout=5) as c:
-            await c.post(f"{FHIR_BRIDGE_URL}/events/lab-result-final", json=payload)
+            await c.post(f"{FHIR_BRIDGE_URL}/api/events/lab-result-final", json=payload)
     except Exception:
         pass
 

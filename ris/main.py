@@ -8,7 +8,8 @@ from routers import patients, orders, reports
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ris")
 
-app = FastAPI(title="RIS — Radiology Information System", version="3.2.0")
+ROOT_PATH = os.environ.get("ROOT_PATH", "")
+app = FastAPI(title="RIS — Radiology Information System", version="3.2.0", root_path=ROOT_PATH)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

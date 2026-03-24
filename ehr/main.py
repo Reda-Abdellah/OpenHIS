@@ -8,7 +8,7 @@ from routers import patients, encounters, orders, cdss, scheduling, billing, not
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ehr")
 
-ROOT_PATH = os.environ.get("ROOT_PATH", os.environ.get("ROOTPATH", ""))
+ROOT_PATH = os.environ.get("ROOT_PATH", "")
 app = FastAPI(title="EHR", version="1.0.0", root_path=ROOT_PATH)
 
 for r in (patients.router, encounters.router, orders.router,

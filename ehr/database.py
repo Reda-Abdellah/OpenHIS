@@ -1,7 +1,7 @@
 import sqlite3, os, uuid
 from contextlib import contextmanager
 
-DBPATH = os.environ.get("DBPATH", "data/ehr.db")
+DBPATH = os.environ.get("DB_PATH", "data/ehr.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patients (

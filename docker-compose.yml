@@ -61,6 +61,12 @@ services:
       - "4242:4242"
     networks: [pacs-net]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   ohif:
     image: ohif/app:latest
@@ -73,14 +79,23 @@ services:
     build: ./simulator
     environment:
       ORTHANC_URL: http://orthanc:8042
+      ROOT_PATH: /simulator
     networks: [pacs-net]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   ris:
     build: ./ris
     environment:
       DB_PATH: /data/ris.db
       ORTHANC_URL: http://orthanc:8042
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005
+      ROOT_PATH: /ris
     volumes:
       - ris-data:/data
     networks: [pacs-net]
@@ -146,8 +161,8 @@ services:
   ehr:
     build: ./ehr
     environment:
-      DBPATH: /data/ehr.db
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005/api
+      DB_PATH: /data/ehr.db
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005
       RIS_URL: http://ris:8002/api
       LIS_URL: http://lis:8004/api
       ROOT_PATH: /ehr
@@ -167,9 +182,9 @@ services:
   lis:
     build: ./lis
     environment:
-      DBPATH: /data/lis.db
+      DB_PATH: /data/lis.db
       EHR_URL: http://ehr:8003/api
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005/api
+      FHIR_BRIDGE_URL: http://fhir-bridge:8005
       ROOT_PATH: /lis
     volumes:
       - lis-data:/data
@@ -216,6 +231,12 @@ services:
       - ehr
     networks:
       - pacs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   fhir-server:
     image: hapiproject/hapi:latest
@@ -324,6 +345,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
   admin:
     build: ./admin
     container_name: pacs-demo-admin

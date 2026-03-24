@@ -1,6 +1,6 @@
 venv
 scripts
-tests
+#tests
 repomix*
 **/__pycache__/
 **/*.pyc

@@ -2,7 +2,7 @@ import datetime
 import httpx as _httpx
 
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
@@ -92,7 +92,7 @@ def create_report(body: ReportCreate):
 
 
 @router.put("/{report_id}")
-def update_report(report_id: int, body: ReportUpdate):
+def update_report(report_id: int, body: ReportUpdate, bg: BackgroundTasks):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(400, "Nothing to update")
@@ -129,20 +129,21 @@ def update_report(report_id: int, body: ReportUpdate):
             )
         
         if finalizing:
-            _bridge = os.environ.get("FHIR_BRIDGE_URL", "")
-            if _bridge:
-                try:
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-                    async def _notify():
-                        async with _httpx.AsyncClient(timeout=3) as _c:
-                            await _c.post(
-                                f"{_bridge}/api/events/report-final",
-                                json={"report_id": report_id,
-                                        "order_id": existing["orderid"]})
-                    loop.create_task(_notify())
-                except Exception:
-                    pass
+            bg.add_task(_notify_fhir_report, report_id, existing["order_id"])
 
         row = db.execute(_FULL_SQL + "WHERE r.id=?", (report_id,)).fetchone()
     return row_to_dict(row)
+
+
+async def _notify_fhir_report(report_id: int, order_id: int) -> None:
+    _bridge = os.environ.get("FHIR_BRIDGE_URL", "")
+    if not _bridge:
+        return
+    try:
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            await _c.post(
+                f"{_bridge}/api/events/report-final",
+                json={"report_id": report_id, "order_id": order_id},
+            )
+    except Exception:
+        pass

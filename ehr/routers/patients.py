@@ -65,7 +65,7 @@ async def create_patient(body: PatientCreate):
     if FHIR_BRIDGE_URL:
         try:
             async with httpx.AsyncClient(timeout=3) as c:
-                await c.post(f"{FHIR_BRIDGE_URL}/events/patient-created", json=patient)
+                await c.post(f"{FHIR_BRIDGE_URL}/api/events/patient-created", json=patient)
         except Exception:
             pass
     return patient

@@ -1,7 +1,7 @@
 import sqlite3, os, uuid, random, string
 from contextlib import contextmanager
 
-DBPATH = os.environ.get("DBPATH", "data/lis.db")
+DBPATH = os.environ.get("DB_PATH", "data/lis.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lab_patients (

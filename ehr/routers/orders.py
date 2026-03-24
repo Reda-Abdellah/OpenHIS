@@ -84,7 +84,7 @@ async def create_order(body: OrderCreate, bg: BackgroundTasks):
 async def _notify_bridge(event: str, payload: dict):
     try:
         async with httpx.AsyncClient(timeout=5) as c:
-            await c.post(f"{FHIR_BRIDGE_URL}/events/{event}", json=payload)
+            await c.post(f"{FHIR_BRIDGE_URL}/api/events/{event}", json=payload)
     except Exception:
         pass
 
