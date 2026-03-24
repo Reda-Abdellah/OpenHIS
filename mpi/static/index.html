@@ -1,0 +1,247 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MPI</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.shell{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:200px;min-width:200px;background:var(--card);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:12px 0}
+.logo{padding:10px 16px 16px;font-size:.9rem;font-weight:700;color:var(--link)}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;
+  border-left:3px solid transparent;transition:all .13s;font-size:.82rem;
+  color:var(--mute);text-decoration:none;user-select:none}
+.nav-item:hover{background:var(--hover);color:var(--text)}
+.nav-item.active{border-left-color:var(--link);color:var(--link);background:rgba(88,166,255,.07)}
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.topbar{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;
+  gap:10px;background:var(--card);position:sticky;top:0;z-index:5}
+.topbar h2{font-size:.93rem;font-weight:600;flex:1}
+.content{padding:20px 24px;flex:1}
+.card{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:16px;margin-bottom:14px}
+.card-title{font-size:.7rem;font-weight:700;color:var(--mute);text-transform:uppercase;
+  letter-spacing:.07em;margin-bottom:10px}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:7px;
+  padding:14px 18px;min-width:110px;flex:1}
+.stat-val{font-size:1.5rem;font-weight:700;margin-bottom:2px}
+.stat-label{font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+thead tr{background:var(--card)}
+thead th{padding:8px 12px;text-align:left;font-size:.68rem;font-weight:600;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .12s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
+td{padding:8px 12px;vertical-align:middle}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;
+  border:1px solid var(--border);background:var(--input);color:var(--text);font-size:.78rem;
+  cursor:pointer;font-family:inherit;transition:all .13s}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+.btn.success{background:#162316;border-color:#2a3d2a;color:var(--green)}
+.btn.danger{background:#200e10;border-color:#3d1820;color:var(--red)}
+.btn.warn{background:#201a10;border-color:#5a3a00;color:var(--orange)}
+.btn.sm{padding:3px 10px;font-size:.72rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.68rem;font-weight:600;line-height:1.5}
+.b-active{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-merged{background:#1a1e30;color:var(--mute);border:1px solid #30363d}
+.b-pending{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.b-confirmed_match{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-confirmed_no_match{background:#1a1e30;color:var(--mute);border:1px solid #30363d}
+.xref-chip{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.65rem;font-weight:700;
+  margin:1px;background:#162040;color:var(--link);border:1px solid #2a4a90}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filter-bar input,.filter-bar select{background:var(--input);border:1px solid var(--border);
+  border-radius:5px;color:var(--text);padding:5px 9px;font-size:.78rem;font-family:inherit;
+  outline:none;height:30px}
+.filter-bar input:focus{border-color:var(--link)}
+.empty{padding:36px;text-align:center;color:var(--mute);font-size:.85rem}
+.score-bar{display:inline-block;height:8px;border-radius:4px;vertical-align:middle;margin-right:6px}
+.toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:6px;
+  font-size:.8rem;border:1px solid;z-index:200;max-width:340px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+.toast.info{background:#0d1220;border-color:#2a3a60;color:var(--link)}
+</style></head>
+<body>
+<div class="shell">
+  <nav class="sidebar">
+    <div class="logo">🪪 MPI</div>
+    <a class="nav-item active" data-view="dashboard" onclick="nav('dashboard')"><span>📊</span> Dashboard</a>
+    <a class="nav-item" data-view="patients"  onclick="nav('patients')"><span>👤</span> Master Patients</a>
+    <a class="nav-item" data-view="crossref"  onclick="nav('crossref')"><span>🔗</span> Cross-References</a>
+    <a class="nav-item" data-view="matching"  onclick="nav('matching')"><span>🔍</span> Match Review</a>
+    <a class="nav-item" data-view="audit"     onclick="nav('audit')"><span>📋</span> Audit Log</a>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <div id="topbar-actions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const BASE = '/mpi/';
+function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function toast(msg,type='info'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+async function api(path,opts){const r=await fetch(BASE+path,opts);if(!r.ok){const t=await r.text();throw new Error(r.status+' '+t);}if(r.status===204)return null;return r.json();}
+function statusBadge(s){const m={active:'b-active',merged:'b-merged',pending:'b-pending',confirmed_match:'b-confirmed_match',confirmed_no_match:'b-confirmed_no_match'};return`<span class="badge ${m[s]||'b-pending'}">${esc(s)}</span>`;}
+function xrefChips(xrefs){if(!xrefs)return'';return xrefs.split(',').map(x=>`<span class="xref-chip">${esc(x)}</span>`).join('');}
+function scoreBar(score){const w=Math.round(score*80);const col=score>=0.9?'#f85149':score>=0.75?'#ffa657':'#e3b341';return`<span class="score-bar" style="width:${w}px;background:${col}"></span>${(score*100).toFixed(1)}%`;}
+
+function nav(view){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  const titles={dashboard:'Dashboard',patients:'Master Patients',crossref:'Cross-References',matching:'Match Review',audit:'Audit Log'};
+  document.getElementById('page-title').textContent=titles[view]||view;
+  document.getElementById('topbar-actions').innerHTML='';
+  ({dashboard:renderDashboard,patients:renderPatients,crossref:renderCrossRef,matching:renderMatching,audit:renderAudit})[view]?.();
+}
+
+async function renderDashboard(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const h=await api('api/health');
+    el.innerHTML=`
+      <div class="stats">
+        <div class="stat"><div class="stat-val" style="color:var(--link)">${h.master_patients}</div><div class="stat-label">Master Patients</div></div>
+        <div class="stat"><div class="stat-val">${h.cross_references}</div><div class="stat-label">Cross-References</div></div>
+        <div class="stat"><div class="stat-val" style="color:${h.pending_matches>0?'var(--orange)':'var(--green)'}">${h.pending_matches}</div><div class="stat-label">Pending Matches</div></div>
+      </div>
+      ${h.pending_matches>0?`<div class="card" style="border-color:#5a3a00">
+        <div class="card-title">⚠️ Duplicate Review Required</div>
+        <p style="font-size:.85rem;color:var(--orange);margin-bottom:10px">${h.pending_matches} potential duplicate patient record(s) need review.</p>
+        <button class="btn warn" onclick="nav('matching')">Review Candidates →</button>
+      </div>`:''}
+      <div class="card">
+        <div class="card-title">Quick Actions</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn pri" onclick="nav('patients')">Browse Patients</button>
+          <button class="btn" onclick="runMatching()">▶ Run Duplicate Scan</button>
+          <button class="btn" onclick="nav('audit')">View Audit Log</button>
+        </div>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function runMatching(){
+  try{const r=await api('api/matching/run',{method:'POST'});toast(`Scan complete: ${r.candidates_created} new candidates from ${r.patients_scanned} patients`,'info');}
+  catch(e){toast(e.message,'err');}
+}
+
+async function renderPatients(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML=`
+    <input id="pt-search" placeholder="Search name / MRN…" style="height:28px;font-size:.78rem;padding:0 8px;background:var(--input);border:1px solid var(--border);border-radius:5px;color:var(--text);outline:none;width:200px" oninput="renderPatients()">
+    <button class="btn" onclick="renderPatients()">↻</button>`;
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const q=document.getElementById('pt-search')?.value||'';
+    const pts=await api(`api/patients?status=active${q?'&q='+encodeURIComponent(q):''}`);
+    el.innerHTML=pts.length===0?'<div class="empty">No patients found.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>MRN</th><th>Name</th><th>DOB</th><th>Sex</th><th>Cross-References</th><th>Dupl?</th><th>Registered</th></tr></thead>
+        <tbody>${pts.map(p=>`<tr>
+          <td><code style="color:var(--link)">${esc(p.mrn)}</code></td>
+          <td><strong>${esc(p.firstname)} ${esc(p.lastname)}</strong></td>
+          <td style="color:var(--mute)">${esc(p.birthdate||'—')}</td>
+          <td>${esc(p.sex||'—')}</td>
+          <td>${xrefChips(p.xrefs)}</td>
+          <td>${p.pending_matches>0?`<span class="badge b-pending" style="cursor:pointer" onclick="nav('matching')">${p.pending_matches}</span>`:'—'}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(p.createdat)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function renderCrossRef(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const rows=await api('api/crossref');
+    el.innerHTML=rows.length===0?'<div class="empty">No cross-references yet.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>System</th><th>System ID</th><th>MRN</th><th>Master ID</th><th>Registered</th><th></th></tr></thead>
+        <tbody>${rows.map(x=>`<tr>
+          <td><span class="xref-chip">${esc(x.system)}</span></td>
+          <td style="font-family:monospace;font-size:.75rem">${esc(x.system_id)}</td>
+          <td style="color:var(--mute)">${esc(x.mrn||'—')}</td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--mute)">${esc(x.master_id.slice(0,12))}…</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(x.createdat)}</td>
+          <td><button class="btn sm danger" onclick="deleteXref(${x.id})">✕</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+async function deleteXref(id){if(!confirm('Remove cross-reference?'))return;try{await api(`api/crossref/${id}`,{method:'DELETE'});toast('Removed','info');renderCrossRef();}catch(e){toast(e.message,'err');}}
+
+async function renderMatching(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML=`<button class="btn warn" onclick="runMatching().then(renderMatching)">▶ Re-run Scan</button>`;
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const cands=await api('api/matching/candidates?status=pending');
+    el.innerHTML=cands.length===0?'<div class="empty">No pending match candidates. <button class="btn sm" onclick="runMatching().then(renderMatching)">Run scan</button></div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Patient A</th><th>Patient B</th><th>Score</th><th>Flagged</th><th>Actions</th></tr></thead>
+        <tbody>${cands.map(c=>`<tr>
+          <td><strong>${esc(c.name_a)}</strong><br><code style="font-size:.7rem;color:var(--mute)">${esc(c.mrn_a)}</code></td>
+          <td><strong>${esc(c.name_b)}</strong><br><code style="font-size:.7rem;color:var(--mute)">${esc(c.mrn_b)}</code></td>
+          <td>${scoreBar(c.score)}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(c.createdat)}</td>
+          <td style="display:flex;gap:4px">
+            <button class="btn sm danger" onclick="resolveCandidate(${c.id},'confirmed_match','${esc(c.master_id_a)}','${esc(c.master_id_b)}')">Merge</button>
+            <button class="btn sm" onclick="resolveCandidate(${c.id},'confirmed_no_match')">Not Same</button>
+          </td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function resolveCandidate(id,decision,aidRaw,bidRaw){
+  const reviewer=prompt('Reviewer name:','Admin');if(!reviewer)return;
+  try{
+    await api(`api/matching/candidates/${id}/resolve`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({decision,reviewed_by:reviewer})});
+    if(decision==='confirmed_match'){
+      const surviving=prompt('Surviving record ID (paste master_id_a or b):',aidRaw||'');
+      const merged=surviving===aidRaw?bidRaw:aidRaw;
+      if(surviving&&merged){
+        await api(`api/patients/${surviving}/merge`,{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({merge_id:merged,performed_by:reviewer})});
+        toast('Records merged','ok');
+      }
+    } else {toast('Marked as not same','info');}
+    renderMatching();
+  }catch(e){toast(e.message,'err');}
+}
+
+async function renderAudit(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const rows=await api('api/audit?limit=200');
+    el.innerHTML=rows.length===0?'<div class="empty">No audit entries.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Action</th><th>Master ID</th><th>By</th><th>Details</th><th>Time</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr>
+          <td><strong>${esc(r.action)}</strong></td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--mute)">${r.master_id?esc(r.master_id.slice(0,12))+'…':'—'}</td>
+          <td style="font-size:.75rem">${esc(r.performed_by||'system')}</td>
+          <td style="font-size:.75rem;color:var(--mute);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.details||'')}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(r.createdat)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+nav('dashboard');
+</script>
+</body></html>

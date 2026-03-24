@@ -62,6 +62,19 @@
     .b-paid     { background: #162316; color: var(--green);  border: 1px solid #2a3d2a; }
     .b-chronic  { background: #201a10; color: var(--orange); border: 1px solid #5a3a00; }
     .b-resolved { background: #1a1e30; color: var(--mute);   border: 1px solid #30363d; }
+
+.note-card{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.note-card:hover{background:var(--card-hover)}
+.note-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.note-content{display:none;padding:10px;background:var(--input);border-radius:5px;
+  font-size:.82rem;white-space:pre-wrap;word-break:break-word;max-height:300px;
+  overflow-y:auto;margin-top:8px;font-family:monospace;line-height:1.6}
+.note-content.open{display:block}
+.b-draft{background:#201a10;color:var(--yellow);border:1px solid #4a3a00}
+.b-final{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-amended{background:#1a1e30;color:var(--mute);border:1px solid #30363d}
+.b-progress,.b-soap,.b-nursing,.b-discharge,.b-consultation,.b-procedure{
+  background:#162040;color:var(--link);border:1px solid #2a4a90}
     .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: flex-end; }
     .form-group { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
     .form-group.full { flex: 1; min-width: 200px; }
@@ -102,7 +115,26 @@
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
-  </style>
+  
+    /* ── Bed Board ─────────────────────────────────── */
+    .bed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+    .bed-card{border:1px solid var(--border);border-radius:7px;padding:12px 14px;cursor:pointer;transition:border-color .15s}
+    .bed-card:hover{border-color:var(--link)}
+    .bed-card.available{border-left:3px solid var(--green)}
+    .bed-card.occupied{border-left:3px solid var(--red)}
+    .bed-card.housekeeping{border-left:3px solid var(--orange)}
+    .bed-card.maintenance{border-left:3px solid var(--mute)}
+    .bed-label{font-size:.9rem;font-weight:700;margin-bottom:4px}
+    .bed-status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+    .dot-available{background:var(--green)}
+    .dot-occupied{background:var(--red)}
+    .dot-housekeeping{background:var(--orange)}
+    .dot-maintenance{background:var(--mute)}
+    .bed-patient{font-size:.75rem;color:var(--link);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .bed-since{font-size:.68rem;color:var(--mute);margin-top:2px}
+    .ward-title{font-size:.8rem;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.07em;margin:14px 0 8px}
+    .ward-stats{font-size:.72rem;color:var(--mute);margin-bottom:8px}
+</style>
 </head>
 <body>
 <div class="shell">
@@ -113,7 +145,8 @@
     <a class="nav-item active" data-view="patients" onclick="nav('patients')">
       <span class="nav-icon">👤</span> Patients
     </a>
-    <a class="nav-item" data-view="cdss" onclick="nav('cdss')">
+    <a class="nav-item" data-view="cdss" <a class="nav-item" data-view="bedboard" onclick="nav('bedboard')"><span class="nav-icon">🛏</span> Bed Board</a>
+        onclick="nav('cdss')">
       <span class="nav-icon">⚠️</span> CDSS Alerts
     </a>
     <div style="flex:1"></div>
@@ -133,6 +166,103 @@
 </div>
 
 <!-- ═══════════════════════ MODALS ═══════════════════════ -->
+
+
+<!-- Create Note -->
+<div class="overlay" id="modal-note">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <h3>Clinical Note</h3>
+      <button class="btn sm" onclick="closeModal('modal-note')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-note" onsubmit="submitNote(event)">
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Note Type</label>
+            <select name="note_type" onchange="setSoapTemplate()" required>
+              <option value="progress">Progress Note</option>
+              <option value="soap">SOAP Note</option>
+              <option value="nursing">Nursing Note</option>
+              <option value="discharge">Discharge Summary</option>
+              <option value="consultation">Consultation Note</option>
+              <option value="procedure">Procedure Note</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>Title (optional)</label>
+            <input name="title" placeholder="Short note title">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Author</label>
+            <input name="author" placeholder="Dr. / Nurse ...">
+          </div>
+        </div>
+        <div id="note-template-hint" style="display:none;background:#162040;border:1px solid #2a4a90;
+             border-radius:5px;padding:6px 10px;font-size:.75rem;color:var(--link);margin-bottom:8px">
+          ✨ Template loaded — fill in each section below
+        </div>
+        <div class="form-group full" style="margin-bottom:10px">
+          <label>Content</label>
+          <textarea name="content" rows="12" required
+            style="min-height:200px;font-family:monospace;line-height:1.6"></textarea>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px;gap:8px">
+          <button type="button" class="btn" onclick="closeModal('modal-note')">Cancel</button>
+          <button type="submit" class="btn" data-action="draft">💾 Save Draft</button>
+          <button type="submit" class="btn success" data-action="sign">✓ Sign &amp; Finalize</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Document -->
+<div class="overlay" id="modal-doc-upload">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Upload Document</h3>
+      <button class="btn sm" onclick="closeModal('modal-doc-upload')">Close</button>
+    </div>
+    <div class="modal-body">
+      <form id="form-doc-upload" onsubmit="submitDocUpload(event)">
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Document Type</label>
+            <select name="doc_type">
+              <option value="attachment">Attachment</option>
+              <option value="consent">Consent Form</option>
+              <option value="referral">Referral Letter</option>
+              <option value="lab_result">Lab Result</option>
+              <option value="imaging">Imaging Report</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>Uploaded By</label>
+            <input name="uploaded_by" placeholder="Name">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label>Description (optional)</label>
+            <input name="description" placeholder="Brief description">
+          </div>
+        </div>
+        <div class="form-group full" style="margin-bottom:10px">
+          <label>File (max 20 MB)</label>
+          <input type="file" name="file" required>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-doc-upload')">Cancel</button>
+          <button type="submit" class="btn pri">⬆ Upload</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <!-- New Patient -->
 <div class="overlay" id="modal-new-patient">
@@ -361,7 +491,43 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+
+    <!-- Add Bed Modal -->
+    <div class="overlay" id="modal-add-bed">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Add Bed</h3>
+          <button class="btn sm" onclick="closeModal('modal-add-bed')">Close</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-add-bed" onsubmit="submitAddBed(event)">
+            <div class="form-row">
+              <div class="form-group full"><label>Ward</label><input name="ward" required placeholder="e.g. Cardiology"></div>
+              <div class="form-group"><label>Room</label><input name="room" placeholder="e.g. 101"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Bed Label</label><input name="bed_label" required placeholder="e.g. 101-A"></div>
+              <div class="form-group"><label>Type</label>
+                <select name="bed_type">
+                  <option value="standard">Standard</option>
+                  <option value="icu">ICU</option>
+                  <option value="isolation">Isolation</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group full"><label>Notes</label><input name="notes" placeholder="Optional notes"></div>
+            </div>
+            <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+              <button type="button" class="btn" onclick="closeModal('modal-add-bed')">Cancel</button>
+              <button type="submit" class="btn pri">Create Bed</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
 
 <script>
 'use strict';
@@ -419,7 +585,7 @@ function nav(view) {
   const titles = { patients: 'Patients', cdss: 'CDSS Alerts' };
   document.getElementById('page-title').textContent = titles[view] || view;
   document.getElementById('topbar-actions').innerHTML = '';
-  ({ patients: renderPatients, cdss: renderCDSS }[view] || renderPatients)();
+  ({ patients: renderPatients, bedboard: renderBedBoard, cdss: renderCDSS }[view] || renderPatients)();
 }
 
 // ── PATIENTS LIST ─────────────────────────────────────────────────────────────
@@ -437,7 +603,8 @@ async function renderPatients() {
     const banner = critCount > 0
       ? `<div class="alert-banner"><span class="alert-count">🚨 ${critCount}</span>
          critical CDSS alert${critCount > 1 ? 's' : ''} pending acknowledgement.
-         <button class="btn sm danger" onclick="nav('cdss')">View Alerts</button></div>`
+         <button class="btn sm danger" <a class="nav-item" data-view="bedboard" onclick="nav('bedboard')"><span class="nav-icon">🛏</span> Bed Board</a>
+        onclick="nav('cdss')">View Alerts</button></div>`
       : '';
     if (!patients.length) {
       el.innerHTML = banner + `<div class="empty">No patients yet. Click "New Patient" to get started.</div>`;
@@ -507,7 +674,8 @@ async function openPatientChart(patientId) {
         <span class="alert-count">⚠️ ${alertCount}</span>
         unacknowledged CDSS alert${alertCount>1?'s':''} for this patient.
         <button class="btn sm danger" onclick="switchTab('tab-cdss')">View</button>
-      </div>` : ''}
+      </div>
+              <div class="tab" data-tab="tab-notes" onclick="switchTab('tab-notes')">Notes &amp; Docs</div>` : ''}
       <div class="tabs">
         <div class="tab active" data-tab="tab-summary"   onclick="switchTab('tab-summary')">Summary</div>
         <div class="tab"        data-tab="tab-encounters" onclick="switchTab('tab-encounters')">Encounters</div>
@@ -1001,6 +1169,203 @@ async function deletePatient(patientId) {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 renderPatients();
+
+// ── NOTES & DOCUMENTS ──────────────────────────────────────────────────────
+async function renderTabNotes(patientId) {
+    const pane = document.getElementById('tab-notes');
+    pane.innerHTML = '<div class="empty">Loading…</div>';
+    const typeFilter   = document.getElementById('nf-type')?.value   || '';
+    const statusFilter = document.getElementById('nf-status')?.value || '';
+    try {
+        const [notes, docs] = await Promise.all([
+            api(`api/notes?patient_id=${patientId}${typeFilter?'&note_type='+typeFilter:''}${statusFilter?'&status='+statusFilter:''}`),
+            api(`api/documents?patient_id=${patientId}`)
+        ]);
+        pane.innerHTML = `
+          <div class="filter-bar">
+            <button class="btn pri sm" onclick="openModalNewNote()">+ New Note</button>
+            <select id="nf-type" onchange="renderTabNotes('${patientId}')" style="height:28px;font-size:.78rem">
+              <option value="">All Types</option>
+              <option value="progress">Progress</option><option value="soap">SOAP</option>
+              <option value="nursing">Nursing</option><option value="discharge">Discharge</option>
+              <option value="consultation">Consultation</option><option value="procedure">Procedure</option>
+            </select>
+            <select id="nf-status" onchange="renderTabNotes('${patientId}')" style="height:28px;font-size:.78rem">
+              <option value="">All Statuses</option>
+              <option value="draft">Draft</option><option value="final">Final</option>
+              <option value="amended">Amended</option>
+            </select>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+            <div class="card-title" style="padding:10px 14px;margin:0;border-bottom:1px solid var(--border)">
+              Clinical Notes (${notes.length})
+            </div>
+            ${!notes.length
+              ? '<div class="empty">No notes yet. Click <b>+ New Note</b> to create one.</div>'
+              : notes.map(n => `
+                <div class="note-card" onclick="toggleNote('nc-${n.id}')">
+                  <div class="note-meta">
+                    <span class="badge b-${n.note_type}" style="min-width:88px;text-align:center">${esc(n.note_type)}</span>
+                    <strong style="flex:1;font-size:.85rem">${esc(n.title || n.note_type)}</strong>
+                    <span class="badge b-${n.status}">${esc(n.status)}</span>
+                    <span style="font-size:.72rem;color:var(--mute)">${esc(n.author||'—')} · ${fmtDate(n.createdat)}</span>
+                    <span onclick="event.stopPropagation()" style="display:flex;gap:4px">
+                      ${n.status==='draft'
+                        ? `<button class="btn sm success" onclick="signNote(${n.id})">✓ Sign</button>
+                           <button class="btn sm danger" onclick="deleteNote(${n.id})">✕</button>`:''}
+                      ${n.status==='final'
+                        ? `<button class="btn sm" onclick="amendNote(${n.id})">Amend</button>`:''}
+                    </span>
+                  </div>
+                  <div id="nc-${n.id}" class="note-content">${esc(n.content)}</div>
+                </div>`).join('')}
+          </div>
+          <div class="card">
+            <div style="display:flex;align-items:center;margin-bottom:10px">
+              <div class="card-title" style="flex:1;margin:0">Documents &amp; Attachments (${docs.length})</div>
+              <button class="btn sm pri" onclick="openModal('modal-doc-upload')">⬆ Upload</button>
+            </div>
+            ${!docs.length
+              ? '<div class="empty" style="padding:12px">No documents uploaded yet.</div>'
+              : `<div class="tbl-wrap"><table>
+                  <thead><tr><th>Name</th><th>Type</th><th>Uploaded By</th><th>Size</th><th>Date</th><th></th></tr></thead>
+                  <tbody>${docs.map(d => `<tr>
+                    <td><strong>${esc(d.original_name)}</strong></td>
+                    <td style="color:var(--mute)">${esc(d.doc_type)}</td>
+                    <td style="font-size:.75rem">${esc(d.uploaded_by||'—')}</td>
+                    <td style="font-size:.72rem;color:var(--mute)">${d.file_size?(d.file_size/1024).toFixed(1)+' KB':'—'}</td>
+                    <td style="font-size:.72rem;color:var(--mute)">${fmtDate(d.createdat)}</td>
+                    <td><a class="btn sm" href="/ehr/api/documents/${d.id}/download" target="_blank">⬇</a>
+                        <button class="btn sm danger" onclick="deleteDoc(${d.id})">✕</button></td>
+                  </tr>`).join('')}</tbody>
+                </table></div>`}
+          </div>`;
+    } catch(e) {
+        pane.innerHTML = `<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;
+    }
+}
+
+function toggleNote(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('open');
+}
+
+function openModalNewNote() {
+    document.getElementById('form-note').reset();
+    document.getElementById('note-template-hint').style.display = 'none';
+    openModal('modal-note');
+}
+
+function setSoapTemplate() {
+    const type = document.querySelector('#form-note [name="note_type"]').value;
+    const hint = document.getElementById('note-template-hint');
+    const content = document.querySelector('#form-note [name="content"]');
+    const templates = {
+        soap:         'S (Subjective):\n\nO (Objective):\n\nA (Assessment):\n\nP (Plan):',
+        discharge:    'Reason for Admission:\n\nHospital Course:\n\nDischarge Condition:\n\nDischarge Medications:\n\nFollow-up Instructions:',
+        procedure:    'Procedure Performed:\n\nIndication:\n\nTechnique:\n\nFindings:\n\nComplications:\n\nDisposition:',
+        consultation: 'Referral Reason:\n\nHistory:\n\nPhysical Exam:\n\nAssessment:\n\nRecommendations:',
+        nursing:      'Assessment:\n\nInterventions:\n\nPatient Response:\n\nPlan:',
+    };
+    if (templates[type] && !content.value.trim()) {
+        content.value = templates[type];
+        hint.style.display = 'block';
+    } else {
+        hint.style.display = 'none';
+    }
+}
+
+async function submitNote(e) {
+    e.preventDefault();
+    if (!currentPatient) return;
+    const action = e.submitter?.dataset?.action || 'draft';
+    const raw = formData('form-note');
+    raw.patient_id = currentPatient.id;
+    raw.status     = 'draft';
+    try {
+        const note = await api('api/notes', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(raw)
+        });
+        if (action === 'sign') {
+            await api(`api/notes/${note.id}/sign`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({author: raw.author})
+            });
+        }
+        closeModal('modal-note');
+        document.getElementById('form-note').reset();
+        toast(action === 'sign' ? 'Note signed & finalized' : 'Note saved as draft', 'ok');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+async function signNote(noteId) {
+    const author = prompt('Signing author name:', 'Dr. ');
+    if (!author) return;
+    try {
+        await api(`api/notes/${noteId}/sign`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({author})
+        });
+        toast('Note signed & finalized', 'ok');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+async function amendNote(noteId) {
+    const reason  = prompt('Reason for amendment:');
+    if (!reason) return;
+    const content = prompt('Amendment content (the corrected text):');
+    if (!content) return;
+    try {
+        await api(`api/notes/${noteId}/amend`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({amendment_reason: reason, content, patient_id: currentPatient.id})
+        });
+        toast('Amendment draft created', 'ok');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteNote(noteId) {
+    if (!confirm('Delete this draft note?')) return;
+    try {
+        await api(`api/notes/${noteId}`, {method: 'DELETE'});
+        toast('Note deleted', 'info');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+async function submitDocUpload(e) {
+    e.preventDefault();
+    if (!currentPatient) return;
+    const form = document.getElementById('form-doc-upload');
+    const fd = new FormData(form);
+    fd.set('patient_id', currentPatient.id);
+    try {
+        const r = await fetch('/ehr/api/documents', {method: 'POST', body: fd});
+        if (!r.ok) throw new Error(await r.text());
+        closeModal('modal-doc-upload');
+        form.reset();
+        toast('Document uploaded', 'ok');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteDoc(docId) {
+    if (!confirm('Delete this document?')) return;
+    try {
+        await api(`api/documents/${docId}`, {method: 'DELETE'});
+        toast('Document deleted', 'info');
+        renderTabNotes(currentPatient.id);
+    } catch(e) { toast(e.message, 'err'); }
+}
+
 </script>
 </body>
 </html>

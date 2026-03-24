@@ -1,0 +1,283 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Analytics</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 24px;
+  background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.topbar h1{font-size:.95rem;font-weight:700;color:var(--link);flex:1}
+.last-upd{font-size:.72rem;color:var(--mute)}
+.content{padding:20px 24px;max-width:1200px;margin:0 auto}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:14px 16px}
+.kpi-val{font-size:1.6rem;font-weight:700;margin-bottom:3px;line-height:1}
+.kpi-label{font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.kpi-sub{font-size:.72rem;color:var(--mute);margin-top:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:16px}
+.card-title{font-size:.68rem;font-weight:700;color:var(--mute);text-transform:uppercase;
+  letter-spacing:.07em;margin-bottom:12px}
+.bar-row{display:flex;align-items:center;gap:8px;margin:5px 0}
+.bar-label{width:88px;font-size:.72rem;color:var(--mute);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.bar-track{flex:1;height:13px;background:var(--input);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .5s}
+.bar-val{width:38px;font-size:.72rem;text-align:right;flex-shrink:0}
+.metric-row{display:flex;justify-content:space-between;align-items:center;
+  padding:5px 0;border-bottom:1px solid #1a1e25}
+.metric-row:last-child{border-bottom:none}
+.metric-name{font-size:.78rem;color:var(--mute)}
+.metric-val{font-size:.82rem;font-weight:600}
+.rate-bar{height:8px;background:var(--input);border-radius:4px;overflow:hidden;margin-top:6px}
+.rate-fill{height:100%;background:var(--green);border-radius:4px;transition:width .6s}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:.65rem;font-weight:600;line-height:1.5}
+.trend-section{margin-top:16px}
+.trend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.trend-card{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:12px 14px}
+.trend-title{font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.trend-body{display:flex;align-items:center;gap:10px}
+.trend-current{font-size:1.3rem;font-weight:700;min-width:48px}
+.unavail{text-align:center;padding:24px;color:var(--mute);font-size:.8rem}
+.pulse{animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--input);color:var(--text);font-size:.78rem;
+  cursor:pointer;font-family:inherit;transition:all .13s}
+.btn:hover{background:var(--hover);border-color:var(--link)}
+.btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+.toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:6px;
+  font-size:.8rem;border:1px solid;z-index:200;max-width:340px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+.toast.info{background:#0d1220;border-color:#2a3a60;color:var(--link)}
+</style></head>
+<body>
+<div class="topbar">
+  <h1>📊 Analytics Dashboard</h1>
+  <span class="last-upd" id="last-upd">Loading…</span>
+  <button class="btn pri" onclick="refresh()">↻ Refresh Now</button>
+  <a class="btn" href="api/export/ehr" title="Download EHR metrics CSV">⬇ EHR CSV</a>
+  <a class="btn" href="api/export/orders" title="Download Orders CSV">⬇ Orders CSV</a>
+</div>
+<div class="content" id="content"><div class="unavail pulse">Collecting metrics…</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const BASE = '/analytics/';
+let _autoTimer = null;
+function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function fmt(v,decimals=0){if(v==null)return'—';return typeof v==='number'?v.toFixed(decimals):String(v);}
+function fmtCur(v){if(v==null)return'—';return'$'+Number(v).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function toast(msg,type='info'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+async function api(path){const r=await fetch(BASE+path);if(!r.ok)throw new Error(r.status);return r.json();}
+
+function sparkline(pts, w=110, h=32, col='#58a6ff') {
+    if (!pts || pts.length < 2) return '<span style="color:var(--mute);font-size:.72rem">No history</span>';
+    const vals = pts.map(p => p.value);
+    const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
+    const coords = vals.map((v,i) => {
+        const x = (i/(vals.length-1))*w;
+        const y = h - ((v-mn)/rng)*(h-6) - 3;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const last=vals[vals.length-1], first=vals[0];
+    const dir = last>first?'↑':last<first?'↓':'→';
+    const dc  = last>first?'var(--green)':last<first?'var(--red)':'var(--mute)';
+    return `<svg width="${w}" height="${h}" style="vertical-align:middle">
+        <polyline points="${coords}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg><span style="color:${dc};font-size:.78rem;margin-left:4px">${dir} ${fmt(last)}</span>`;
+}
+
+function barChart(items, maxVal, col='#58a6ff') {
+    if (!items || !items.length) return '<div class="unavail">No data</div>';
+    const real = maxVal || Math.max(...items.map(i=>i.v)) || 1;
+    return items.map(({l,v,c}) => `
+        <div class="bar-row">
+            <div class="bar-label">${esc(l)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,(v/real)*100).toFixed(1)}%;background:${c||col}"></div></div>
+            <div class="bar-val">${fmt(v)}</div>
+        </div>`).join('');
+}
+
+function metricRows(rows) {
+    return rows.map(({l,v,c}) => `
+        <div class="metric-row">
+            <span class="metric-name">${esc(l)}</span>
+            <span class="metric-val" style="${c?'color:'+c:''}">${esc(String(v??'—'))}</span>
+        </div>`).join('');
+}
+
+async function render() {
+    try {
+        const [summary, tPts, tEnc, tLab, tAI] = await Promise.all([
+            api('api/metrics/summary'),
+            api('api/metrics/trends?domain=ehr&metric=total_patients&limit=20'),
+            api('api/metrics/trends?domain=ehr&metric=active_encounters&limit=20'),
+            api('api/metrics/trends?domain=orders&metric=lab_pending&limit=20'),
+            api('api/metrics/trends?domain=ai&metric=success_rate&limit=20'),
+        ]);
+
+        const ehr  = summary?.ehr?.data     || {};
+        const ord  = summary?.orders?.data  || {};
+        const bill = summary?.billing?.data || {};
+        const ai   = summary?.ai?.data      || {};
+        const mpi  = summary?.mpi?.data     || {};
+        const cap  = summary?.ehr?.captured_at;
+        document.getElementById('last-upd').textContent =
+            cap ? `Last collected: ${fmtDate(cap)}` : 'No data yet — click Refresh Now';
+
+        // ── KPI row ───────────────────────────────────────────────────────────
+        const matchColor = mpi.pending_matches > 0 ? 'var(--orange)' : 'var(--green)';
+        const kpis = [
+            {v: fmt(ehr.total_patients),      l:'Master Patients',  c:'var(--link)',   s: `${fmt(ehr.new_patients_today||0)} new today`},
+            {v: fmt(ehr.active_encounters),   l:'Active Encounters',c:'var(--green)',  s: `Across ${Object.keys(ehr.ward_breakdown||{}).length} wards`},
+            {v: fmt(ord.lab_pending),         l:'Lab Pending',      c:'var(--yellow)', s: `${fmt(ord.lab_completed)} completed`},
+            {v: fmt(ord.imaging_pending),     l:'Imaging Pending',  c:'var(--orange)', s: `${fmt(ord.imaging_completed)} completed`},
+            {v: fmt(bill.collection_rate)+'%',l:'Collection Rate',  c: bill.collection_rate>=80?'var(--green)':'var(--orange)', s: `${fmtCur(bill.paid_amount)} paid`},
+            {v: fmt(mpi.pending_matches),     l:'Duplicate Matches',c: matchColor,     s: `${fmt(mpi.master_patients)} master records`},
+        ];
+
+        // ── TAT colour ────────────────────────────────────────────────────────
+        const labTAT  = ord.lab_tat_hours;
+        const imgTAT  = ord.imaging_tat_hours;
+        const labTATc = labTAT == null ? '' : labTAT<=2?'var(--green)':labTAT<=6?'var(--yellow)':'var(--red)';
+        const imgTATc = imgTAT == null ? '' : imgTAT<=4?'var(--green)':imgTAT<=8?'var(--yellow)':'var(--red)';
+
+        // ── Ward occupancy bars ────────────────────────────────────────────────
+        const wards = ehr.ward_breakdown || {};
+        const wardMax = Math.max(...Object.values(wards), 1);
+        const wardItems = Object.entries(wards).map(([l,v]) => ({l,v,c:'#58a6ff'}));
+
+        // ── AI status bars ────────────────────────────────────────────────────
+        const aiStatus = ai.by_status || {};
+        const aiMax    = Math.max(...Object.values(aiStatus), 1);
+        const aiCols   = {COMPLETED:'#3fb950',FAILED:'#f85149',RUNNING:'#58a6ff',PENDING:'#e3b341'};
+        const aiItems  = Object.entries(aiStatus).map(([l,v]) => ({l,v,c:aiCols[l]||'#8b949e'}));
+
+        // ── Billing breakdown bars ────────────────────────────────────────────
+        const byStatus = bill.by_status || {};
+        const billMax  = Math.max(...Object.values(byStatus), 1);
+        const billCols = {paid:'#3fb950',partial:'#ffa657',pending:'#f85149'};
+        const billItems= Object.entries(byStatus).map(([l,v]) => ({l,v,c:billCols[l]||'#8b949e'}));
+
+        document.getElementById('content').innerHTML = `
+          <!-- KPI Cards -->
+          <div class="kpi-row">
+            ${kpis.map(k=>`<div class="kpi">
+              <div class="kpi-val" style="color:${k.c}">${esc(k.v)}</div>
+              <div class="kpi-label">${esc(k.l)}</div>
+              <div class="kpi-sub">${esc(k.s)}</div>
+            </div>`).join('')}
+          </div>
+
+          <!-- Row 1: Orders TAT + Billing -->
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">Orders & Turnaround Time</div>
+              ${metricRows([
+                {l:'Lab TAT (avg)',     v: labTAT != null ? labTAT+'h' : '—',  c: labTATc},
+                {l:'Imaging TAT (avg)', v: imgTAT != null ? imgTAT+'h' : '—',  c: imgTATc},
+                {l:'Lab Pending',       v: fmt(ord.lab_pending),       c:'var(--yellow)'},
+                {l:'Lab Completed',     v: fmt(ord.lab_completed),     c:'var(--green)'},
+                {l:'Imaging Pending',   v: fmt(ord.imaging_pending),   c:'var(--yellow)'},
+                {l:'Imaging Completed', v: fmt(ord.imaging_completed), c:'var(--green)'},
+              ])}
+            </div>
+            <div class="card">
+              <div class="card-title">Billing Summary</div>
+              ${metricRows([
+                {l:'Total Billed',      v: fmtCur(bill.total_amount)},
+                {l:'Paid',              v: fmtCur(bill.paid_amount),    c:'var(--green)'},
+                {l:'Partial',           v: fmtCur(bill.partial_amount), c:'var(--orange)'},
+                {l:'Pending',           v: fmtCur(bill.pending_amount), c:'var(--red)'},
+                {l:'Unpaid Records',    v: fmt(bill.unpaid_count)},
+                {l:'Collection Rate',   v: fmt(bill.collection_rate,1)+'%', c: bill.collection_rate>=80?'var(--green)':'var(--orange)'},
+              ])}
+              <div class="rate-bar" style="margin-top:10px">
+                <div class="rate-fill" style="width:${Math.min(100,bill.collection_rate||0)}%"></div>
+              </div>
+              <div style="font-size:.7rem;color:var(--mute);margin-top:4px">Collection rate: ${fmt(bill.collection_rate,1)||0}%</div>
+              ${billItems.length ? '<div style="margin-top:10px">'+barChart(billItems, billMax)+'</div>' : ''}
+            </div>
+          </div>
+
+          <!-- Row 2: AI Pipeline + MPI + Wards -->
+          <div class="grid2">
+            <div class="card">
+              <div class="card-title">AI Pipeline</div>
+              ${metricRows([
+                {l:'Total Jobs',     v: fmt(ai.total)},
+                {l:'Success Rate',   v: fmt(ai.success_rate,1)+'%', c: ai.success_rate>=90?'var(--green)':ai.success_rate>=70?'var(--yellow)':'var(--red)'},
+                {l:'Currently Running', v: fmt(ai.running), c: ai.running?'var(--link)':null},
+                {l:'Failed',         v: fmt(ai.failed),  c: ai.failed?'var(--red)':null},
+                {l:'Avg Duration',   v: ai.avg_duration_ms ? (ai.avg_duration_ms/1000).toFixed(1)+'s' : '—'},
+              ])}
+              ${aiItems.length ? '<div style="margin-top:10px">'+barChart(aiItems, aiMax)+'</div>' : ''}
+            </div>
+            <div class="card">
+              <div class="card-title">MPI — Patient Identity</div>
+              ${metricRows([
+                {l:'Master Records',   v: fmt(mpi.master_patients),  c:'var(--link)'},
+                {l:'Cross-References', v: fmt(mpi.cross_references)},
+                {l:'Pending Matches',  v: fmt(mpi.pending_matches),  c: mpi.pending_matches>0?'var(--orange)':'var(--green)'},
+              ])}
+              ${Object.keys(wards).length
+                ? `<div style="margin-top:14px"><div class="card-title">Ward Occupancy</div>
+                   ${barChart(wardItems, wardMax, '#58a6ff')}</div>`
+                : ''}
+            </div>
+          </div>
+
+          <!-- Trends Sparklines -->
+          <div class="trend-section">
+            <div class="card-title" style="margin-bottom:10px">Metric Trends (last 20 collections)</div>
+            <div class="trend-grid">
+              ${[
+                {title:'Total Patients',     pts: tPts.series,  col:'#58a6ff'},
+                {title:'Active Encounters',  pts: tEnc.series,  col:'#3fb950'},
+                {title:'Lab Orders Pending', pts: tLab.series,  col:'#e3b341'},
+                {title:'AI Success Rate (%)',pts: tAI.series,   col:'#d2a8ff'},
+              ].map(t=>`<div class="trend-card">
+                <div class="trend-title">${esc(t.title)}</div>
+                <div class="trend-body">
+                  <div style="flex:1">${sparkline(t.pts, 120, 36, t.col)}</div>
+                </div>
+              </div>`).join('')}
+            </div>
+          </div>`;
+
+    } catch(e) {
+        document.getElementById('content').innerHTML =
+          `<div class="unavail" style="color:var(--red)">
+            Failed to load metrics: ${esc(e.message)}<br>
+            <button class="btn" style="margin-top:12px" onclick="render()">Retry</button>
+          </div>`;
+    }
+}
+
+async function refresh() {
+    try {
+        await fetch(BASE+'api/metrics/refresh', {method:'POST'});
+        toast('Collection queued — refreshing in 3 s…','info');
+        setTimeout(render, 3000);
+    } catch(e) { toast(e.message,'err'); }
+}
+
+// Auto-refresh every 60 s
+function startAutoRefresh() {
+    clearInterval(_autoTimer);
+    _autoTimer = setInterval(render, 60000);
+}
+
+render();
+startAutoRefresh();
+</script>
+</body></html>

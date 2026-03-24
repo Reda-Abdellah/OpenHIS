@@ -1,8 +1,23 @@
+import os
+import httpx
 import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+
+
+FHIR_BRIDGE_URL = os.environ.get('FHIR_BRIDGE_URL', '')
+
+
+async def _notify_encounter(event: str, encounter: dict):
+    if not FHIR_BRIDGE_URL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as c:
+            await c.post(f"{FHIR_BRIDGE_URL}/events/{event}", json=encounter)
+    except Exception:
+        pass
 
 router = APIRouter(prefix="/api/encounters", tags=["encounters"])
 
@@ -46,7 +61,7 @@ def get_encounter(encounter_id: int):
         return dict(row)
 
 @router.post("", status_code=201)
-def admit_patient(body: EncounterCreate):
+async def admit_patient(body: EncounterCreate, bg: BackgroundTasks):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     with get_db() as db:
         if not db.execute("SELECT 1 FROM patients WHERE id=?", (body.patient_id,)).fetchone():

@@ -4,7 +4,10 @@ networks:
   pacs-net:
     driver: bridge
 
+
+
 volumes:
+  admin-data:
   pg-data:
   orthanc-data:
   ris-data:
@@ -12,6 +15,11 @@ volumes:
   ai-controller-db:
   ehr-data:
   lis-data:
+  pharmacy_data:
+  mpi_data:
+  analytics-data:
+  hl7-data:
+  portal-sessions:
 
 services:
 
@@ -193,6 +201,22 @@ services:
       timeout: 5s
       retries: 3
 
+  pharmacy:
+    build: ./pharmacy
+    container_name: pacs-demo-pharmacy
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/pharmacy.db
+      - EHR_URL=http://ehr:8003/api
+      - FHIR_BRIDGE_URL=http://fhir-bridge:8005
+      - ROOT_PATH=/pharmacy
+    volumes:
+      - pharmacy_data:/data
+    depends_on:
+      - ehr
+    networks:
+      - pacs-net
+
   fhir-server:
     image: hapiproject/hapi:latest
     volumes:
@@ -206,3 +230,128 @@ services:
       - postgres
     profiles:
       - fhir    # opt-in: docker compose --profile fhir up -d
+
+  mpi:
+    build: ./mpi
+    container_name: pacs-demo-mpi
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/mpi.db
+      - ROOT_PATH=/mpi
+    volumes:
+      - mpi_data:/data
+    networks:
+      - pacs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  analytics:
+    build: ./analytics
+    container_name: pacs-demo-analytics
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/analytics.db
+      - EHR_URL=http://ehr:8003/api
+      - LIS_URL=http://lis:8004/api
+      - RIS_URL=http://ris:8002/api
+      - AI_CONTROLLER_URL=http://ai-controller:8000/api
+      - MPI_URL=http://mpi:8007/api
+      - ROOT_PATH=/analytics
+      - COLLECT_INTERVAL_MIN=5
+    volumes:
+      - analytics-data:/data
+    networks:
+      - pacs-net
+    depends_on:
+      - ehr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  hl7:
+    build: ./hl7
+    container_name: pacs-demo-hl7
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/hl7.db
+      - EHR_URL=http://ehr:8003/api
+      - MPI_URL=http://mpi:8007/api
+      - ROOT_PATH=/hl7
+      - MLLP_ENABLED=true
+      - MLLP_HOST=0.0.0.0
+      - MLLP_PORT=2575
+    volumes:
+      - hl7-data:/data
+    ports:
+      - "2575:2575"
+    networks:
+      - pacs-net
+    depends_on:
+      - ehr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  patient-portal:
+    build: ./patient-portal
+    container_name: pacs-demo-patient-portal
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/portal.db
+      - EHR_URL=http://ehr:8003/api
+      - RIS_URL=http://ris:8002/api
+      - ROOT_PATH=/patient-portal
+      - SESSION_TTL_HOURS=24
+    volumes:
+      - portal-sessions:/data
+    networks:
+      - pacs-net
+    depends_on:
+      - ehr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+  admin:
+    build: ./admin
+    container_name: pacs-demo-admin
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/admin.db
+      - ROOT_PATH=/admin
+      - SESSION_TTL_HOURS=12
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin123
+      - EHR_HEALTH=http://ehr:8003/api/health
+      - RIS_HEALTH=http://ris:8002/api/health
+      - AI_HEALTH=http://ai-controller:8000/api/health
+      - FHIR_HEALTH=http://fhir-bridge:8005/api/health
+      - MPI_HEALTH=http://mpi:8007/api/health
+      - HL7_HEALTH=http://hl7:8009/api/health
+      - PP_HEALTH=http://patient-portal:8010/api/health
+      - AN_HEALTH=http://analytics:8008/api/health
+      - PACS_HEALTH=http://orthanc:8042/system
+    volumes:
+      - admin-data:/data
+    networks:
+      - pacs-net
+    depends_on:
+      - ehr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

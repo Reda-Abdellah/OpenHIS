@@ -1,0 +1,329 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Pharmacy</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.shell{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:200px;min-width:200px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px 0}
+.logo{padding:10px 16px 16px;font-size:.9rem;font-weight:700;color:var(--link)}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;border-left:3px solid transparent;transition:all .13s;font-size:.82rem;color:var(--mute);text-decoration:none;user-select:none}
+.nav-item:hover{background:var(--hover);color:var(--text)}
+.nav-item.active{border-left-color:var(--link);color:var(--link);background:rgba(88,166,255,.07)}
+.main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.topbar{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--card);position:sticky;top:0;z-index:5}
+.topbar h2{font-size:.93rem;font-weight:600;flex:1}
+.content{padding:20px 24px;flex:1}
+.card{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:16px;margin-bottom:14px}
+.card-title{font-size:.7rem;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:14px 18px;min-width:110px;flex:1}
+.stat-val{font-size:1.5rem;font-weight:700;margin-bottom:2px}
+.stat-label{font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+thead tr{background:var(--card)}
+thead th{padding:8px 12px;text-align:left;font-size:.68rem;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .12s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
+td{padding:8px 12px;vertical-align:middle}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--input);color:var(--text);font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .13s;text-decoration:none;user-select:none}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+.btn.pri:hover{background:#1c2a58}
+.btn.success{background:#162316;border-color:#2a3d2a;color:var(--green)}
+.btn.danger{background:#200e10;border-color:#3d1820;color:var(--red)}
+.btn.sm{padding:3px 10px;font-size:.72rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.68rem;font-weight:600;line-height:1.5}
+.b-pending{background:#1a1e30;color:#7b90d4;border:1px solid #2a3558}
+.b-verified{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-dispensed{background:#162040;color:var(--link);border:1px solid #2a4a90}
+.b-cancelled{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-given{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-held,.b-refused,.b-missed{background:#200e10;color:var(--orange);border:1px solid #3d1820}
+.b-low{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end}
+.form-group{display:flex;flex-direction:column;gap:4px;min-width:120px}
+.form-group.full{flex:1;min-width:200px}
+.form-group label{font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+input,select,textarea{background:var(--input);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px 10px;font-size:.8rem;font-family:inherit;outline:none;transition:border .13s;width:100%}
+input:focus,select:focus{border-color:var(--link)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:9px;width:100%;max-width:600px;overflow:hidden;margin:auto}
+.modal-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.modal-header h3{flex:1;font-size:.9rem;font-weight:600}
+.modal-body{padding:18px 20px;max-height:78vh;overflow-y:auto}
+.empty{padding:36px;text-align:center;color:var(--mute);font-size:.85rem}
+.toast{position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:6px;font-size:.8rem;border:1px solid;z-index:200;max-width:340px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+.toast.info{background:#0d1220;border-color:#2a3a60;color:var(--link)}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filter-bar select,.filter-bar input{height:30px;padding:0 8px;font-size:.78rem;width:auto}
+</style></head>
+<body>
+<div class="shell">
+  <nav class="sidebar">
+    <div class="logo">💊 Pharmacy</div>
+    <a class="nav-item active" data-view="dashboard" onclick="nav('dashboard')"><span>📊</span> Dashboard</a>
+    <a class="nav-item" data-view="prescriptions" onclick="nav('prescriptions')"><span>📋</span> Prescriptions</a>
+    <a class="nav-item" data-view="dispense" onclick="nav('dispense')"><span>💉</span> Dispense</a>
+    <a class="nav-item" data-view="mar" onclick="nav('mar')"><span>📝</span> MAR</a>
+    <a class="nav-item" data-view="stock" onclick="nav('stock')"><span>📦</span> Stock</a>
+    <a class="nav-item" data-view="catalog" onclick="nav('catalog')"><span>🗂</span> Catalog</a>
+  </nav>
+  <div class="main">
+    <div class="topbar"><h2 id="page-title">Dashboard</h2><div id="topbar-actions"></div></div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<!-- Dispense Modal -->
+<div class="overlay" id="modal-dispense">
+  <div class="modal">
+    <div class="modal-header"><h3>Dispense Medication</h3><button class="btn sm" onclick="closeModal('modal-dispense')">Close</button></div>
+    <div class="modal-body">
+      <form id="form-dispense" onsubmit="submitDispense(event)">
+        <input type="hidden" name="prescription_id" id="disp-rx-id">
+        <div class="form-row"><div class="form-group full"><label>Drug</label><input id="disp-drug" disabled></div></div>
+        <div class="form-row">
+          <div class="form-group"><label>Quantity</label><input name="quantity" type="number" min="1" value="1" required></div>
+          <div class="form-group full"><label>Dispensed By</label><input name="dispensed_by" placeholder="Pharmacist name"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full"><label>Lot Number</label><input name="lot_number"></div>
+          <div class="form-group"><label>Expiry</label><input name="expiry_date" type="date"></div>
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-dispense')">Cancel</button>
+          <button type="submit" class="btn pri">Confirm Dispense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- MAR Modal -->
+<div class="overlay" id="modal-mar">
+  <div class="modal">
+    <div class="modal-header"><h3>Record Administration</h3><button class="btn sm" onclick="closeModal('modal-mar')">Close</button></div>
+    <div class="modal-body">
+      <form id="form-mar" onsubmit="submitMAR(event)">
+        <input type="hidden" name="prescription_id" id="mar-rx-id">
+        <div class="form-row"><div class="form-group full"><label>Drug</label><input id="mar-drug" disabled></div></div>
+        <div class="form-row">
+          <div class="form-group full"><label>Administered By</label><input name="administered_by" placeholder="Nurse name"></div>
+          <div class="form-group"><label>Status</label>
+            <select name="status">
+              <option value="given">Given</option><option value="held">Held</option>
+              <option value="refused">Refused</option><option value="missed">Missed</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row"><div class="form-group full"><label>Notes</label><input name="notes"></div></div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:6px">
+          <button type="button" class="btn" onclick="closeModal('modal-mar')">Cancel</button>
+          <button type="submit" class="btn pri">Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const BASE = '/pharmacy/';
+let _rxCache = [];
+function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function toast(msg,type='info'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function statusBadge(s){const m={pending:'b-pending',verified:'b-verified',dispensed:'b-dispensed',cancelled:'b-cancelled',given:'b-given',held:'b-held',refused:'b-refused',missed:'b-missed'};return`<span class="badge ${m[s]||'b-pending'}">${esc(s)}</span>`;}
+async function api(path,opts){const r=await fetch(BASE+path,opts);if(!r.ok){const t=await r.text();throw new Error(r.status+' '+t);}if(r.status===204)return null;return r.json();}
+function formData(id){const fd=new FormData(document.getElementById(id));const o={};fd.forEach((v,k)=>{if(v!=='')o[k]=v;});return o;}
+
+function nav(view){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  const titles={dashboard:'Dashboard',prescriptions:'Prescriptions',dispense:'Dispense Queue',mar:'MAR',stock:'Stock',catalog:'Catalog'};
+  document.getElementById('page-title').textContent=titles[view]||view;
+  document.getElementById('topbar-actions').innerHTML='';
+  ({dashboard:renderDashboard,prescriptions:renderPrescriptions,dispense:renderDispense,mar:renderMAR,stock:renderStock,catalog:renderCatalog})[view]();
+}
+
+async function renderDashboard(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const[h,alerts]=await Promise.all([api('api/health'),api('api/stock/alerts')]);
+    el.innerHTML=`
+      <div class="stats">
+        <div class="stat"><div class="stat-val" style="color:var(--link)">${h.medications}</div><div class="stat-label">Medications</div></div>
+        <div class="stat"><div class="stat-val">${h.prescriptions}</div><div class="stat-label">Total Rx</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--orange)">${h.pending}</div><div class="stat-label">Pending Verification</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--red)">${alerts.length}</div><div class="stat-label">Low Stock Alerts</div></div>
+      </div>
+      ${alerts.length?`<div class="card"><div class="card-title">⚠️ Low Stock Alerts</div>
+        ${alerts.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1e25">
+          <span style="font-size:.82rem">${esc(a.name)} <span style="color:var(--mute)">${esc(a.strength||'')}</span></span>
+          <span class="badge b-low">${a.quantity} left (threshold: ${a.low_threshold})</span>
+        </div>`).join('')}</div>`:''}
+      <div class="card"><div class="card-title">Quick Actions</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn pri" onclick="nav('prescriptions')">View Pending Rx</button>
+          <button class="btn" onclick="nav('stock')">Manage Stock</button>
+          <button class="btn" onclick="nav('catalog')">Medication Catalog</button>
+        </div>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function renderPrescriptions(){
+  const el=document.getElementById('content');
+  document.getElementById('topbar-actions').innerHTML=`
+    <select id="rx-status-filter" onchange="renderPrescriptions()" style="height:28px;font-size:.78rem">
+      <option value="">All</option><option value="pending">Pending</option>
+      <option value="verified">Verified</option><option value="dispensed">Dispensed</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <button class="btn" onclick="renderPrescriptions()">↻</button>`;
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const status=document.getElementById('rx-status-filter')?.value||'';
+    const rxs=await api('api/prescriptions'+(status?`?status=${status}`:''));
+    _rxCache=rxs;
+    el.innerHTML=rxs.length===0?'<div class="empty">No prescriptions found.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Patient ID</th><th>Drug</th><th>Dose</th><th>Freq</th><th>Prescriber</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <tbody>${rxs.map(r=>`<tr>
+          <td style="font-size:.75rem;color:var(--mute)">${esc(r.ehr_patient_id)}</td>
+          <td><strong>${esc(r.drug_name)}</strong>${r.controlled?'<span style="color:var(--red);margin-left:4px;font-size:.65rem">CTRL</span>':''}</td>
+          <td style="color:var(--mute)">${esc(r.dose)} ${esc(r.route)}</td>
+          <td style="color:var(--mute)">${esc(r.frequency)}</td>
+          <td style="font-size:.75rem">${esc(r.prescriber||'—')}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(r.createdat)}</td>
+          <td style="display:flex;gap:4px">
+            ${r.status==='pending'?`<button class="btn sm success" onclick="verifyRx(${r.id})">✓ Verify</button>`:''}
+            ${r.status==='verified'?`<button class="btn sm pri" onclick="openDispenseModal(${r.id},'${esc(r.drug_name)}')">Dispense</button>`:''}
+            ${r.status==='dispensed'?`<button class="btn sm" onclick="openMARModal(${r.id},'${esc(r.drug_name)}')">MAR</button>`:''}
+            ${['pending','verified'].includes(r.status)?`<button class="btn sm danger" onclick="cancelRx(${r.id})">✕</button>`:''}
+          </td></tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function verifyRx(id){
+  const name=prompt('Verifying pharmacist name:','Pharmacist');if(!name)return;
+  try{await api(`api/prescriptions/${id}/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pharmacist:name})});toast('Rx verified','ok');renderPrescriptions();}
+  catch(e){toast(e.message,'err');}
+}
+async function cancelRx(id){
+  if(!confirm('Cancel this prescription?'))return;
+  try{await api(`api/prescriptions/${id}/cancel`,{method:'POST'});toast('Cancelled','info');renderPrescriptions();}
+  catch(e){toast(e.message,'err');}
+}
+function openDispenseModal(rxId,drug){document.getElementById('disp-rx-id').value=rxId;document.getElementById('disp-drug').value=drug;openModal('modal-dispense');}
+async function submitDispense(e){
+  e.preventDefault();const body=formData('form-dispense');body.prescription_id=parseInt(body.prescription_id);body.quantity=parseInt(body.quantity);
+  try{await api('api/dispenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeModal('modal-dispense');document.getElementById('form-dispense').reset();toast('Dispensed','ok');renderPrescriptions();}
+  catch(e){toast(e.message,'err');}
+}
+function openMARModal(rxId,drug){document.getElementById('mar-rx-id').value=rxId;document.getElementById('mar-drug').value=drug;openModal('modal-mar');}
+async function submitMAR(e){
+  e.preventDefault();const body=formData('form-mar');body.prescription_id=parseInt(body.prescription_id);
+  try{await api('api/mar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeModal('modal-mar');document.getElementById('form-mar').reset();toast('Administration recorded','ok');}
+  catch(e){toast(e.message,'err');}
+}
+
+async function renderDispense(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const rxs=await api('api/prescriptions?status=verified');
+    el.innerHTML=rxs.length===0?'<div class="empty">No verified prescriptions waiting for dispensing.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Patient ID</th><th>Drug</th><th>Dose / Route</th><th>Frequency</th><th>Verified By</th><th>Verified At</th><th></th></tr></thead>
+        <tbody>${rxs.map(r=>`<tr>
+          <td style="font-size:.75rem;color:var(--mute)">${esc(r.ehr_patient_id)}</td>
+          <td><strong>${esc(r.drug_name)}</strong></td>
+          <td>${esc(r.dose)} ${esc(r.route)}</td>
+          <td>${esc(r.frequency)}</td>
+          <td>${esc(r.verified_by||'—')}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(r.verifiedat)}</td>
+          <td><button class="btn sm pri" onclick="openDispenseModal(${r.id},'${esc(r.drug_name)}')">Dispense</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function renderMAR(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const records=await api('api/mar');
+    el.innerHTML=records.length===0?'<div class="empty">No administration records.</div>':`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Patient ID</th><th>Drug</th><th>Dose Given</th><th>Route</th><th>By</th><th>Status</th><th>Time</th></tr></thead>
+        <tbody>${records.map(r=>`<tr>
+          <td style="font-size:.75rem;color:var(--mute)">${esc(r.ehr_patient_id)}</td>
+          <td>${esc(r.drug_name)}</td>
+          <td>${esc(r.dose_given)}</td>
+          <td>${esc(r.route||'—')}</td>
+          <td>${esc(r.administered_by||'—')}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td style="font-size:.72rem;color:var(--mute)">${fmtDate(r.administeredat)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function renderStock(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const items=await api('api/stock');
+    el.innerHTML=`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Medication</th><th>Form / Strength</th><th>Location</th><th>Qty</th><th>Threshold</th><th>Status</th><th></th></tr></thead>
+        <tbody>${items.map(s=>`<tr>
+          <td><strong>${esc(s.name)}</strong>${s.controlled?'<span style="color:var(--red);margin-left:4px;font-size:.65rem">CTRL</span>':''}</td>
+          <td style="color:var(--mute)">${esc(s.form)} ${esc(s.strength||'')}</td>
+          <td>${esc(s.location)}</td>
+          <td style="font-weight:700;color:${s.quantity<=s.low_threshold?'var(--orange)':'var(--green)'}">${s.quantity}</td>
+          <td style="color:var(--mute)">${s.low_threshold}</td>
+          <td>${s.quantity<=s.low_threshold?'<span class="badge b-low">LOW</span>':'<span class="badge b-verified">OK</span>'}</td>
+          <td><button class="btn sm" onclick="adjustStock(${s.id},${s.quantity})">Adjust</button></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function adjustStock(id,current){
+  const delta=prompt(`Current: ${current}. Enter adjustment (+restock / -removal):`,'');
+  if(delta===null||delta==='')return;
+  const n=parseInt(delta);if(isNaN(n))return toast('Invalid number','err');
+  try{await api(`api/stock/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity_delta:n})});toast('Stock updated','ok');renderStock();}
+  catch(e){toast(e.message,'err');}
+}
+
+async function renderCatalog(){
+  const el=document.getElementById('content');el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const meds=await api('api/medications');
+    el.innerHTML=`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Name</th><th>Generic</th><th>Form</th><th>Strength</th><th>Route</th><th>Stock</th><th>Controlled</th></tr></thead>
+        <tbody>${meds.map(m=>`<tr>
+          <td><strong>${esc(m.name)}</strong></td>
+          <td style="color:var(--mute)">${esc(m.generic_name||'')}</td>
+          <td>${esc(m.form)}</td><td>${esc(m.strength||'')}</td><td>${esc(m.route)}</td>
+          <td style="font-weight:700">${m.stock_qty??'—'}</td>
+          <td>${m.controlled?'<span class="badge" style="color:var(--red);border:1px solid #3d1820;background:#200e10">Yes</span>':'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+nav('dashboard');
+</script>
+</body></html>

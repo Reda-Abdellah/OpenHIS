@@ -1,0 +1,540 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Admin Dashboard</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{background:var(--bg);color:var(--text);height:100%;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px}
+
+/* ── Login ── */
+.login-wrap{height:100vh;display:flex;align-items:center;justify-content:center}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:40px 36px;width:100%;max-width:360px;text-align:center}
+.login-icon{font-size:2.2rem;margin-bottom:12px}
+.login-card h1{font-size:1.25rem;font-weight:700;color:var(--link);margin-bottom:4px}
+.login-card p{font-size:.8rem;color:var(--mute);margin-bottom:26px}
+.f-group{margin-bottom:12px;text-align:left}
+.f-group label{display:block;font-size:.68rem;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.f-group input{width:100%;background:var(--input);border:1px solid var(--border);
+  border-radius:6px;color:var(--text);padding:8px 11px;font-size:.85rem;
+  font-family:inherit;outline:none;transition:border .12s}
+.f-group input:focus{border-color:var(--link)}
+.login-btn{width:100%;padding:9px;border-radius:6px;border:none;
+  background:var(--link);color:#fff;font-size:.88rem;font-weight:600;
+  cursor:pointer;transition:opacity .12s;margin-top:4px}
+.login-btn:hover{opacity:.88}
+.login-btn:disabled{opacity:.4;cursor:not-allowed}
+.login-err{color:var(--red);font-size:.75rem;margin-top:8px;min-height:18px}
+
+/* ── Shell ── */
+.shell{display:flex;height:100vh;display:none}
+.sidebar{width:188px;min-width:188px;background:var(--card);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 0}
+.logo{padding:10px 16px 14px;font-size:.88rem;font-weight:700;color:var(--link)}
+.logo small{display:block;font-size:.68rem;color:var(--mute);font-weight:400;margin-top:1px}
+.nav-item{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;
+  border-left:3px solid transparent;font-size:.8rem;color:var(--mute);
+  user-select:none;transition:all .12s}
+.nav-item:hover{background:var(--hover);color:var(--text)}
+.nav-item.active{border-left-color:var(--link);color:var(--link);background:rgba(88,166,255,.07)}
+.nav-sep{border-top:1px solid var(--border);margin:8px 0}
+.sidebar-user{padding:10px 14px;margin-top:auto;border-top:1px solid var(--border)}
+.sidebar-user-name{font-size:.78rem;font-weight:600;margin-bottom:2px}
+.sidebar-user-role{font-size:.68rem;color:var(--mute)}
+.logout-link{font-size:.72rem;color:var(--mute);cursor:pointer;
+  text-decoration:underline;margin-top:4px;display:inline-block}
+.logout-link:hover{color:var(--red)}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{padding:10px 20px;border-bottom:1px solid var(--border);background:var(--card);
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+.topbar h2{font-size:.92rem;font-weight:600;flex:1}
+.content{padding:16px 20px;flex:1;overflow-y:auto}
+
+/* ── Common components ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:12px 14px}
+.kpi-val{font-size:1.45rem;font-weight:700;line-height:1;margin-bottom:3px}
+.kpi-lbl{font-size:.67rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:14px;overflow:hidden}
+.section-hdr{padding:10px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px}
+.section-title{font-size:.7rem;font-weight:700;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.07em;flex:1}
+.empty{padding:28px;text-align:center;color:var(--mute);font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.78rem}
+thead th{padding:7px 10px;text-align:left;font-size:.67rem;font-weight:600;
+  color:var(--mute);text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
+td{padding:7px 10px;vertical-align:middle}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;
+  font-size:.65rem;font-weight:600;line-height:1.6}
+.b-green{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-orange{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.b-red{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-blue{background:#162040;color:var(--link);border:1px solid #2a4a90}
+.b-purple{background:#1c162a;color:var(--purple);border:1px solid #3d2a6a}
+.b-grey{background:#1a1e25;color:var(--mute);border:1px solid #30363d}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--input);color:var(--text);
+  font-size:.75rem;cursor:pointer;font-family:inherit;transition:all .12s}
+.btn:hover{background:var(--hover);border-color:var(--link)}
+.btn.pri{background:var(--link);border-color:var(--link);color:#fff}
+.btn.pri:hover{opacity:.88}
+.btn.danger{background:#1a0a0a;border-color:#3d1a1a;color:var(--red)}
+.btn.danger:hover{background:#2a0e0e}
+.form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:3px;flex:1;min-width:110px}
+.form-group label{font-size:.67rem;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.form-group input,.form-group select{background:var(--input);border:1px solid var(--border);
+  border-radius:5px;color:var(--text);padding:5px 8px;font-size:.78rem;
+  font-family:inherit;outline:none;transition:border .12s;height:28px}
+.form-group input:focus{border-color:var(--link)}
+.form-group textarea{background:var(--input);border:1px solid var(--border);
+  border-radius:5px;color:var(--text);padding:5px 8px;font-size:.78rem;
+  font-family:inherit;outline:none;resize:vertical;min-height:52px}
+
+/* ── Service health grid ── */
+.svc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px;margin-bottom:14px}
+.svc-card{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;cursor:pointer;transition:border .13s;text-decoration:none;color:inherit}
+.svc-card.online {border-left:3px solid var(--green)}
+.svc-card.offline{border-left:3px solid var(--red)}
+.svc-card.degraded{border-left:3px solid var(--orange)}
+.svc-card.checking{border-left:3px solid var(--mute)}
+.svc-name{font-size:.8rem;font-weight:600;margin-bottom:4px}
+.svc-ms{font-size:.68rem;color:var(--mute);margin-top:3px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;flex-shrink:0}
+.dot.online{background:var(--green);box-shadow:0 0 5px var(--green)}
+.dot.offline{background:var(--red);box-shadow:0 0 5px var(--red)}
+.dot.degraded{background:var(--orange)}
+.dot.checking{background:var(--mute)}
+
+.config-val{max-width:220px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--link);font-family:monospace;font-size:.78rem}
+.editable-input{background:var(--input);border:1px solid var(--link);
+  border-radius:4px;color:var(--text);padding:3px 7px;font-size:.78rem;
+  font-family:monospace;width:200px;outline:none}
+
+.toast{position:fixed;bottom:14px;right:14px;padding:9px 14px;border-radius:6px;
+  font-size:.78rem;border:1px solid;z-index:500;max-width:300px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+</style></head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="login-page">
+  <div class="login-card">
+    <div class="login-icon">⚙️</div>
+    <h1>Admin Dashboard</h1>
+    <p>Staff access only. Sign in with your admin credentials.</p>
+    <div class="f-group"><label>Username</label>
+      <input id="l-user" autocomplete="username"
+             onkeydown="if(event.key==='Enter')login()"></div>
+    <div class="f-group"><label>Password</label>
+      <input id="l-pass" type="password" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')login()"></div>
+    <button class="login-btn" id="login-btn" onclick="login()">Sign In</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div class="shell" id="shell">
+  <nav class="sidebar">
+    <div class="logo">⚙️ Admin Panel<small>System Dashboard</small></div>
+    <div class="nav-item active" data-view="dashboard"     onclick="nav('dashboard')">    <span>📊</span> Dashboard</div>
+    <div class="nav-item"        data-view="services"      onclick="nav('services')">      <span>🔌</span> Services</div>
+    <div class="nav-sep"></div>
+    <div class="nav-item"        data-view="users"         onclick="nav('users')">         <span>👥</span> Admin Users</div>
+    <div class="nav-item"        data-view="config"        onclick="nav('config')">        <span>🔧</span> Config</div>
+    <div class="nav-item"        data-view="announcements" onclick="nav('announcements')"> <span>📢</span> Announcements</div>
+    <div class="nav-item"        data-view="audit"         onclick="nav('audit')">         <span>📋</span> Audit Log</div>
+    <div class="sidebar-user">
+      <div class="sidebar-user-name" id="sb-user">—</div>
+      <div class="sidebar-user-role" id="sb-role">—</div>
+      <span class="logout-link" onclick="logout()">Sign out</span>
+    </div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <button class="btn" onclick="renderCurrent()">↻ Refresh</button>
+    </div>
+    <div class="content" id="content"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const BASE='/admin/';
+let _token=null, _username=null, _view='dashboard';
+function esc(s){const d=document.createElement('div');d.textContent=s??'—';return d.innerHTML;}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function toast(msg,type='ok'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+
+async function api(path,opts){
+  const headers={'Content-Type':'application/json',...((opts||{}).headers||{})};
+  if(_token)headers['Authorization']=`Bearer ${_token}`;
+  const r=await fetch(BASE+path,{...opts,headers});
+  if(r.status===401){handleExpiry();throw new Error('Session expired');}
+  if(!r.ok){let t='';try{const j=await r.json();t=j.detail||JSON.stringify(j);}catch(_){t=r.statusText;}throw new Error(t);}
+  if(r.status===204)return null;
+  return r.json();
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+async function login(){
+  const u=(document.getElementById('l-user').value||'').trim();
+  const p=(document.getElementById('l-pass').value||'').trim();
+  const btn=document.getElementById('login-btn');
+  const err=document.getElementById('login-err');
+  err.textContent='';
+  if(!u||!p){err.textContent='Username and password required.';return;}
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await api('api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
+    _token=r.token;_username=r.username;
+    try{localStorage.setItem('adm_tok',_token);localStorage.setItem('adm_usr',_username);}catch(_){}
+    showShell(r.username,r.role);
+  }catch(e){err.textContent=e.message.includes('401')||e.message.includes('Invalid')?'Invalid credentials.':'Login failed.';}
+  finally{btn.disabled=false;btn.textContent='Sign In';}
+}
+async function logout(){
+  try{await api('api/auth/logout',{method:'POST',body:JSON.stringify({})});}catch(_){}
+  _token=null;_username=null;
+  try{localStorage.removeItem('adm_tok');localStorage.removeItem('adm_usr');}catch(_){}
+  document.getElementById('shell').style.display='none';
+  document.getElementById('login-page').style.display='flex';
+  document.getElementById('l-pass').value='';
+}
+function handleExpiry(){
+  toast('Session expired. Please sign in again.','err');
+  _token=null;
+  setTimeout(()=>{document.getElementById('shell').style.display='none';
+    document.getElementById('login-page').style.display='flex';},1200);
+}
+async function tryRestore(){
+  let tok=null,usr=null;
+  try{tok=localStorage.getItem('adm_tok');usr=localStorage.getItem('adm_usr');}catch(_){}
+  if(!tok)return;
+  _token=tok;_username=usr;
+  try{await api('api/auth/validate');showShell(usr,'admin');}
+  catch(_){_token=null;}
+}
+function showShell(username,role){
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('shell').style.display='flex';
+  document.getElementById('sb-user').textContent=username||'—';
+  document.getElementById('sb-role').textContent=role||'admin';
+  nav('dashboard');
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function nav(view){
+  _view=view;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  const titles={dashboard:'Dashboard',services:'Service Health',users:'Admin Users',
+    config:'System Config',announcements:'Announcements',audit:'Audit Log'};
+  document.getElementById('page-title').textContent=titles[view]||view;
+  renderCurrent();
+}
+function renderCurrent(){
+  if(_view==='dashboard')     renderDashboard();
+  else if(_view==='services') renderServices();
+  else if(_view==='users')    renderUsers();
+  else if(_view==='config')   renderConfig();
+  else if(_view==='announcements') renderAnnouncements();
+  else if(_view==='audit')    renderAudit();
+}
+
+// ── Service badge helpers ─────────────────────────────────────────────────────
+function svcBadge(s){
+  const map={online:'b-green',offline:'b-red',degraded:'b-orange',checking:'b-grey'};
+  return`<span class="badge ${map[s]||'b-grey'}">${esc(s||'?')}</span>`;
+}
+function svcCard(svc){
+  const st=svc.status||'checking';
+  const link=svc.path?`href="${svc.path}" target="_blank"`:'';
+  return`<a class="svc-card ${st}" ${link} style="display:block;text-decoration:none;color:inherit">
+    <div style="display:flex;align-items:center;margin-bottom:5px">
+      <span class="dot ${st}"></span>
+      <span class="svc-name">${esc(svc.name)}</span>
+    </div>
+    <div>${svcBadge(st)}</div>
+    <div class="svc-ms">${svc.response_ms!=null?svc.response_ms+'ms':'—'}</div>
+  </a>`;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Checking services…</div>';
+  try{
+    const [health,svcs]=await Promise.all([api('api/health'),api('api/services')]);
+    el.innerHTML=`
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-val" style="color:var(--green)">${svcs.online}</div><div class="kpi-lbl">Services Online</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:${svcs.offline?'var(--red)':'var(--green)'}">${svcs.offline}</div><div class="kpi-lbl">Offline</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--orange)">${svcs.degraded}</div><div class="kpi-lbl">Degraded</div></div>
+        <div class="kpi"><div class="kpi-val">${health.admin_users}</div><div class="kpi-lbl">Admin Users</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--link)">${health.active_sessions}</div><div class="kpi-lbl">Active Sessions</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--yellow)">${health.active_announcements}</div><div class="kpi-lbl">Announcements</div></div>
+      </div>
+      <div style="font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+        Service Health — checked ${fmtDate(svcs.checked_at)} UTC
+      </div>
+      <div class="svc-grid">${svcs.services.map(svcCard).join('')}</div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Services ──────────────────────────────────────────────────────────────────
+async function renderServices(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Checking all services…</div>';
+  try{
+    const d=await api('api/services');
+    el.innerHTML=`
+      <div style="font-size:.75rem;color:var(--mute);margin-bottom:12px">
+        Checked at ${fmtDate(d.checked_at)} UTC —
+        <span style="color:var(--green)">${d.online} online</span> /
+        <span style="color:var(--red)">${d.offline} offline</span> /
+        <span style="color:var(--orange)">${d.degraded} degraded</span>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">All Services</span></div>
+        <table><thead><tr><th>Service</th><th>Status</th><th>Response</th><th>HTTP</th><th>Key Metric</th><th>Link</th></tr></thead>
+          <tbody>${d.services.map(s=>{
+            const metric=s.data?(s.data.total||s.data.patients||s.data.studies||s.data.records||'—'):'—';
+            return`<tr>
+              <td style="font-weight:600"><span class="dot ${s.status}"></span>${esc(s.name)}</td>
+              <td>${svcBadge(s.status)}</td>
+              <td style="color:var(--mute)">${s.response_ms!=null?s.response_ms+'ms':'—'}</td>
+              <td style="color:var(--mute);font-size:.72rem">${s.http_status||'—'}</td>
+              <td style="color:var(--mute)">${metric}</td>
+              <td>${s.path?`<a href="${s.path}" target="_blank" style="color:var(--link);font-size:.72rem">Open ↗</a>`:'—'}</td>
+            </tr>`;}).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+async function renderUsers(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const users=await api('api/users');
+    el.innerHTML=`
+      <div class="section" style="margin-bottom:14px">
+        <div class="section-hdr"><span class="section-title">Create Admin User</span></div>
+        <div style="padding:14px 16px">
+          <div class="form-row">
+            <div class="form-group"><label>Username</label><input id="nu-user" placeholder="johndoe"></div>
+            <div class="form-group"><label>Password</label><input id="nu-pass" type="password" placeholder="min. 6 chars"></div>
+            <div class="form-group" style="max-width:120px"><label>Role</label>
+              <select id="nu-role"><option value="admin">admin</option><option value="superadmin">superadmin</option></select></div>
+            <div class="form-group" style="max-width:80px;justify-content:flex-end">
+              <label>&nbsp;</label><button class="btn pri" onclick="createUser()">+ Add</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">Admin Users (${users.length})</span></div>
+        <table><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+          <tbody>${users.map(u=>`<tr>
+            <td style="color:var(--mute)">${u.id}</td>
+            <td style="font-weight:600">${esc(u.username)}</td>
+            <td><span class="badge ${u.role==='superadmin'?'b-purple':'b-blue'}">${esc(u.role)}</span></td>
+            <td style="color:var(--mute)">${fmtDate(u.created_at)}</td>
+            <td style="color:var(--mute)">${fmtDate(u.last_login)||'Never'}</td>
+            <td><button class="btn danger" onclick="deleteUser(${u.id},'${esc(u.username)}')">✕</button></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function createUser(){
+  const u=document.getElementById('nu-user').value.trim();
+  const p=document.getElementById('nu-pass').value.trim();
+  const r=document.getElementById('nu-role').value;
+  try{
+    await api('api/users',{method:'POST',body:JSON.stringify({username:u,password:p,role:r})});
+    toast(`User '${u}' created`);
+    renderUsers();
+  }catch(e){toast(e.message,'err');}
+}
+
+async function deleteUser(id,name){
+  if(!confirm(`Delete admin user '${name}'?`))return;
+  try{
+    await api(`api/users/${id}`,{method:'DELETE'});
+    toast(`User '${name}' deleted`);
+    renderUsers();
+  }catch(e){toast(e.message,'err');}
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function renderConfig(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const cfg=await api('api/config');
+    el.innerHTML=`<div class="section">
+      <div class="section-hdr"><span class="section-title">System Configuration</span></div>
+      <table><thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Updated By</th><th>Updated</th><th></th></tr></thead>
+        <tbody>${cfg.map(c=>`<tr>
+          <td style="font-family:monospace;font-size:.75rem;color:var(--link)">${esc(c.key)}</td>
+          <td id="cfgv-${esc(c.key)}"><span class="config-val">${esc(c.value)}</span></td>
+          <td style="color:var(--mute);font-size:.75rem;max-width:200px">${esc(c.description||'')}</td>
+          <td style="color:var(--mute);font-size:.72rem">${esc(c.updated_by||'—')}</td>
+          <td style="color:var(--mute);font-size:.72rem">${fmtDate(c.updated_at)}</td>
+          <td><button class="btn" onclick="editConfig('${esc(c.key)}','${esc(c.value).replace(/'/g,"\\'")}')">Edit</button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+function editConfig(key,oldVal){
+  const cell=document.getElementById(`cfgv-${key}`);
+  if(!cell)return;
+  cell.innerHTML=`<input class="editable-input" id="cfg-inp-${key}" value="${esc(oldVal)}">
+    <button class="btn pri" style="margin-left:5px" onclick="saveConfig('${key}')">Save</button>
+    <button class="btn" style="margin-left:3px" onclick="renderConfig()">Cancel</button>`;
+  document.getElementById(`cfg-inp-${key}`).focus();
+}
+async function saveConfig(key){
+  const val=document.getElementById(`cfg-inp-${key}`)?.value??'';
+  try{
+    await api(`api/config/${key}`,{method:'PUT',body:JSON.stringify({value:val})});
+    toast(`Config '${key}' updated`);
+    renderConfig();
+  }catch(e){toast(e.message,'err');}
+}
+
+// ── Announcements ─────────────────────────────────────────────────────────────
+async function renderAnnouncements(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const items=await api('api/announcements?active_only=false');
+    el.innerHTML=`
+      <div class="section" style="margin-bottom:14px">
+        <div class="section-hdr"><span class="section-title">New Announcement</span></div>
+        <div style="padding:14px 16px">
+          <div class="form-row">
+            <div class="form-group" style="flex:2"><label>Title</label><input id="an-title" placeholder="Announcement title"></div>
+            <div class="form-group" style="max-width:130px"><label>Severity</label>
+              <select id="an-sev">
+                <option value="info">info</option>
+                <option value="warning">warning</option>
+                <option value="critical">critical</option>
+                <option value="success">success</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1"><label>Body</label>
+              <textarea id="an-body" placeholder="Message body…"></textarea>
+            </div>
+          </div>
+          <button class="btn pri" onclick="createAnnouncement()">📢 Publish</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">All Announcements (${items.length})</span></div>
+        ${items.length?`<table><thead><tr><th>Title</th><th>Severity</th><th>Body</th><th>Active</th><th>By</th><th>Created</th><th></th></tr></thead>
+          <tbody>${items.map(a=>{
+            const sevMap={info:'b-blue',warning:'b-orange',critical:'b-red',success:'b-green'};
+            return`<tr>
+              <td style="font-weight:600">${esc(a.title)}</td>
+              <td><span class="badge ${sevMap[a.severity]||'b-grey'}">${esc(a.severity)}</span></td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mute)">${esc(a.body)}</td>
+              <td>${a.active?'<span class="badge b-green">active</span>':'<span class="badge b-grey">inactive</span>'}</td>
+              <td style="color:var(--mute);font-size:.72rem">${esc(a.created_by||'—')}</td>
+              <td style="color:var(--mute);font-size:.72rem">${fmtDate(a.created_at)}</td>
+              <td style="display:flex;gap:4px">
+                <button class="btn" onclick="toggleAnn(${a.id},${a.active?0:1})">${a.active?'Deactivate':'Activate'}</button>
+                <button class="btn danger" onclick="deleteAnn(${a.id})">✕</button>
+              </td>
+            </tr>`;}).join('')}</tbody></table>`
+          :'<div class="empty">No announcements yet.</div>'}
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function createAnnouncement(){
+  const title=document.getElementById('an-title').value.trim();
+  const body =document.getElementById('an-body').value.trim();
+  const sev  =document.getElementById('an-sev').value;
+  try{
+    await api('api/announcements',{method:'POST',body:JSON.stringify({title,body,severity:sev})});
+    toast('Announcement published');renderAnnouncements();
+  }catch(e){toast(e.message,'err');}
+}
+async function toggleAnn(id,active){
+  try{await api(`api/announcements/${id}`,{method:'PATCH',body:JSON.stringify({active})});renderAnnouncements();}
+  catch(e){toast(e.message,'err');}
+}
+async function deleteAnn(id){
+  if(!confirm('Delete this announcement?'))return;
+  try{await api(`api/announcements/${id}`,{method:'DELETE'});toast('Deleted');renderAnnouncements();}
+  catch(e){toast(e.message,'err');}
+}
+
+// ── Audit Log ─────────────────────────────────────────────────────────────────
+async function renderAudit(){
+  const el=document.getElementById('content');
+  el.innerHTML=`
+    <div class="form-row" style="margin-bottom:12px">
+      <div class="form-group" style="max-width:180px"><label>Admin User</label>
+        <input id="aud-user" placeholder="Filter by user…" oninput="renderAudit()"></div>
+      <div class="form-group" style="max-width:180px"><label>Action</label>
+        <input id="aud-act"  placeholder="Filter by action…" oninput="renderAudit()"></div>
+      <div class="form-group" style="max-width:60px;justify-content:flex-end">
+        <label>&nbsp;</label><button class="btn" onclick="renderAudit()">↻</button></div>
+    </div>
+    <div class="empty">Loading…</div>`;
+  const user=(document.getElementById('aud-user')?.value||'').trim();
+  const act =(document.getElementById('aud-act')?.value||'').trim();
+  let url='api/audit?limit=300';
+  if(user) url+=`&admin_user=${encodeURIComponent(user)}`;
+  if(act)  url+=`&action=${encodeURIComponent(act)}`;
+  try{
+    const rows=await api(url);
+    const tbl=document.querySelector('#content > div.empty') ||
+              document.getElementById('content').lastElementChild;
+    if(!rows.length){tbl.outerHTML='<div class="empty">No audit log entries.</div>';return;}
+    const wrap=document.createElement('div');
+    wrap.className='section';
+    wrap.innerHTML=`<div class="section-hdr"><span class="section-title">Audit Log (${rows.length})</span></div>
+      <table><thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr>
+          <td style="color:var(--mute);font-size:.72rem;white-space:nowrap">${fmtDate(r.created_at)}</td>
+          <td style="font-weight:600">${esc(r.admin_user)}</td>
+          <td><span class="badge b-blue">${esc(r.action)}</span></td>
+          <td style="color:var(--mute)">${esc(r.target||'—')}</td>
+          <td style="color:var(--mute);font-size:.72rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.detail||'—')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    tbl.replaceWith(wrap);
+  }catch(e){toast(e.message,'err');}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+tryRestore();
+setInterval(()=>{if(_token&&_view==='dashboard')renderDashboard();},30000);
+</script>
+</body></html>

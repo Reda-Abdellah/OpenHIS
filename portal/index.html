@@ -19,7 +19,18 @@
     }
     .hero { text-align: center; margin-bottom: 48px; }
     .hero h1 { font-size: 1.7rem; font-weight: 700; color: var(--link); margin-bottom: 8px; }
-    .hero p  { font-size: .9rem; color: var(--mute); max-width: 520px; line-height: 1.65; }
+    .hero p  { font-size: .9rem; color: var(--mute); max-width: 560px; line-height: 1.65; }
+
+    .section-label {
+      width: 100%; max-width: 1000px;
+      font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--mute);
+      margin: 28px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-label:first-of-type { margin-top: 0; }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -41,20 +52,103 @@
       display: inline-block; font-size: .65rem; font-weight: 600;
       padding: 2px 8px; border-radius: 10px; width: fit-content; border: 1px solid;
     }
-    .tag-clinical  { color: #3fb950; border-color: #2a3d2a; background: #162316; }
-    .tag-imaging   { color: #58a6ff; border-color: #2a4a90; background: #162040; }
-    .tag-ai        { color: #d2a8ff; border-color: #3a2060; background: #1a1a2e; }
-    .tag-infra     { color: #ffa657; border-color: #5a3a00; background: #201a10; }
-    .tag-fhir      { color: #79c0ff; border-color: #1a3a5a; background: #0d1e30; }
+    .tag-clinical { color: #3fb950; border-color: #2a3d2a; background: #162316; }
+    .tag-imaging  { color: #58a6ff; border-color: #2a4a90; background: #162040; }
+    .tag-ai       { color: #d2a8ff; border-color: #3a2060; background: #1a1a2e; }
+    .tag-infra    { color: #ffa657; border-color: #5a3a00; background: #201a10; }
+    .tag-fhir     { color: #79c0ff; border-color: #1a3a5a; background: #0d1e30; }
+    .tag-patient  { color: #3fb950; border-color: #1a4a2a; background: #0d2016; }
+
     footer { margin-top: 56px; font-size: .73rem; color: var(--mute); }
   </style>
 </head>
 <body>
+
   <div class="hero">
     <h1>⚕ PACS Demo Platform</h1>
-    <p>Clinical integration stack — DICOM imaging, AI pipelines, EHR, LIS, RIS and FHIR R4 interoperability, all running locally via Docker Compose.</p>
+    <p>Clinical integration stack — DICOM imaging, AI pipelines, EHR, LIS, RIS, Pharmacy, MPI, HL7 and FHIR R4 interoperability, all running locally via Docker Compose.</p>
   </div>
 
+  <!-- ── Clinical ─────────────────────────────────────────── -->
+  <div class="section-label">Clinical</div>
+  <div class="grid">
+
+    <a class="card" href="/ehr/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🏥</span>
+        <div>
+          <div class="card-name">EHR</div>
+          <div class="card-path">/ehr/</div>
+        </div>
+      </div>
+      <div class="card-desc">Electronic Health Records. Patient registration, encounter management, clinical orders, scheduling and CDSS alert evaluation.</div>
+      <span class="card-tag tag-clinical">Clinical</span>
+    </a>
+
+    <a class="card" href="/lis/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🧪</span>
+        <div>
+          <div class="card-name">LIS</div>
+          <div class="card-path">/lis/</div>
+        </div>
+      </div>
+      <div class="card-desc">Laboratory Information System. Specimen accessioning, instrument management and result validation with Westgard QC rules.</div>
+      <span class="card-tag tag-clinical">Clinical · Lab</span>
+    </a>
+
+    <a class="card" href="/ris/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">📋</span>
+        <div>
+          <div class="card-name">RIS</div>
+          <div class="card-path">/ris/</div>
+        </div>
+      </div>
+      <div class="card-desc">Radiology Information System. Manages imaging orders, accession numbers and radiology reports (Draft → Preliminary → Final).</div>
+      <span class="card-tag tag-clinical">Clinical · Radiology</span>
+    </a>
+
+    <a class="card" href="/pharmacy/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">💊</span>
+        <div>
+          <div class="card-name">Pharmacy</div>
+          <div class="card-path">/pharmacy/</div>
+        </div>
+      </div>
+      <div class="card-desc">Medication management. Drug catalog, prescription workflow, dispensing records, stock control and Medication Administration Record (MAR).</div>
+      <span class="card-tag tag-clinical">Clinical · Pharmacy</span>
+    </a>
+
+    <a class="card" href="/mpi/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🪪</span>
+        <div>
+          <div class="card-name">MPI</div>
+          <div class="card-path">/mpi/</div>
+        </div>
+      </div>
+      <div class="card-desc">Master Patient Index. Probabilistic identity matching, demographic deduplication and cross-referencing across all clinical systems.</div>
+      <span class="card-tag tag-clinical">Clinical · Identity</span>
+    </a>
+
+    <a class="card" href="/patient-portal/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🙋</span>
+        <div>
+          <div class="card-name">Patient Portal</div>
+          <div class="card-path">/patient-portal/</div>
+        </div>
+      </div>
+      <div class="card-desc">Patient self-service access. View personal encounters, clinical documents, lab results and upcoming appointments.</div>
+      <span class="card-tag tag-patient">Patient-Facing</span>
+    </a>
+
+  </div>
+
+  <!-- ── Imaging ──────────────────────────────────────────── -->
+  <div class="section-label">Imaging</div>
   <div class="grid">
 
     <a class="card" href="/ohif/" target="_blank">
@@ -81,17 +175,23 @@
       <span class="card-tag tag-imaging">Imaging · DICOM</span>
     </a>
 
-    <a class="card" href="/ris/" target="_blank">
+    <a class="card" href="/simulator/" target="_blank">
       <div class="card-header">
-        <span class="card-icon">📋</span>
+        <span class="card-icon">⚡</span>
         <div>
-          <div class="card-name">RIS</div>
-          <div class="card-path">/ris/</div>
+          <div class="card-name">DICOM Simulator</div>
+          <div class="card-path">/simulator/</div>
         </div>
       </div>
-      <div class="card-desc">Radiology Information System. Manages imaging orders, accession numbers and radiology reports (Draft → Preliminary → Final).</div>
-      <span class="card-tag tag-clinical">Clinical</span>
+      <div class="card-desc">Generates synthetic DICOM series (CR, DX, CT, MR, US…) and pushes them directly to Orthanc to seed the demo with test data.</div>
+      <span class="card-tag tag-infra">Dev Tool</span>
     </a>
+
+  </div>
+
+  <!-- ── AI ──────────────────────────────────────────────── -->
+  <div class="section-label">AI &amp; Pipelines</div>
+  <div class="grid">
 
     <a class="card" href="/ai-controller/" target="_blank">
       <div class="card-header">
@@ -105,43 +205,13 @@
       <span class="card-tag tag-ai">AI · Pipelines</span>
     </a>
 
-    <a class="card" href="/ehr/" target="_blank">
-      <div class="card-header">
-        <span class="card-icon">🏥</span>
-        <div>
-          <div class="card-name">EHR</div>
-          <div class="card-path">/ehr/</div>
-        </div>
-      </div>
-      <div class="card-desc">Electronic Health Records. Patient registration, encounter management, clinical orders, scheduling and CDSS alert evaluation.</div>
-      <span class="card-tag tag-clinical">Clinical</span>
-    </a>
+  </div>
 
-    <a class="card" href="/lis/" target="_blank">
-      <div class="card-header">
-        <span class="card-icon">🧪</span>
-        <div>
-          <div class="card-name">LIS</div>
-          <div class="card-path">/lis/</div>
-        </div>
-      </div>
-      <div class="card-desc">Laboratory Information System. Specimen accessioning, instrument management and result validation with Westgard QC rules.</div>
-      <span class="card-tag tag-clinical">Clinical · Lab</span>
-    </a>
+  <!-- ── Interoperability ────────────────────────────────── -->
+  <div class="section-label">Interoperability</div>
+  <div class="grid">
 
-    <a class="card" href="/simulator/" target="_blank">
-      <div class="card-header">
-        <span class="card-icon">⚡</span>
-        <div>
-          <div class="card-name">DICOM Simulator</div>
-          <div class="card-path">/simulator/</div>
-        </div>
-      </div>
-      <div class="card-desc">Generates synthetic DICOM series (CR, DX, CT, MR, US…) and pushes them directly to Orthanc to seed the demo with test data.</div>
-      <span class="card-tag tag-infra">Dev Tool</span>
-    </a>
-
-    <a class="card" href="/fhir-bridge/api/health" target="_blank">
+    <a class="card" href="/fhir-bridge/" target="_blank">
       <div class="card-header">
         <span class="card-icon">🔗</span>
         <div>
@@ -151,6 +221,48 @@
       </div>
       <div class="card-desc">Translates internal clinical events into FHIR R4 resources (Patient, ImagingStudy, ServiceRequest, DiagnosticReport) and pushes to HAPI.</div>
       <span class="card-tag tag-fhir">FHIR R4</span>
+    </a>
+
+    <a class="card" href="/hl7/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">📡</span>
+        <div>
+          <div class="card-name">HL7 Gateway</div>
+          <div class="card-path">/hl7/</div>
+        </div>
+      </div>
+      <div class="card-desc">HL7 v2 message builder and MLLP gateway. Send and receive ADT, ORM and ORU messages with a full inbound message history browser.</div>
+      <span class="card-tag tag-infra">HL7 v2 · MLLP</span>
+    </a>
+
+  </div>
+
+  <!-- ── Infrastructure ─────────────────────────────────── -->
+  <div class="section-label">Infrastructure &amp; Admin</div>
+  <div class="grid">
+
+    <a class="card" href="/analytics/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">📊</span>
+        <div>
+          <div class="card-name">Analytics</div>
+          <div class="card-path">/analytics/</div>
+        </div>
+      </div>
+      <div class="card-desc">Platform-wide metrics and reporting. Scheduled data collection, aggregate KPIs across all modules and CSV export.</div>
+      <span class="card-tag tag-infra">Metrics · Export</span>
+    </a>
+
+    <a class="card" href="/admin/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">⚙️</span>
+        <div>
+          <div class="card-name">Admin Dashboard</div>
+          <div class="card-path">/admin/</div>
+        </div>
+      </div>
+      <div class="card-desc">Staff operations panel. Real-time health monitoring of all services, admin user management, system config key-value store, broadcast announcements and full audit log.</div>
+      <span class="card-tag tag-infra">Staff Only</span>
     </a>
 
   </div>

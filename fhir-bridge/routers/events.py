@@ -5,6 +5,10 @@ import os, logging
 import httpx
 from fastapi import APIRouter, BackgroundTasks
 from translators.patient import to_fhir_patient
+from translators.composition import to_fhir_composition
+
+from translators.medicationrequest import to_fhir_medication_request
+
 from translators.service_request import to_fhir_service_request
 from translators.diagnostic_report import (
     to_fhir_diagnostic_report_lab,
@@ -12,6 +16,19 @@ from translators.diagnostic_report import (
 )
 from translators.imaging_study import to_fhir_imaging_study
 from translators.observation import to_fhir_observations_from_ai
+
+
+async def _notify_hl7(event: str, patient: dict, encounter: dict = None):
+    if not HL7_URL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as c:
+            await c.post(
+                f"{HL7_URL}/api/send/adt",
+                json={"event": event, "patient": patient, "encounter": encounter}
+            )
+    except Exception:
+        pass
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 log = logging.getLogger("fhir-bridge.events")
@@ -21,8 +38,11 @@ RIS_URL         = os.environ.get("RIS_URL",           "http://ris:8002/api")
 LIS_URL         = os.environ.get("LIS_URL",           "http://lis:8004/api")
 ORTHANC_URL     = os.environ.get("ORTHANC_URL",       "http://orthanc:8042")
 AI_URL          = os.environ.get("AI_CONTROLLER_URL", "http://ai-controller:8000/api")
+PHARMACY_URL    = os.environ.get("PHARMACY_URL",     "http://pharmacy:8006/api")
 FHIR_SERVER_URL = os.environ.get("FHIR_SERVER_URL",   "")
 FHIR_ENABLED    = os.environ.get("FHIR_ENABLED", "true").lower() == "true"
+
+HL7_URL = os.environ.get('HL7_URL', '')
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -132,6 +152,78 @@ async def _handle_imaging_order(payload: dict):
         # FIX: use PATCH not POST — EHR order update endpoint is PATCH
         await _patch(f"{EHR_URL}/orders/{payload['id']}",
                      {"ehr_order_id": accession, "status": "SENT"})
+
+
+
+@router.post("/pharmacy-order")
+async def on_pharmacy_order(payload: dict, bg: BackgroundTasks):
+    """EHR PHARMACY order → create prescription in Pharmacy service; push FHIR MedicationRequest."""
+    bg.add_task(handle_pharmacy_order, payload)
+    return {"status": "queued"}
+
+
+async def handle_pharmacy_order(payload: dict):
+    import json
+    detail = payload.get("orderdetail") or {}
+    if isinstance(detail, str):
+        try:    detail = json.loads(detail)
+        except: detail = {}
+
+    # Push FHIR ServiceRequest (reuse existing translator)
+    fhir_sr = to_fhir_service_request(payload, payload.get("patientid", ""))
+    await _push_to_fhir(fhir_sr)
+
+    if not PHARMACY_URL:
+        log.warning("PHARMACY_URL not set — skipping prescription creation")
+        return
+
+    rx_payload = {
+        "ehr_order_id":   str(payload.get("id", "")),
+        "ehr_patient_id": payload.get("patientid", ""),
+        "drug_name":      detail.get("drug") or detail.get("medication") or "Unknown",
+        "medication_id":  detail.get("medication_id"),
+        "dose":           detail.get("dose") or detail.get("strength") or "as prescribed",
+        "route":          detail.get("route") or "oral",
+        "frequency":      detail.get("frequency") or "QD",
+        "duration_days":  detail.get("duration_days"),
+        "quantity":       detail.get("quantity") or 1,
+        "prescriber":     payload.get("requestingphysician"),
+        "notes":          detail.get("notes"),
+    }
+    rx_data = {}
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.post(f"{PHARMACY_URL}/api/prescriptions", json=rx_payload)
+            rx_data = r.json()
+            log.info(f"Pharmacy prescription created id={rx_data.get('id')}")
+    except Exception as e:
+        log.warning(f"Pharmacy prescription creation failed: {e}")
+        return
+
+    # Push FHIR MedicationRequest
+    await _push_to_fhir(to_fhir_medication_request(rx_data))
+
+    # Patch EHR order with pharmacy reference
+    rx_ref = f"RX-{rx_data.get('id', '')}"
+    if rx_ref and payload.get("id"):
+        await _patch(f"{EHR_URL}/orders/{payload['id']}", {"ehrorderid": rx_ref, "status": "SENT"})
+
+
+
+@router.post("/note-finalized")
+async def on_note_finalized(payload: dict, bg: BackgroundTasks):
+    """EHR finalized note → FHIR Composition."""
+    bg.add_task(handle_note_finalized, payload)
+    return {"status": "queued"}
+
+
+async def handle_note_finalized(payload: dict):
+    resource = to_fhir_composition(payload)
+    # strip None encounter if absent
+    if resource.get("encounter") is None:
+        resource.pop("encounter", None)
+    await _push_to_fhir(resource)
+    log.info(f"FHIR Composition note-{payload.get('id')} pushed (status={payload.get('status')})")
 
 
 @router.post("/lab-order")
@@ -273,3 +365,19 @@ async def _handle_ai_job(payload: dict):
         return
     for obs in to_fhir_observations_from_ai(job):
         await _push_to_fhir(obs)
+
+@router.post("/encounter-admitted")
+async def handle_encounter_admitted(payload: dict, bg: BackgroundTasks):
+    patient  = payload.get("patient",  payload)
+    encounter= payload.get("encounter", payload)
+    bg.add_task(_notify_hl7, "A01", patient, encounter)
+    return {"status": "ok", "event": "encounter-admitted"}
+
+
+@router.post("/encounter-discharged")
+async def handle_encounter_discharged(payload: dict, bg: BackgroundTasks):
+    patient  = payload.get("patient",  payload)
+    encounter= payload.get("encounter", payload)
+    bg.add_task(_notify_hl7, "A03", patient, encounter)
+    return {"status": "ok", "event": "encounter-discharged"}
+

@@ -1,0 +1,506 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Patient Portal</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{background:var(--bg);color:var(--text);min-height:100vh;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px}
+
+/* ── Login ── */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#0d1117 0%,#161b22 100%)}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:40px 36px;width:100%;max-width:380px;text-align:center}
+.login-icon{font-size:2.4rem;margin-bottom:12px}
+.login-card h1{font-size:1.3rem;font-weight:700;color:var(--link);margin-bottom:6px}
+.login-card p{font-size:.83rem;color:var(--mute);margin-bottom:28px;line-height:1.5}
+.login-field{margin-bottom:14px;text-align:left}
+.login-field label{display:block;font-size:.72rem;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.login-field input{width:100%;background:var(--input);border:1px solid var(--border);
+  border-radius:6px;color:var(--text);padding:9px 12px;font-size:.88rem;
+  font-family:inherit;outline:none;transition:border .13s}
+.login-field input:focus{border-color:var(--link)}
+.login-btn{width:100%;padding:10px;border-radius:7px;border:none;
+  background:var(--link);color:#fff;font-size:.9rem;font-weight:600;
+  cursor:pointer;transition:opacity .13s;margin-top:6px}
+.login-btn:hover{opacity:.88}
+.login-btn:disabled{opacity:.4;cursor:not-allowed}
+.login-err{color:var(--red);font-size:.78rem;margin-top:10px;min-height:20px}
+.login-hint{margin-top:18px;padding:10px 12px;background:var(--input);
+  border-radius:6px;font-size:.74rem;color:var(--mute);line-height:1.6;text-align:left}
+
+/* ── Portal ── */
+.portal-wrap{display:none;flex-direction:column;min-height:100vh}
+.portal-header{background:var(--card);border-bottom:1px solid var(--border);
+  padding:0 24px;display:flex;align-items:center;gap:16px;height:52px;
+  position:sticky;top:0;z-index:10}
+.portal-logo{font-size:1.1rem;font-weight:700;color:var(--link);white-space:nowrap}
+.portal-patient{font-size:.82rem;color:var(--mute);flex:1}
+.portal-patient strong{color:var(--text)}
+.logout-btn{padding:4px 12px;border-radius:5px;border:1px solid var(--border);
+  background:var(--input);color:var(--mute);font-size:.75rem;cursor:pointer;
+  font-family:inherit;transition:all .12s}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
+.tab-bar{background:var(--card);border-bottom:1px solid var(--border);
+  padding:0 24px;display:flex;gap:0;overflow-x:auto}
+.tab{padding:10px 16px;font-size:.82rem;color:var(--mute);cursor:pointer;
+  border-bottom:2px solid transparent;white-space:nowrap;transition:all .13s;
+  user-select:none}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--link);border-bottom-color:var(--link)}
+.portal-content{padding:20px 24px;flex:1;max-width:960px;margin:0 auto;width:100%}
+
+/* ── Cards & Tables ── */
+.summary-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:12px;margin-bottom:20px}
+.sum-card{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:14px 16px}
+.sum-val{font-size:1.6rem;font-weight:700;line-height:1;margin-bottom:4px}
+.sum-lbl{font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:14px;overflow:hidden}
+.section-hdr{padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px}
+.section-title{font-size:.72rem;font-weight:700;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.07em;flex:1}
+.section-body{padding:14px 16px}
+.empty-state{padding:24px;text-align:center;color:var(--mute);font-size:.82rem}
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+thead th{padding:7px 10px;text-align:left;font-size:.67rem;font-weight:600;
+  color:var(--mute);text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--border)}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
+td{padding:8px 10px;vertical-align:middle}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;
+  font-size:.65rem;font-weight:600;line-height:1.6}
+.b-green{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-orange{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.b-red{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-blue{background:#162040;color:var(--link);border:1px solid #2a4a90}
+.b-grey{background:#1a1e25;color:var(--mute);border:1px solid #30363d}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 14px;
+  border-radius:6px;border:1px solid var(--border);background:var(--input);
+  color:var(--text);font-size:.78rem;cursor:pointer;font-family:inherit;
+  transition:all .12s}
+.btn:hover{background:var(--hover);border-color:var(--link)}
+.btn.pri{background:var(--link);border-color:var(--link);color:#fff}
+.btn.pri:hover{opacity:.88}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.form-group{display:flex;flex-direction:column;gap:3px}
+.form-group label{font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.form-group input,.form-group select,.form-group textarea{background:var(--input);
+  border:1px solid var(--border);border-radius:5px;color:var(--text);
+  padding:6px 9px;font-size:.8rem;font-family:inherit;outline:none;
+  transition:border .12s}
+.form-group input:focus,.form-group select:focus{border-color:var(--link)}
+.form-group textarea{resize:vertical;min-height:60px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+  z-index:100;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:24px;width:100%;max-width:440px}
+.modal h3{font-size:.93rem;font-weight:600;margin-bottom:16px}
+.profile-row{display:flex;justify-content:space-between;padding:7px 0;
+  border-bottom:1px solid #1a1e25}
+.profile-row:last-child{border-bottom:none}
+.profile-key{font-size:.78rem;color:var(--mute)}
+.profile-val{font-size:.8rem;font-weight:500}
+.toast{position:fixed;bottom:16px;right:16px;padding:10px 16px;border-radius:6px;
+  font-size:.8rem;border:1px solid;z-index:300;max-width:320px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+</style></head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div class="login-wrap" id="login-page">
+  <div class="login-card">
+    <div class="login-icon">🏥</div>
+    <h1>Patient Portal</h1>
+    <p>Access your health records securely.<br>Sign in with your Medical Record Number and date of birth.</p>
+    <div class="login-field">
+      <label>Medical Record Number (MRN)</label>
+      <input id="l-mrn" placeholder="e.g. MRN-001" autocomplete="username"
+             onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <div class="login-field">
+      <label>Date of Birth</label>
+      <input id="l-dob" type="date" autocomplete="bday"
+             onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <button class="login-btn" id="login-btn" onclick="login()">Sign In</button>
+    <div class="login-err" id="login-err"></div>
+    <div class="login-hint">
+      <strong style="color:var(--text)">Demo:</strong> Create a patient in the EHR first,
+      then log in here using the same MRN and birthdate.
+    </div>
+  </div>
+</div>
+
+<!-- ── PORTAL ── -->
+<div class="portal-wrap" id="portal-page">
+  <div class="portal-header">
+    <div class="portal-logo">🏥 Patient Portal</div>
+    <div class="portal-patient">Welcome, <strong id="pt-name">—</strong></div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+  <div class="tab-bar" id="tab-bar">
+    <div class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">🏠 Dashboard</div>
+    <div class="tab" data-tab="appointments" onclick="switchTab('appointments')">📅 Appointments</div>
+    <div class="tab" data-tab="results" onclick="switchTab('results')">🧪 Lab Results</div>
+    <div class="tab" data-tab="imaging" onclick="switchTab('imaging')">🩻 Imaging</div>
+    <div class="tab" data-tab="billing" onclick="switchTab('billing')">💳 Billing</div>
+    <div class="tab" data-tab="profile" onclick="switchTab('profile')">👤 My Profile</div>
+  </div>
+  <div class="portal-content" id="portal-content">
+    <div class="empty-state">Loading…</div>
+  </div>
+</div>
+
+<!-- ── Appointment Request Modal ── -->
+<div class="modal-bg" id="appt-modal">
+  <div class="modal">
+    <h3>📅 Request an Appointment</h3>
+    <div class="form-grid" style="margin-bottom:10px">
+      <div class="form-group" style="grid-column:span 2">
+        <label>Department</label>
+        <select id="req-dept">
+          <option>General Practice</option>
+          <option>Cardiology</option>
+          <option>Radiology</option>
+          <option>Laboratory</option>
+          <option>Orthopaedics</option>
+          <option>Oncology</option>
+          <option>Neurology</option>
+          <option>Emergency</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Preferred Date</label>
+        <input id="req-date" type="date">
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>Reason for Visit</label>
+        <textarea id="req-reason" placeholder="Brief description…"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeApptModal()">Cancel</button>
+      <button class="btn pri" onclick="submitApptRequest()">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const BASE = '/patient-portal/';
+let _token = null;
+let _tab   = 'dashboard';
+
+function esc(s){const d=document.createElement('div');d.textContent=s??'—';return d.innerHTML;}
+function fmt(v){return v??'—';}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function fmtCur(v){return v!=null?'$'+Number(v).toFixed(2):'—';}
+function toast(msg,type='ok'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+
+function statusBadge(s){
+  const map={paid:'b-green',partial:'b-orange',pending:'b-red',
+             COMPLETED:'b-green',PENDING:'b-orange',scheduled:'b-blue',
+             cancelled:'b-grey',active:'b-green',final:'b-green',
+             ok:'b-green',FINAL:'b-green'};
+  return`<span class="badge ${map[s]||'b-grey'}">${esc(s||'—')}</span>`;
+}
+
+async function api(path, opts){
+  const headers={'Content-Type':'application/json',...((opts||{}).headers||{})};
+  if(_token) headers['Authorization']=`Bearer ${_token}`;
+  const r=await fetch(BASE+path,{...opts,headers});
+  if(r.status===401){handleSessionExpiry();throw new Error('Session expired');}
+  if(!r.ok){const t=await r.text();throw new Error(r.status+': '+t);}
+  if(r.status===204)return null;
+  return r.json();
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+async function login(){
+  const mrn=(document.getElementById('l-mrn').value||'').trim();
+  const dob=(document.getElementById('l-dob').value||'').trim();
+  const btn=document.getElementById('login-btn');
+  const err=document.getElementById('login-err');
+  err.textContent='';
+  if(!mrn||!dob){err.textContent='Please enter both MRN and date of birth.';return;}
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await api('api/auth/login',{
+      method:'POST',body:JSON.stringify({mrn,birthdate:dob})
+    });
+    _token=r.token;
+    try{localStorage.setItem('pp_token',_token);}catch(_){}
+    showPortal(r.patient_name);
+  }catch(e){
+    err.textContent=e.message.includes('401')?'Invalid MRN or date of birth.':'Login failed. Please try again.';
+  }finally{btn.disabled=false;btn.textContent='Sign In';}
+}
+
+async function logout(){
+  try{await api('api/auth/logout',{method:'POST',body:JSON.stringify({token:_token})});}catch(_){}
+  _token=null;
+  try{localStorage.removeItem('pp_token');}catch(_){}
+  document.getElementById('portal-page').style.display='none';
+  document.getElementById('login-page').style.display='flex';
+  document.getElementById('l-mrn').value='';
+  document.getElementById('l-dob').value='';
+}
+
+function handleSessionExpiry(){
+  _token=null;
+  try{localStorage.removeItem('pp_token');}catch(_){}
+  logout();
+  setTimeout(()=>{document.getElementById('login-err').textContent='Your session expired. Please sign in again.';},200);
+}
+
+async function tryRestoreSession(){
+  let tok=null;
+  try{tok=localStorage.getItem('pp_token');}catch(_){}
+  if(!tok)return;
+  _token=tok;
+  try{
+    const r=await api('api/auth/validate',{headers:{Authorization:`Bearer ${tok}`}});
+    showPortal(r.patient_name);
+  }catch(_){_token=null;}
+}
+
+function showPortal(name){
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('portal-page').style.display='flex';
+  document.getElementById('pt-name').textContent=name||'Patient';
+  switchTab('dashboard');
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(tab){
+  _tab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  const renders={dashboard:renderDashboard,appointments:renderAppointments,
+    results:renderResults,imaging:renderImaging,billing:renderBilling,profile:renderProfile};
+  (renders[tab]||renderDashboard)();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading your summary…</div>';
+  try{
+    const s=await api('api/me/summary');
+    el.innerHTML=`
+      <div class="summary-row">
+        <div class="sum-card">
+          <div class="sum-val" style="color:var(--link)">${s.upcoming_appointments}</div>
+          <div class="sum-lbl">Upcoming Appointments</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-val" style="color:var(--orange)">${s.pending_results}</div>
+          <div class="sum-lbl">Pending Lab Results</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-val" style="color:${s.total_due>0?'var(--red)':'var(--green)'}">${fmtCur(s.total_due)}</div>
+          <div class="sum-lbl">Outstanding Balance</div>
+        </div>
+      </div>
+      ${s.next_appointment?`
+        <div class="section">
+          <div class="section-hdr">
+            <span class="section-title">📅 Next Appointment</span>
+          </div>
+          <div class="section-body">
+            <div style="font-size:.88rem">
+              <strong>${esc(s.next_appointment.provider||s.next_appointment.department||'Pending')}</strong>
+              <span style="color:var(--mute);margin-left:10px">${fmtDate(s.next_appointment.scheduleddate)}</span>
+            </div>
+          </div>
+        </div>` : ''}
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">Quick Access</span></div>
+        <div class="section-body" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" onclick="switchTab('appointments')">📅 My Appointments</button>
+          <button class="btn" onclick="switchTab('results')">🧪 Lab Results</button>
+          <button class="btn" onclick="switchTab('imaging')">🩻 Imaging Reports</button>
+          <button class="btn" onclick="switchTab('billing')">💳 Billing</button>
+          <button class="btn pri" onclick="openApptModal()">+ Request Appointment</button>
+        </div>
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Appointments ──────────────────────────────────────────────────────────────
+async function renderAppointments(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const [appts,reqs]=await Promise.all([api('api/me/appointments'),api('api/me/appointments/requests')]);
+    el.innerHTML=`
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn pri" onclick="openApptModal()">+ Request Appointment</button>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">📅 Scheduled Appointments</span></div>
+        ${appts.length?`<table><thead><tr><th>Date</th><th>Provider</th><th>Department</th><th>Status</th></tr></thead>
+          <tbody>${appts.map(a=>`<tr><td>${esc(fmtDate(a.scheduleddate))}</td><td>${esc(a.provider||'—')}</td><td>${esc(a.department||'—')}</td><td>${statusBadge(a.status)}</td></tr>`).join('')}</tbody></table>`
+          :'<div class="empty-state">No appointments scheduled.</div>'}
+      </div>
+      ${reqs.length?`<div class="section">
+        <div class="section-hdr"><span class="section-title">📋 My Requests</span></div>
+        <table><thead><tr><th>Department</th><th>Preferred Date</th><th>Reason</th><th>Status</th></tr></thead>
+          <tbody>${reqs.map(r=>`<tr><td>${esc(r.department)}</td><td>${esc(r.preferred_date||'—')}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.reason||'—')}</td><td>${statusBadge(r.status)}</td></tr>`).join('')}</tbody></table>
+      </div>`:''}`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Lab Results ────────────────────────────────────────────────────────────────
+async function renderResults(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const results=await api('api/me/results');
+    el.innerHTML=`<div class="section">
+      <div class="section-hdr"><span class="section-title">🧪 Lab Results</span></div>
+      ${results.length?`<table><thead><tr><th>Date</th><th>Test</th><th>Priority</th><th>Status</th></tr></thead>
+        <tbody>${results.map(r=>{
+          let det=r.orderdetail;if(typeof det==='string'){try{det=JSON.parse(det);}catch(_){det={};}}
+          return`<tr><td>${esc(fmtDate(r.updatedat||r.createdat))}</td><td>${esc(det.testcode||det.testCode||'Lab Order')}</td><td>${esc(r.priority||'ROUTINE')}</td><td>${statusBadge(r.status)}</td></tr>`;
+        }).join('')}</tbody></table>`
+        :'<div class="empty-state">No completed lab results yet.</div>'}
+    </div>`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Imaging ────────────────────────────────────────────────────────────────────
+async function renderImaging(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const items=await api('api/me/imaging');
+    el.innerHTML=`<div class="section">
+      <div class="section-hdr"><span class="section-title">🩻 Imaging Studies</span></div>
+      ${items.length?items.map(o=>{
+        let det=o.orderdetail;if(typeof det==='string'){try{det=JSON.parse(det);}catch(_){det={};}}
+        return`<div style="padding:12px 16px;border-bottom:1px solid #1a1e25">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-weight:600">${esc(det.modality||'Imaging Study')}</span>
+            <span style="font-size:.72rem;color:var(--mute)">${esc(fmtDate(o.updatedat||o.createdat))}</span>
+          </div>
+          ${o.report?`<div style="background:var(--input);border-radius:6px;padding:10px;font-size:.8rem">
+            <div style="color:var(--mute);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Radiologist's Impression</div>
+            <div style="line-height:1.55">${esc(o.report.impression||'Report available')}</div>
+            ${o.report.recommendation?`<div style="margin-top:6px;color:var(--orange);font-size:.75rem">Recommendation: ${esc(o.report.recommendation)}</div>`:''}
+          </div>`:`<div style="font-size:.78rem;color:var(--mute)">Report pending</div>`}
+        </div>`;
+      }).join('')
+      :'<div class="empty-state">No completed imaging studies yet.</div>'}
+    </div>`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Billing ────────────────────────────────────────────────────────────────────
+async function renderBilling(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const bills=await api('api/me/billing');
+    const total=bills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const paid =bills.filter(b=>b.status==='paid').reduce((s,b)=>s+Number(b.amount||0),0);
+    const due  =total-paid;
+    el.innerHTML=`
+      <div class="summary-row" style="margin-bottom:16px">
+        <div class="sum-card"><div class="sum-val">${fmtCur(total)}</div><div class="sum-lbl">Total Billed</div></div>
+        <div class="sum-card"><div class="sum-val" style="color:var(--green)">${fmtCur(paid)}</div><div class="sum-lbl">Paid</div></div>
+        <div class="sum-card"><div class="sum-val" style="color:${due>0?'var(--red)':'var(--green)'}">${fmtCur(due)}</div><div class="sum-lbl">Outstanding</div></div>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">💳 Billing Statements</span></div>
+        ${bills.length?`<table><thead><tr><th>Date</th><th>Description</th><th>CPT Code</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>${bills.map(b=>`<tr>
+            <td>${esc(fmtDate(b.createdat))}</td>
+            <td>${esc(b.description||'Medical Service')}</td>
+            <td style="color:var(--mute)">${esc(b.cptcode||'—')}</td>
+            <td style="font-weight:600">${fmtCur(b.amount)}</td>
+            <td>${statusBadge(b.status)}</td>
+          </tr>`).join('')}</tbody></table>`
+          :'<div class="empty-state">No billing records found.</div>'}
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Profile ────────────────────────────────────────────────────────────────────
+async function renderProfile(){
+  const el=document.getElementById('portal-content');
+  el.innerHTML='<div class="empty-state">Loading…</div>';
+  try{
+    const p=await api('api/me');
+    const rows=[
+      ['First Name',p.firstname],['Last Name',p.lastname],
+      ['Date of Birth',p.birthdate],['Sex',p.sex],
+      ['Phone',p.phone],['MRN',p.mrn],['Insurance ID',p.insuranceid],
+    ];
+    const [diags,allgs]=await Promise.all([api('api/me/diagnoses'),api('api/me/allergies')]);
+    el.innerHTML=`
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">👤 Personal Information</span></div>
+        <div class="section-body">
+          ${rows.map(([k,v])=>`<div class="profile-row"><span class="profile-key">${k}</span><span class="profile-val">${esc(v||'—')}</span></div>`).join('')}
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">🩺 Active Diagnoses</span></div>
+        ${diags.length?`<table><thead><tr><th>ICD-10</th><th>Description</th><th>Since</th></tr></thead>
+          <tbody>${diags.map(d=>`<tr><td style="font-family:monospace;color:var(--link)">${esc(d.icd10code)}</td><td>${esc(d.description||'—')}</td><td>${esc(fmtDate(d.createdat))}</td></tr>`).join('')}</tbody></table>`
+          :'<div class="empty-state">No active diagnoses.</div>'}
+      </div>
+      <div class="section">
+        <div class="section-hdr"><span class="section-title">⚠️ Allergies</span></div>
+        ${allgs.length?`<table><thead><tr><th>Substance</th><th>Reaction</th><th>Severity</th></tr></thead>
+          <tbody>${allgs.map(a=>`<tr><td style="color:var(--orange)">${esc(a.substance)}</td><td>${esc(a.reaction||'—')}</td><td>${statusBadge(a.severity)}</td></tr>`).join('')}</tbody></table>`
+          :'<div class="empty-state">No allergies recorded.</div>'}
+      </div>`;
+  }catch(e){el.innerHTML=`<div class="empty-state" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+// ── Appointment Request Modal ──────────────────────────────────────────────────
+function openApptModal(){
+  document.getElementById('appt-modal').classList.add('show');
+}
+function closeApptModal(){
+  document.getElementById('appt-modal').classList.remove('show');
+}
+async function submitApptRequest(){
+  const dept=document.getElementById('req-dept').value;
+  const date=document.getElementById('req-date').value;
+  const reason=document.getElementById('req-reason').value;
+  try{
+    const r=await api('api/me/appointments/request',{
+      method:'POST',body:JSON.stringify({department:dept,preferred_date:date,reason})
+    });
+    closeApptModal();
+    toast('Appointment request submitted — we\'ll be in touch shortly.');
+    if(_tab==='appointments')renderAppointments();
+  }catch(e){toast(e.message,'err');}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('appt-modal').addEventListener('click', e=>{
+  if(e.target===document.getElementById('appt-modal'))closeApptModal();
+});
+tryRestoreSession();
+</script>
+</body></html>

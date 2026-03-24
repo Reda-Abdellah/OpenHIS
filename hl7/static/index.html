@@ -1,0 +1,309 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HL7 Gateway</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--card:#161b22;--hover:#1c2128;--input:#21262d;--border:#30363d;
+  --text:#e6edf3;--mute:#8b949e;--link:#58a6ff;--green:#3fb950;--red:#f85149;
+  --orange:#ffa657;--yellow:#e3b341;--purple:#d2a8ff}
+html,body{background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:13px;height:100%;overflow:hidden}
+.shell{display:flex;height:100vh}
+.sidebar{width:190px;min-width:190px;background:var(--card);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px 0}
+.logo{padding:10px 16px 16px;font-size:.9rem;font-weight:700;color:var(--link)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;
+  border-left:3px solid transparent;font-size:.82rem;color:var(--mute);
+  user-select:none;transition:all .12s}
+.nav-item:hover{background:var(--hover);color:var(--text)}
+.nav-item.active{border-left-color:var(--link);color:var(--link);background:rgba(88,166,255,.07)}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{padding:10px 20px;border-bottom:1px solid var(--border);background:var(--card);
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+.topbar h2{font-size:.93rem;font-weight:600;flex:1}
+.content{padding:16px 20px;flex:1;overflow-y:auto}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:12px 14px}
+.kpi-val{font-size:1.5rem;font-weight:700;line-height:1;margin-bottom:3px}
+.kpi-lbl{font-size:.67rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.tbl-wrap{border:1px solid var(--border);border-radius:7px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:.78rem}
+thead tr{background:var(--card)}
+thead th{padding:7px 10px;text-align:left;font-size:.67rem;font-weight:600;
+  color:var(--mute);text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid #1a1e25;transition:background .1s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
+td{padding:7px 10px;vertical-align:middle;max-width:180px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;
+  font-size:.65rem;font-weight:600;line-height:1.6}
+.b-in{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-out{background:#162040;color:var(--link);border:1px solid #2a4a90}
+.b-err{background:#200e10;color:var(--red);border:1px solid #3d1820}
+.b-ok{background:#162316;color:var(--green);border:1px solid #2a3d2a}
+.b-warn{background:#201a10;color:var(--orange);border:1px solid #5a3a00}
+.b-info{background:#162040;color:var(--link);border:1px solid #2a4a90}
+.mllp-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;
+  box-shadow:0 0 6px var(--green)}
+.mllp-dot.off{background:var(--mute);box-shadow:none}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.filter-bar select,.filter-bar input{background:var(--input);border:1px solid var(--border);
+  border-radius:5px;color:var(--text);padding:4px 8px;font-size:.78rem;
+  font-family:inherit;outline:none;height:28px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--input);color:var(--text);font-size:.78rem;
+  cursor:pointer;font-family:inherit;transition:all .12s}
+.btn:hover{background:var(--hover);border-color:var(--link)}
+.btn.pri{background:#162040;border-color:#2a4a90;color:var(--link)}
+.raw-panel{background:#0a0f16;border:1px solid var(--border);border-radius:6px;
+  padding:12px;font-family:'Courier New',monospace;font-size:.75rem;
+  color:#b0c4de;white-space:pre-wrap;word-break:break-all;max-height:380px;overflow-y:auto;
+  line-height:1.6;margin-top:10px}
+.empty{padding:32px;text-align:center;color:var(--mute);font-size:.82rem}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.form-group{display:flex;flex-direction:column;gap:3px}
+.form-group label{font-size:.67rem;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.form-group input,.form-group select{background:var(--input);border:1px solid var(--border);
+  border-radius:4px;color:var(--text);padding:5px 8px;font-size:.78rem;font-family:inherit;
+  outline:none}
+.form-group input:focus{border-color:var(--link)}
+.seg-line{display:block;color:#7ec8e3}
+.seg-field{color:#e3c07b}
+.seg-comp{color:#98c379}
+.toast{position:fixed;bottom:16px;right:16px;padding:9px 14px;border-radius:6px;
+  font-size:.78rem;border:1px solid;z-index:500;max-width:320px;display:none}
+.toast.ok{background:#0d180d;border-color:#2a3d2a;color:var(--green)}
+.toast.err{background:#180d0d;border-color:#3d1a1a;color:var(--red)}
+</style></head>
+<body>
+<div class="shell">
+  <nav class="sidebar">
+    <div class="logo">🏥 HL7 v2</div>
+    <div class="nav-item active" data-view="dashboard" onclick="nav('dashboard')"><span>📊</span> Dashboard</div>
+    <div class="nav-item" data-view="messages"  onclick="nav('messages')"><span>📨</span> All Messages</div>
+    <div class="nav-item" data-view="inbound"   onclick="nav('inbound')"><span>⬇</span> Inbound ADT</div>
+    <div class="nav-item" data-view="outbound"  onclick="nav('outbound')"><span>⬆</span> Outbound ADT</div>
+    <div class="nav-item" data-view="test"      onclick="nav('test')"><span>🧪</span> Test Send</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <div class="mllp-dot" id="mllp-dot"></div>
+      <span id="mllp-lbl" style="font-size:.72rem;color:var(--mute)">MLLP</span>
+      <button class="btn" onclick="renderCurrent()">↻</button>
+    </div>
+    <div class="content" id="content"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const BASE='/hl7/';
+let _view='dashboard';
+function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function fmtDate(s){return s?s.replace('T',' ').slice(0,16):'';}
+function toast(msg,type='ok'){const t=document.getElementById('toast');t.className='toast '+type;t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+async function api(path,opts){const r=await fetch(BASE+path,opts);if(!r.ok)throw new Error(r.status+' '+r.statusText);return r.json();}
+
+function dirBadge(d){return d==='inbound'?'<span class="badge b-in">⬇ inbound</span>':'<span class="badge b-out">⬆ outbound</span>';}
+function statusBadge(s){return s==='error'?'<span class="badge b-err">error</span>':s==='processed'?'<span class="badge b-ok">processed</span>':'<span class="badge b-info">'+esc(s)+'</span>';}
+function typeBadge(t){
+  if(!t)return'';
+  const col={'ADT^A01':'b-in','ADT^A03':'b-warn','ADT^A04':'b-info',
+             'ADT^A08':'b-info','ADT^A40':'b-warn','ORU^R01':'b-ok','ACK':'b-ok'};
+  return`<span class="badge ${col[t]||'b-info'}">${esc(t)}</span>`;
+}
+
+function highlightHL7(raw){
+  if(!raw)return'';
+  return raw.split(/\r|\n/).filter(Boolean).map(line=>{
+    const name=line.slice(0,3);
+    const rest=line.slice(3);
+    const fields=rest.split('|');
+    return `<span class="seg-line">${esc(name)}</span>`+
+      fields.map((f,i)=>{
+        const comps=f.split('^');
+        if(comps.length>1){
+          return `<span class="seg-field">|</span>`+comps.map(c=>`<span class="seg-comp">${esc(c)}</span>`).join('<span class="seg-field">^</span>');
+        }
+        return `<span class="seg-field">|${esc(f)}</span>`;
+      }).join('');
+  }).join('\n');
+}
+
+function msgRow(m,onclick){
+  return`<tr onclick="${onclick}(${m.id})" title="Click to view raw HL7">
+    <td>${fmtDate(m.created_at)}</td>
+    <td>${dirBadge(m.direction)}</td>
+    <td>${typeBadge(m.msg_type)}</td>
+    <td style="color:var(--text)">${esc(m.patient_name||m.patient_id||'—')}</td>
+    <td style="color:var(--mute);font-size:.72rem">${esc(m.control_id||'')}</td>
+    <td>${statusBadge(m.status)}</td>
+  </tr>`;
+}
+
+async function viewMsg(id){
+  try{
+    const m=await api(`api/messages/${id}`);
+    const raw=document.createElement('div');
+    raw.innerHTML=`<div style="margin-bottom:8px;display:flex;gap:10px;align-items:center">
+      ${dirBadge(m.direction)} ${typeBadge(m.msg_type)} ${statusBadge(m.status)}
+      <span style="font-size:.72rem;color:var(--mute)">${fmtDate(m.created_at)}</span>
+    </div>
+    <div class="raw-panel">${highlightHL7(m.raw)}</div>
+    ${m.error_msg?`<div style="margin-top:8px;color:var(--red);font-size:.78rem">Error: ${esc(m.error_msg)}</div>`:''}`;
+    document.getElementById('msg-detail')?.remove();
+    const panel=document.createElement('div');
+    panel.id='msg-detail';
+    panel.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:7px;padding:14px;margin-top:12px';
+    panel.appendChild(raw);
+    const close=document.createElement('button');
+    close.className='btn';close.textContent='✕ Close';close.style.marginTop='8px';
+    close.onclick=()=>panel.remove();
+    panel.appendChild(close);
+    document.getElementById('content').appendChild(panel);
+    panel.scrollIntoView({behavior:'smooth'});
+  }catch(e){toast(e.message,'err');}
+}
+
+function msgTable(rows,onclick){
+  if(!rows.length)return'<div class="empty">No messages found.</div>';
+  return`<div class="tbl-wrap"><table>
+    <thead><tr><th>Time</th><th>Dir</th><th>Type</th><th>Patient</th><th>Control ID</th><th>Status</th></tr></thead>
+    <tbody>${rows.map(m=>msgRow(m,onclick)).join('')}</tbody>
+  </table></div>`;
+}
+
+async function renderDashboard(){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const [h,stats]=await Promise.all([api('api/health'),api('api/messages/stats')]);
+    const dot=document.getElementById('mllp-dot');
+    const lbl=document.getElementById('mllp-lbl');
+    if(h.mllp_enabled){dot.className='mllp-dot';lbl.textContent=`MLLP :${h.mllp_port}`;}
+    else{dot.className='mllp-dot off';lbl.textContent='MLLP off';}
+    const recent=await api('api/messages?limit=10');
+    el.innerHTML=`
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-val" style="color:var(--link)">${stats.total}</div><div class="kpi-lbl">Total Messages</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--green)">${stats.inbound}</div><div class="kpi-lbl">Inbound</div></div>
+        <div class="kpi"><div class="kpi-val">${stats.outbound}</div><div class="kpi-lbl">Outbound</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:${stats.errors?'var(--red)':'var(--green)'}">${stats.errors}</div><div class="kpi-lbl">Errors</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--yellow)">${stats.today}</div><div class="kpi-lbl">Today</div></div>
+      </div>
+      <div style="font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Message Types</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        ${(stats.by_type||[]).map(r=>`<span class="badge b-info">${esc(r.msg_type)} <b>${r.cnt}</b></span>`).join('')}
+      </div>
+      <div style="font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Recent Messages</div>
+      ${msgTable(recent,'viewMsg')}`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function renderMessages(direction,title){
+  const el=document.getElementById('content');
+  const url=direction?`api/messages?direction=${direction}&limit=200`:'api/messages?limit=200';
+  el.innerHTML=`<div class="filter-bar">
+    <select id="ft" onchange="applyFilter()">
+      <option value="">All Types</option>
+      <option>ADT^A01</option><option>ADT^A03</option><option>ADT^A04</option>
+      <option>ADT^A08</option><option>ADT^A40</option><option>ORU^R01</option><option>ACK</option>
+    </select>
+    <input id="fq" placeholder="Filter patient…" oninput="applyFilter()" style="width:160px">
+    <button class="btn" onclick="renderMessages('${direction||''}','${title||'All'}')">↻</button>
+  </div>
+  <div id="tbl-wrap"><div class="empty">Loading…</div></div>`;
+  try{
+    const rows=await api(url);
+    window._allRows=rows;
+    applyFilter();
+  }catch(e){document.getElementById('tbl-wrap').innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+function applyFilter(){
+  const ft=(document.getElementById('ft')?.value||'').toLowerCase();
+  const fq=(document.getElementById('fq')?.value||'').toLowerCase();
+  const rows=(window._allRows||[]).filter(r=>
+    (!ft||r.msg_type?.toLowerCase().includes(ft))&&
+    (!fq||(r.patient_name||r.patient_id||'').toLowerCase().includes(fq))
+  );
+  document.getElementById('tbl-wrap').innerHTML=msgTable(rows,'viewMsg');
+}
+
+async function renderTest(){
+  const el=document.getElementById('content');
+  el.innerHTML=`
+    <div style="max-width:560px">
+      <div style="font-size:.7rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Send Test ADT Message</div>
+      <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center">
+        <label style="font-size:.78rem;color:var(--mute)">Event:</label>
+        <select id="evt" style="background:var(--input);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:.78rem;font-family:inherit;outline:none">
+          <option value="A01">ADT^A01 — Admit</option>
+          <option value="A03">ADT^A03 — Discharge</option>
+          <option value="A04" selected>ADT^A04 — Register</option>
+          <option value="A08">ADT^A08 — Update</option>
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>MRN</label><input id="f-mrn" value="MRN-TEST-001"></div>
+        <div class="form-group"><label>First Name</label><input id="f-fn" value="Alice"></div>
+        <div class="form-group"><label>Last Name</label><input id="f-ln" value="Smith"></div>
+        <div class="form-group"><label>Birthdate</label><input id="f-dob" value="1990-06-15"></div>
+        <div class="form-group"><label>Sex (M/F/U)</label><input id="f-sex" value="F"></div>
+        <div class="form-group"><label>Ward</label><input id="f-ward" value="ICU"></div>
+      </div>
+      <button class="btn pri" onclick="sendTest()" style="margin-bottom:14px">▶ Send Message</button>
+      <div id="test-result"></div>
+    </div>`;
+}
+
+async function sendTest(){
+  const evt   =document.getElementById('evt').value;
+  const patient={
+    mrn:       document.getElementById('f-mrn').value,
+    firstname: document.getElementById('f-fn').value,
+    lastname:  document.getElementById('f-ln').value,
+    birthdate: document.getElementById('f-dob').value,
+    sex:       document.getElementById('f-sex').value,
+  };
+  const encounter={ward:document.getElementById('f-ward').value||null};
+  try{
+    const r=await api('api/send/adt',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({event:evt,patient,encounter})
+    });
+    document.getElementById('test-result').innerHTML=`
+      <div style="margin-bottom:6px;color:var(--green);font-size:.78rem">
+        ✓ Sent ${r.msg_type} — msg_id #${r.msg_id}
+      </div>
+      <div class="raw-panel">${highlightHL7(r.raw)}</div>`;
+    toast(`ADT^A${evt} queued as msg #${r.msg_id}`);
+  }catch(e){toast(e.message,'err');}
+}
+
+function nav(view){
+  _view=view;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  const titles={dashboard:'Dashboard',messages:'All Messages',inbound:'Inbound ADT',outbound:'Outbound ADT',test:'Test Send'};
+  document.getElementById('page-title').textContent=titles[view]||view;
+  document.getElementById('msg-detail')?.remove();
+  renderCurrent();
+}
+
+function renderCurrent(){
+  if(_view==='dashboard')   renderDashboard();
+  else if(_view==='messages') renderMessages('','All');
+  else if(_view==='inbound')  renderMessages('inbound','Inbound');
+  else if(_view==='outbound') renderMessages('outbound','Outbound');
+  else if(_view==='test')     renderTest();
+}
+
+renderDashboard();
+setInterval(()=>{if(_view==='dashboard')renderDashboard();},30000);
+</script>
+</body></html>
