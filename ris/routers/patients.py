@@ -7,17 +7,17 @@ router = APIRouter(prefix="/api/patients", tags=["patients"])
 
 
 class PatientCreate(BaseModel):
-    orthancid:   Optional[str] = None
-    patientid:   str                    # MRN
-    patientname: str
-    birthdate:   Optional[str] = None
-    sex:         Optional[str] = None
+    orthanc_id:   Optional[str] = None
+    mrn:          Optional[str] = None
+    patient_name: str
+    birth_date:   Optional[str] = None
+    sex:          Optional[str] = None
 
 
 class PatientUpdate(BaseModel):
-    patientname: Optional[str] = None
-    birthdate:   Optional[str] = None
-    sex:         Optional[str] = None
+    patient_name: Optional[str] = None
+    birth_date:   Optional[str] = None
+    sex:          Optional[str] = None
 
 
 @router.get("")
@@ -26,12 +26,12 @@ def list_patients(q: Optional[str] = Query(None)):
         if q:
             like = f"%{q}%"
             rows = db.execute(
-                "SELECT * FROM patients WHERE patientname LIKE ? OR patientid LIKE ?"
-                " ORDER BY patientname",
+                "SELECT * FROM patients WHERE patient_name LIKE ? OR mrn LIKE ?"
+                " ORDER BY patient_name",
                 (like, like)).fetchall()
         else:
             rows = db.execute(
-                "SELECT * FROM patients ORDER BY patientname").fetchall()
+                "SELECT * FROM patients ORDER BY patient_name").fetchall()
         return rows_to_list(rows)
 
 
@@ -48,22 +48,22 @@ def get_patient(patient_id: int):
 @router.post("", status_code=201)
 def create_patient(body: PatientCreate):
     with get_db() as db:
-        if db.execute(
-                "SELECT 1 FROM patients WHERE patientid=?",
-                (body.patientid,)).fetchone():
-            raise HTTPException(409, f"MRN {body.patientid} already exists")
+        if body.mrn and db.execute(
+                "SELECT 1 FROM patients WHERE mrn=?",
+                (body.mrn,)).fetchone():
+            raise HTTPException(409, f"MRN {body.mrn} already exists")
         cur = db.execute(
-            "INSERT INTO patients(orthancid,patientid,patientname,birthdate,sex)"
+            "INSERT INTO patients(orthanc_id,mrn,patient_name,birth_date,sex)"
             " VALUES(?,?,?,?,?)",
-            (body.orthancid, body.patientid, body.patientname,
-             body.birthdate, body.sex))
+            (body.orthanc_id, body.mrn, body.patient_name,
+             body.birth_date, body.sex))
         return row_to_dict(db.execute(
             "SELECT * FROM patients WHERE id=?", (cur.lastrowid,)).fetchone())
 
 
 @router.patch("/{patient_id}")
 def update_patient(patient_id: int, body: PatientUpdate):
-    allowed = {"patientname", "birthdate", "sex"}
+    allowed = {"patient_name", "birth_date", "sex"}
     updates = {k: v for k, v in body.model_dump().items()
                if v is not None and k in allowed}
     if not updates:
@@ -99,20 +99,20 @@ class EHRPatientPush(BaseModel):
 def upsert_from_ehr(body: EHRPatientPush):
     """
     Upsert a patient pushed by the EHR via the FHIR bridge.
-    Matches on MRN (patientid); creates or updates the record.
+    Matches on MRN; creates or updates the record.
     """
     with get_db() as db:
         existing = db.execute(
-            "SELECT id FROM patients WHERE patientid=?",
+            "SELECT id FROM patients WHERE mrn=?",
             (body.mrn,)).fetchone()
         if existing:
             db.execute(
-                "UPDATE patients SET patientname=?, birthdate=?, sex=?"
-                " WHERE patientid=?",
+                "UPDATE patients SET patient_name=?, birth_date=?, sex=?"
+                " WHERE mrn=?",
                 (body.patient_name, body.birth_date, body.sex, body.mrn))
             return {"action": "updated", "mrn": body.mrn}
         db.execute(
-            "INSERT INTO patients(orthancid,patientid,patientname,birthdate,sex)"
+            "INSERT INTO patients(orthanc_id,mrn,patient_name,birth_date,sex)"
             " VALUES(?,?,?,?,?)",
             (body.ehr_id or body.mrn, body.mrn,
              body.patient_name, body.birth_date, body.sex))

@@ -190,19 +190,22 @@ def merge_patients(pid: str, body: dict):
         if not to_merge:
             raise HTTPException(404, f"Patient to merge {merge_id!r} not found or not active")
 
-        # Transfer cross-refs to surviving (skip duplicates)
+        # Transfer cross-refs to surviving patient
         xrefs = rows_to_list(db.execute(
             "SELECT * FROM cross_references WHERE master_id=?", (merge_id,)
         ).fetchall())
         for xr in xrefs:
-            try:
+            conflict = db.execute(
+                "SELECT 1 FROM cross_references WHERE master_id=? AND system=? AND system_id=?",
+                (pid, xr["system"], xr["system_id"])
+            ).fetchone()
+            if conflict:
+                db.execute("DELETE FROM cross_references WHERE id=?", (xr["id"],))
+            else:
                 db.execute(
-                    "INSERT INTO cross_references"
-                    "(master_id,system,system_id,mrn,assigning_authority) VALUES(?,?,?,?,?)",
-                    (pid, xr["system"], xr["system_id"], xr.get("mrn"), xr.get("assigning_authority"))
+                    "UPDATE cross_references SET master_id=? WHERE id=?",
+                    (pid, xr["id"])
                 )
-            except Exception:
-                pass   # duplicate (system, system_id) — skip
 
         # Mark merged record
         db.execute(
@@ -220,6 +223,6 @@ def merge_patients(pid: str, body: dict):
             (pid, "merged", body.get("performed_by", "system"),
              f"merged {merge_id} into {pid}; transferred {len(xrefs)} xrefs")
         )
-    return row_to_dict(db.execute(
-        f"{_MP_SQL} WHERE m.id=?", (pid,)
-    ).fetchone())
+        return row_to_dict(db.execute(
+            f"{_MP_SQL} WHERE m.id=?", (pid,)
+        ).fetchone())

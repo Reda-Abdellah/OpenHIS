@@ -204,8 +204,8 @@ def _ct_slice_pixels(rows, cols, body_part, z_norm):
                 int((liver & body_mask).sum())).astype(np.int16)
         # Spine
         spw = max(5, cols//20)
-        img[(X>cx-spw) & (X<cx+spw) & (Y>int(rows*.6)) & body_mask] =             rng.integers(200, 450, (max(1,(rows//5)*spw*2),)).astype(np.int16)[:
-                int(((X>cx-spw) & (X<cx+spw) & (Y>int(rows*.6)) & body_mask).sum())]
+        _spine_mask = (X>cx-spw) & (X<cx+spw) & (Y>int(rows*.6)) & body_mask
+        img[_spine_mask] = rng.integers(200, 450, int(_spine_mask.sum())).astype(np.int16)
         # Bowel gas (dark spots)
         for _ in range(4):
             bx = rng.integers(int(cols*.25), int(cols*.75))

@@ -8,17 +8,17 @@ router = APIRouter(prefix="/api/beds", tags=["beds"])
 _SQL = """
     SELECT  b.*,
             e.id                             AS encounter_id,
-            e.admitdate                      AS admitdate,
-            e.attendingphysician             AS attendingphysician,
-            p.id                             AS patientid,
-            p.firstname || ' ' || p.lastname AS patientname,
-            p.mrn, p.birthdate, p.sex
+            e.admit_date                     AS admit_date,
+            e.attending_physician            AS attending_physician,
+            p.id                             AS patient_id,
+            p.first_name || ' ' || p.last_name AS patient_name,
+            p.mrn, p.birth_date, p.sex
     FROM    beds b
     LEFT JOIN encounters e
            ON  e.ward      = b.ward
            AND e.bed       = b.bed_label
            AND e.status    = 'active'
-    LEFT JOIN patients p ON p.id = e.patientid
+    LEFT JOIN patients p ON p.id = e.patient_id
 """
 
 

@@ -36,7 +36,7 @@ def record_qc(body: QCEntry):
     flag, passed = _westgard(body.result_value, body.expected_mean, body.expected_sd)
     with get_db() as db:
         cur = db.execute(
-            "INSERT INTO qc_records(instrument_id,test_code,lot_number,qc_level,result_value,expected_mean,expected_sd,westgard_flag,pass) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO qc_records(instrument_id,test_code,lot_number,qc_level,result_value,expected_mean,expected_sd,westgard_flag,passed) VALUES(?,?,?,?,?,?,?,?,?)",
             (body.instrument_id, body.test_code, body.lot_number, body.qc_level,
              body.result_value, body.expected_mean, body.expected_sd, flag, passed))
         row = db.execute("SELECT * FROM qc_records WHERE id=?", (cur.lastrowid,)).fetchone()

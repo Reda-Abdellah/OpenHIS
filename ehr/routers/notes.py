@@ -116,7 +116,7 @@ async def sign_note(note_id: int, body: dict, bg: BackgroundTasks):
     return updated
 
 
-@router.post("/{note_id}/amend")
+@router.post("/{note_id}/amend", status_code=201)
 def amend_note(note_id: int, body: dict):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     with get_db() as db:

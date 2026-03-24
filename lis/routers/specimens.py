@@ -69,6 +69,20 @@ def create_specimen(body: SpecimenCreate):
         row = db.execute(f"{SPECIMEN_SQL} WHERE s.id=?", (cur.lastrowid,)).fetchone()
         return row_to_dict(row)
 
+@router.patch("/{specimen_id}", status_code=200)
+def update_specimen(specimen_id: int, body: dict):
+    allowed = {"status", "notes"}
+    updates = {k: v for k, v in body.items() if k in allowed and v is not None}
+    if not updates:
+        raise HTTPException(400, "No valid fields provided")
+    sets = ", ".join(f"{k}=?" for k in updates)
+    with get_db() as db:
+        if not db.execute("SELECT 1 FROM specimens WHERE id=?", (specimen_id,)).fetchone():
+            raise HTTPException(404, "Specimen not found")
+        db.execute(f"UPDATE specimens SET {sets} WHERE id=?", (*updates.values(), specimen_id))
+        return row_to_dict(db.execute(f"{SPECIMEN_SQL} WHERE s.id=?", (specimen_id,)).fetchone())
+
+
 @router.patch("/{specimen_id}/receive", status_code=200)
 def receive_specimen(specimen_id: int, body: ReceiveBody):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")

@@ -1,6 +1,7 @@
+import json
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, Union, List
 from database import get_db, rows_to_list
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
@@ -12,8 +13,15 @@ class PipelineCreate(BaseModel):
     description: str = ""
     docker_image: str
     version: str = "1.0.0"
-    output_types: str = '["report"]'
+    output_types: Union[List[str], str] = '["report"]'
     config_json: str = "{}"
+
+    @field_validator("output_types", mode="before")
+    @classmethod
+    def coerce_output_types(cls, v):
+        if isinstance(v, list):
+            return json.dumps(v)
+        return v
 
 
 @router.get("")
@@ -39,14 +47,19 @@ def get_pipeline(pipeline_id: str):
 
 @router.post("", status_code=201)
 def create_pipeline(body: PipelineCreate):
+    import sqlite3
     with get_db() as db:
-        db.execute(
-            "INSERT INTO pipelines (id,name,description,docker_image,version,output_types,config_json)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (body.id, body.name, body.description, body.docker_image,
-             body.version, body.output_types, body.config_json),
-        )
-    return {"id": body.id}
+        try:
+            db.execute(
+                "INSERT INTO pipelines (id,name,description,docker_image,version,output_types,config_json)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (body.id, body.name, body.description, body.docker_image,
+                 body.version, body.output_types, body.config_json),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, f"Pipeline '{body.id}' already exists")
+        row = db.execute("SELECT * FROM pipelines WHERE id=?", (body.id,)).fetchone()
+    return dict(row)
 
 
 @router.patch("/{pipeline_id}")

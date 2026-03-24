@@ -66,9 +66,21 @@ async def admit_patient(body: EncounterCreate, bg: BackgroundTasks):
     with get_db() as db:
         if not db.execute("SELECT 1 FROM patients WHERE id=?", (body.patient_id,)).fetchone():
             raise HTTPException(404, "Patient not found")
+        if body.ward and body.bed:
+            bed = db.execute(
+                "SELECT status FROM beds WHERE ward=? AND bed_label=?",
+                (body.ward, body.bed)
+            ).fetchone()
+            if bed and bed["status"] in ("occupied", "housekeeping"):
+                raise HTTPException(409, f"Bed {body.bed} in {body.ward} is not available")
         cur = db.execute(
             "INSERT INTO encounters(patient_id,encounter_type,admit_date,ward,bed,attending_physician) VALUES(?,?,?,?,?,?)",
             (body.patient_id, body.encounter_type, now, body.ward, body.bed, body.attending_physician))
+        if body.ward and body.bed:
+            db.execute(
+                "UPDATE beds SET status='occupied' WHERE ward=? AND bed_label=?",
+                (body.ward, body.bed)
+            )
         return row_to_dict(db.execute(f"{FULL_SQL} WHERE e.id=?", (cur.lastrowid,)).fetchone())
 
 @router.patch("/{encounter_id}")
@@ -83,4 +95,11 @@ def update_encounter(encounter_id: int, body: EncounterUpdate):
     sets = ", ".join(f"{k}=?" for k in updates)
     with get_db() as db:
         db.execute(f"UPDATE encounters SET {sets} WHERE id=?", (*updates.values(), encounter_id))
+        if updates.get("status") == "discharged":
+            enc = db.execute("SELECT ward, bed FROM encounters WHERE id=?", (encounter_id,)).fetchone()
+            if enc and enc["ward"] and enc["bed"]:
+                db.execute(
+                    "UPDATE beds SET status='housekeeping' WHERE ward=? AND bed_label=?",
+                    (enc["ward"], enc["bed"])
+                )
         return row_to_dict(db.execute(f"{FULL_SQL} WHERE e.id=?", (encounter_id,)).fetchone())

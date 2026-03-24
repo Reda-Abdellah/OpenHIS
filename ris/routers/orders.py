@@ -89,6 +89,30 @@ def get_worklist(status: str = "", priority: str = "", modality: str = ""):
     return rows_to_list(rows)
 
 
+@router.get("/orders")
+def list_orders(status: str = "", modality: str = ""):
+    clauses, params = [], []
+    if status:   clauses.append("o.status = ?");   params.append(status)
+    if modality: clauses.append("o.modality = ?"); params.append(modality)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with get_db() as db:
+        return rows_to_list(db.execute(_WORKLIST_SQL + where + _ORDER_SQL, params).fetchall())
+
+
+@router.patch("/orders/{order_id}")
+def patch_order(order_id: int, body: OrderUpdate):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    set_clause = ", ".join(f"{k}=?" for k in updates) + ", updated_at=datetime('now')"
+    with get_db() as db:
+        db.execute(f"UPDATE orders SET {set_clause} WHERE id=?", (*updates.values(), order_id))
+        row = db.execute(_WORKLIST_SQL + "WHERE o.id=?", (order_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Order not found")
+    return row_to_dict(row)
+
+
 @router.post("/orders", status_code=201)
 def create_order(body: OrderCreate):
     # verify patient exists

@@ -54,7 +54,8 @@ def create_rule(body: RuleCreate):
              body.auto_trigger, body.auto_saveback, body.saveback_types,
              body.priority, body.enabled),
         )
-    return {"id": cur.lastrowid}
+        row = db.execute("SELECT * FROM rules WHERE id=?", (cur.lastrowid,)).fetchone()
+    return dict(row)
 
 
 @router.patch("/{rule_id}")

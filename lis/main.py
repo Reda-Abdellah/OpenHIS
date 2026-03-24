@@ -36,4 +36,4 @@ def health():
             "orders":    db.execute("SELECT count(*) FROM lab_orders").fetchone()[0],
             "results":   db.execute("SELECT count(*) FROM lab_results").fetchone()[0],
         }
-    return {"status": "ok", "service": "lis", "version": "1.0.0", **counts}
+    return {"status": "ok", "service": "lis", "version": "1.0.0", "counts": counts}

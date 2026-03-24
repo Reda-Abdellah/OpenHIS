@@ -98,4 +98,8 @@ def validate_result(result_id: int, body: dict):
         db.execute(
             "UPDATE lab_results SET status='final', validated_by=?, validated_at=? WHERE id=?",
             (body.get("validated_by"), now, result_id))
-    return {"validated": result_id}
+        row = db.execute("SELECT * FROM lab_results WHERE id=?", (result_id,)).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Result not found")
+    return row_to_dict(row)
