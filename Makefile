@@ -1,4 +1,5 @@
-.PHONY: up down build test logs clean restart ps
+.PHONY: up down build test logs clean restart ps \
+        openmrs-up openmrs-logs openmrs-seed openmrs-verify openmrs-clean
 
 # Start all services in detached mode
 up:
@@ -47,3 +48,27 @@ clean:
 # Start with optional FHIR server profile
 up-fhir:
 	docker compose --profile fhir up -d
+
+# ── Phase 1: OpenMRS ────────────────────────────────────────────────────────
+
+# Start only OpenMRS (db + backend + frontend), leave other services alone
+openmrs-up:
+	docker compose up -d openmrs-db openmrs openmrs-frontend
+
+# Follow OpenMRS logs (backend is the one with the interesting startup output)
+openmrs-logs:
+	docker compose logs -f openmrs
+
+# Seed OpenMRS with demo data (run after openmrs health check turns green)
+openmrs-seed:
+	python scripts/seed_openmrs.py
+
+# Verify Phase 1 acceptance criteria
+openmrs-verify:
+	python scripts/verify_openmrs.py
+
+# Wipe OpenMRS data volumes (safe — does not touch other services)
+openmrs-clean:
+	docker compose stop openmrs openmrs-frontend openmrs-db
+	docker compose rm -f openmrs openmrs-frontend openmrs-db
+	docker volume rm -f openhis_openmrs-mysql openhis_openmrs-data

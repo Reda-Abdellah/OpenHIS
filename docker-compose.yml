@@ -20,8 +20,98 @@ volumes:
   analytics-data:
   hl7-data:
   portal-sessions:
+  # Phase 1 — OpenMRS
+  openmrs-mysql:
+  openmrs-data:
 
 services:
+
+  # ── Phase 1: OpenMRS O3 ──────────────────────────────────────────────────
+  #
+  # openmrs-db: MySQL 8 dedicated to OpenMRS.
+  #   - lower_case_table_names=1 is REQUIRED on Linux (case-sensitive FS).
+  #     It must be set on first init; changing it later requires a full dump/restore.
+  #   - utf8mb4 is required for emoji/extended Unicode in clinical text.
+  #
+  openmrs-db:
+    image: mysql:8.0
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --lower_case_table_names=1
+      --log_bin_trust_function_creators=1
+    environment:
+      MYSQL_ROOT_PASSWORD: openmrs_root
+      MYSQL_DATABASE: openmrs
+      MYSQL_USER: openmrs
+      MYSQL_PASSWORD: openmrs
+    volumes:
+      - openmrs-mysql:/var/lib/mysql
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-popenmrs_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # openmrs: O3 backend (Tomcat + OpenMRS WAR + fhir2 + bundled modules).
+  #   First boot runs all Liquibase migrations — expect 10-15 min before healthy.
+  #   REST API:   http://localhost/openmrs/ws/rest/v1/
+  #   FHIR R4:    http://localhost/openmrs/ws/fhir2/R4/
+  #   Default credentials: admin / Admin123  (change after first login)
+  #
+  openmrs:
+    image: openmrs/openmrs-reference-application-3-backend:nightly
+    depends_on:
+      openmrs-db:
+        condition: service_healthy
+    environment:
+      OMRS_DB_HOSTNAME: openmrs-db
+      OMRS_DB_PORT: 3306
+      OMRS_DB_NAME: openmrs
+      OMRS_DB_USERNAME: openmrs
+      OMRS_DB_PASSWORD: openmrs
+      OMRS_CREATE_TABLES: "true"
+      OMRS_AUTO_UPDATE_DATABASE: "true"
+      OMRS_ADMIN_USER_PASSWORD: Admin123
+    volumes:
+      - openmrs-data:/openmrs/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      # /health/started returns 503 while initializing; use the login page as a
+      # simpler proxy — returns 200 once Tomcat + OpenMRS WAR are fully up.
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/openmrs/login.htm"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+  # openmrs-frontend: O3 SPA (nginx serving the React microfrontend).
+  #   Accessible at http://localhost/openmrs/spa
+  #   API_URL must match the path where the backend is reachable from the browser.
+  #
+  openmrs-frontend:
+    image: openmrs/openmrs-reference-application-3-frontend:nightly
+    depends_on:
+      openmrs:
+        condition: service_healthy
+    environment:
+      SPA_PATH: /openmrs/spa
+      API_URL: /openmrs
+      SPA_CONFIG_URLS: /openmrs/spa/config.json
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/openmrs/spa/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────────
 
   postgres:
     image: postgres:15

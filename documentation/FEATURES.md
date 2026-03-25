@@ -1,7 +1,7 @@
 # OpenHIS — Feature Inventory & Fulfilled Requirements
 
 > Analysis date: 2026-03-25
-> Codebase: /home/reda/dz_pacs
+> Codebase: /home/reda/OpenHIS
 
 ---
 
