@@ -171,6 +171,9 @@ async def dispatch(raw: str) -> str:
     except Exception as e:
         return build_ack('UNKNOWN', 'AE', f'Parse error: {str(e)[:80]}')
 
+    if 'MSH' not in parsed.get('_segments', []):
+        return build_ack('UNKNOWN', 'AE', 'No MSH segment: not a valid HL7 message')
+
     msg_type   = parsed.get('msg_type', 'UNKNOWN')
     control_id = parsed.get('control_id', '')
     handler    = _HANDLERS.get(msg_type)

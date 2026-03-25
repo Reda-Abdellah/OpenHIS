@@ -145,8 +145,10 @@
     <a class="nav-item active" data-view="patients" onclick="nav('patients')">
       <span class="nav-icon">👤</span> Patients
     </a>
-    <a class="nav-item" data-view="cdss" <a class="nav-item" data-view="bedboard" onclick="nav('bedboard')"><span class="nav-icon">🛏</span> Bed Board</a>
-        onclick="nav('cdss')">
+    <a class="nav-item" data-view="bedboard" onclick="nav('bedboard')">
+      <span class="nav-icon">🛏</span> Bed Board
+    </a>
+    <a class="nav-item" data-view="cdss" onclick="nav('cdss')">
       <span class="nav-icon">⚠️</span> CDSS Alerts
     </a>
     <div style="flex:1"></div>
@@ -582,10 +584,48 @@ function nav(view) {
   clearInterval(cdssRefreshTimer);
   currentPatient = null;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
-  const titles = { patients: 'Patients', cdss: 'CDSS Alerts' };
+  const titles = { patients: 'Patients', bedboard: 'Bed Board', cdss: 'CDSS Alerts' };
   document.getElementById('page-title').textContent = titles[view] || view;
   document.getElementById('topbar-actions').innerHTML = '';
   ({ patients: renderPatients, bedboard: renderBedBoard, cdss: renderCDSS }[view] || renderPatients)();
+}
+
+// ── BED BOARD ─────────────────────────────────────────────────────────────────
+async function renderBedBoard() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const wards = await api('/api/beds/board');
+    if (!wards.length) {
+      el.innerHTML = '<div class="empty">No beds configured.</div>';
+      return;
+    }
+    const statusDot = s => `<span class="bed-status-dot dot-${s}"></span>`;
+    const html = wards.map(w => {
+      const cards = w.beds.map(b => {
+        const s = b.status || 'available';
+        const patient = b.patient_name
+          ? `<div class="bed-patient">👤 ${esc(b.patient_name)}</div>
+             <div class="bed-since">${b.admit_date ? 'Since ' + fmtDate(b.admit_date) : ''}</div>`
+          : '';
+        return `<div class="bed-card ${s}" title="${esc(b.notes || '')}">
+          <div class="bed-label">${statusDot(s)}${esc(b.bed_label)}</div>
+          <div style="font-size:.72rem;color:var(--mute)">${esc(b.bed_type || 'standard')}</div>
+          ${patient}
+        </div>`;
+      }).join('');
+      return `<div class="ward-title">${esc(w.ward)}</div>
+        <div class="ward-stats">
+          ${w.total} beds &nbsp;·&nbsp;
+          <span style="color:var(--red)">${w.occupied} occupied</span> &nbsp;·&nbsp;
+          <span style="color:var(--green)">${w.available} available</span>
+          ${w.housekeeping ? ` &nbsp;·&nbsp; ${w.housekeeping} housekeeping` : ''}
+          ${w.maintenance  ? ` &nbsp;·&nbsp; ${w.maintenance} maintenance`  : ''}
+        </div>
+        <div class="bed-grid">${cards}</div>`;
+    }).join('');
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<div class="empty error">Failed to load bed board: ${esc(e.message)}</div>`; }
 }
 
 // ── PATIENTS LIST ─────────────────────────────────────────────────────────────
@@ -603,8 +643,7 @@ async function renderPatients() {
     const banner = critCount > 0
       ? `<div class="alert-banner"><span class="alert-count">🚨 ${critCount}</span>
          critical CDSS alert${critCount > 1 ? 's' : ''} pending acknowledgement.
-         <button class="btn sm danger" <a class="nav-item" data-view="bedboard" onclick="nav('bedboard')"><span class="nav-icon">🛏</span> Bed Board</a>
-        onclick="nav('cdss')">View Alerts</button></div>`
+         <button class="btn sm danger" onclick="nav('cdss')">View Alerts</button></div>`
       : '';
     if (!patients.length) {
       el.innerHTML = banner + `<div class="empty">No patients yet. Click "New Patient" to get started.</div>`;

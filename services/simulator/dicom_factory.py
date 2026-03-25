@@ -88,7 +88,7 @@ def _to_bytes(ds) -> bytes:
 def _xray_pixels(rows, cols, body_part):
     rng  = np.random.default_rng(42)
     img  = rng.integers(600, 900, (rows, cols), dtype=np.uint16)
-    Y, X = np.ogrid[0:rows, 0:cols]
+    Y, X = np.mgrid[0:rows, 0:cols]
     cx, cy = cols // 2, int(rows * 0.52)
     body = body_part.upper()
 
@@ -117,8 +117,8 @@ def _xray_pixels(rows, cols, body_part):
             bw = max(6, cols//18)
             m = (X>bx-bw) & (X<bx+bw) & (Y>rows//4) & (Y<rows*3//4)
             img[m] = rng.integers(3200, 4000, int(m.sum()), dtype=np.uint16)
-        m = (Y>int(rows*.45)) & (Y<int(rows*.55))
-        img[m] = (img[m]*.5).astype(np.uint16)
+        r0, r1 = int(rows*.45), int(rows*.55)
+        img[r0:r1, :] = (img[r0:r1, :] * .5).astype(np.uint16)
     elif body == "SPINE":
         img[:] = rng.integers(500, 800, (rows, cols), dtype=np.uint16)
         spw = max(8, cols//8)
@@ -411,7 +411,7 @@ def _build_ct(patient, params) -> list:
         ds.InstanceNumber   = i + 1
         ds.WindowCenter     = 40
         ds.WindowWidth      = 400
-        ds.RescaleIntercept = -1024
+        ds.RescaleIntercept = 0
         ds.RescaleSlope     = 1
         _image_tags(ds, rows, cols, bits=16, signed=True)
         ds.PixelData = _ct_slice_pixels(rows, cols, body, z_norm).tobytes()
