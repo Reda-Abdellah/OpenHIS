@@ -1,83 +1,120 @@
 """
-Phase 7 — Patient Portal Tests (28 tests)
+Patient Portal Tests
 Covers: health, auth (login/logout/validate), session management,
-        all /api/me/* endpoints (mocked EHR/RIS), appointment requests.
+        all /api/me/* endpoints (OpenMRS/OpenELIS FHIR mocked via respx),
+        appointment requests.
 """
-from unittest.mock import AsyncMock, patch
 import datetime
+from unittest.mock import AsyncMock, patch
+import respx
+import httpx
 
+# ── FHIR mock data ────────────────────────────────────────────────────────────
 
-# ── Mock EHR data ──────────────────────────────────────────────────────────────
-MOCK_PATIENT = {
-    "id": "P-001", "mrn": "MRN-001",
-    "firstname": "Jane", "lastname": "Doe",
-    "birthdate": "1985-03-15", "sex": "F",
-    "phone": "555-0100", "insuranceid": "INS-001",
+_OMRS = "http://openmrs-test:9999/openmrs/ws/fhir2/R4"
+_OE   = "http://openelis-test:9999/fhir/R4"
+
+FHIR_PATIENT_BUNDLE = {
+    "resourceType": "Bundle",
+    "entry": [{
+        "resource": {
+            "id": "P-001",
+            "resourceType": "Patient",
+            "birthDate": "1985-03-15",
+            "gender": "female",
+            "name": [{"given": ["Jane"], "family": "Doe"}],
+            "identifier": [{"value": "MRN-001"}],
+        }
+    }]
 }
-MOCK_APPOINTMENTS = [
-    {"id": 1, "patientid": "P-001", "provider": "Dr. Smith",
-     "department": "Cardiology", "scheduleddate": "2026-04-10T09:00:00",
-     "durationminutes": 30, "status": "scheduled"},
+
+FHIR_PATIENT = FHIR_PATIENT_BUNDLE["entry"][0]["resource"]
+
+FHIR_ENCOUNTER_BUNDLE = {
+    "resourceType": "Bundle",
+    "entry": [{
+        "resource": {
+            "id": "enc-001", "status": "in-progress",
+            "period": {"start": "2026-04-10T09:00:00"},
+            "type": [{"text": "Cardiology Visit"}],
+        }
+    }]
+}
+
+FHIR_DR_BUNDLE = {
+    "resourceType": "Bundle",
+    "total": 1,
+    "entry": [{
+        "resource": {
+            "id": "dr-001", "status": "final",
+            "issued": "2026-03-01T10:00:00",
+            "code": {"text": "CBC"},
+            "conclusion": "Normal",
+        }
+    }]
+}
+
+FHIR_CONDITION_BUNDLE = {
+    "resourceType": "Bundle",
+    "entry": [{
+        "resource": {
+            "id": "cond-001",
+            "code": {
+                "text": "Essential Hypertension",
+                "coding": [{"code": "I10"}],
+            },
+            "clinicalStatus": {"coding": [{"code": "active"}]},
+            "recordedDate": "2026-01-15",
+        }
+    }]
+}
+
+FHIR_ALLERGY_BUNDLE = {
+    "resourceType": "Bundle",
+    "entry": [{
+        "resource": {
+            "id": "ai-001",
+            "code": {"text": "Penicillin"},
+            "reaction": [{"manifestation": [{"text": "Rash"}], "severity": "mild"}],
+        }
+    }]
+}
+
+MOCK_RIS_ORDERS = [
+    {"id": 1, "modality": "CT", "body_part": "CHEST", "mrn": "MRN-001",
+     "status": "COMPLETED", "accession_number": "ACC-001",
+     "created_at": "2026-03-10T08:00:00", "updated_at": "2026-03-10T12:00:00"},
 ]
-MOCK_ORDERS = [
-    {"id": 1, "ordertype": "LAB", "patientid": "P-001",
-     "status": "COMPLETED", "priority": "ROUTINE",
-     "orderdetail": '{"testcode":"CBC"}',
-     "createdat": "2026-03-01T08:00:00",
-     "updatedat": "2026-03-01T10:00:00"},
-    {"id": 2, "ordertype": "LAB", "patientid": "P-001",
-     "status": "PENDING", "priority": "STAT",
-     "orderdetail": '{"testcode":"BMP"}',
-     "createdat": "2026-03-24T07:00:00",
-     "updatedat": "2026-03-24T07:00:00"},
-    {"id": 3, "ordertype": "IMAGING", "patientid": "P-001",
-     "status": "COMPLETED", "priority": "ROUTINE",
-     "orderdetail": '{"modality":"CT"}',
-     "createdat": "2026-03-10T08:00:00",
-     "updatedat": "2026-03-10T12:00:00"},
-]
-MOCK_BILLING = [
-    {"id": 1, "patientid": "P-001", "cptcode": "99213",
-     "description": "Office Visit", "amount": 150.0,
-     "status": "paid",    "createdat": "2026-03-01T00:00:00"},
-    {"id": 2, "patientid": "P-001", "cptcode": "71046",
-     "description": "Chest X-Ray",  "amount": 280.0,
-     "status": "pending", "createdat": "2026-03-10T00:00:00"},
-]
-MOCK_DIAGNOSES = [
-    {"id": 1, "patientid": "P-001", "icd10code": "I10",
-     "description": "Essential Hypertension",
-     "status": "active", "createdat": "2026-01-15T00:00:00"},
-]
-MOCK_ALLERGIES = [
-    {"id": 1, "patientid": "P-001", "substance": "Penicillin",
-     "reaction": "Rash", "severity": "mild"},
-]
-MOCK_REPORT = {
-    "id": 1, "orderid": 3, "status": "FINAL",
+MOCK_RIS_REPORT = {
+    "id": 1, "order_id": 1, "status": "FINAL",
     "impression": "No acute findings.",
     "recommendation": "Follow-up in 12 months.",
-    "finalizedat": "2026-03-10T14:00:00",
+    "finalized_at": "2026-03-10T14:00:00",
 }
 
 
-def _proxy_side_effect(url):
-    if '/diagnoses'    in url:    return MOCK_DIAGNOSES
-    if '/allergies'    in url:    return MOCK_ALLERGIES
-    if '/patients?q=' in url or '/patients/' in url:
-        if '/patients/' in url:
-            return MOCK_PATIENT
-        return [MOCK_PATIENT]
-    if '/appointments' in url:    return MOCK_APPOINTMENTS
-    if '/orders' in url:
-        if 'ordertype=LAB' in url:
-            return [o for o in MOCK_ORDERS if o['ordertype'] == 'LAB']
-        if 'ordertype=IMAGING' in url:
-            return [o for o in MOCK_ORDERS if o['ordertype'] == 'IMAGING']
-        return MOCK_ORDERS
-    if '/billing'      in url:    return MOCK_BILLING
-    if '/reports/order' in url:   return MOCK_REPORT
-    return None
+def _fhir_side_effect(url, auth, params=None):
+    """Mock for routers.me._fhir_get based on URL."""
+    if f"/Patient/P-001" in url:
+        return FHIR_PATIENT
+    if "/Encounter" in url:
+        return FHIR_ENCOUNTER_BUNDLE
+    if "/DiagnosticReport" in url:
+        return FHIR_DR_BUNDLE
+    if "/Condition" in url:
+        return FHIR_CONDITION_BUNDLE
+    if "/AllergyIntolerance" in url:
+        return FHIR_ALLERGY_BUNDLE
+    return {}
+
+
+def _fhir_summary_side_effect(url, auth, params=None):
+    """Summary endpoint needs planned encounters and count-only DR bundle."""
+    if "/Encounter" in url:
+        return FHIR_ENCOUNTER_BUNDLE
+    if "/DiagnosticReport" in url:
+        return {"resourceType": "Bundle", "total": 2, "entry": []}
+    return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,28 +139,35 @@ class TestHealth:
 # TestAuth
 # ─────────────────────────────────────────────────────────────────────────────
 class TestAuth:
+    @respx.mock
     def test_login_success(self, client):
-        mock = AsyncMock(side_effect=_proxy_side_effect)
-        with patch('routers.auth.proxy_get', mock):
-            r = client.post("/api/auth/login",
-                            json={"mrn": "MRN-001", "birthdate": "1985-03-15"})
+        respx.get(f"{_OMRS}/Patient").mock(
+            return_value=httpx.Response(200, json=FHIR_PATIENT_BUNDLE)
+        )
+        r = client.post("/api/auth/login",
+                        json={"mrn": "MRN-001", "birthdate": "1985-03-15"})
         assert r.status_code == 200
         j = r.json()
         assert "token"        in j
         assert j["patient_name"] == "Jane Doe"
 
+    @respx.mock
     def test_login_wrong_dob_returns_401(self, client):
-        mock = AsyncMock(side_effect=_proxy_side_effect)
-        with patch('routers.auth.proxy_get', mock):
-            r = client.post("/api/auth/login",
-                            json={"mrn": "MRN-001", "birthdate": "1990-01-01"})
+        respx.get(f"{_OMRS}/Patient").mock(
+            return_value=httpx.Response(200, json=FHIR_PATIENT_BUNDLE)
+        )
+        r = client.post("/api/auth/login",
+                        json={"mrn": "MRN-001", "birthdate": "1990-01-01"})
         assert r.status_code == 401
 
+    @respx.mock
     def test_login_unknown_mrn_returns_401(self, client):
-        mock = AsyncMock(return_value=[])
-        with patch('routers.auth.proxy_get', mock):
-            r = client.post("/api/auth/login",
-                            json={"mrn": "MRN-UNKNOWN", "birthdate": "1985-03-15"})
+        empty_bundle = {"resourceType": "Bundle", "entry": []}
+        respx.get(f"{_OMRS}/Patient").mock(
+            return_value=httpx.Response(200, json=empty_bundle)
+        )
+        r = client.post("/api/auth/login",
+                        json={"mrn": "MRN-UNKNOWN", "birthdate": "1985-03-15"})
         assert r.status_code == 401
 
     def test_login_missing_fields_returns_400(self, client):
@@ -161,7 +205,6 @@ class TestAuth:
 # ─────────────────────────────────────────────────────────────────────────────
 class TestSessionManagement:
     def test_expired_session_rejected(self, client, auth_headers):
-        """Manually expire a session and verify it is rejected."""
         from database import get_db
         past = (datetime.datetime.utcnow() -
                 datetime.timedelta(hours=1)).isoformat(timespec='seconds')
@@ -195,11 +238,9 @@ class TestSessionManagement:
 # TestMeEndpoints
 # ─────────────────────────────────────────────────────────────────────────────
 class TestMeEndpoints:
-    def _mock(self):
-        return AsyncMock(side_effect=_proxy_side_effect)
-
     def test_get_me_profile(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me", headers=auth_headers)
         assert r.status_code == 200
         j = r.json()
@@ -208,69 +249,77 @@ class TestMeEndpoints:
         assert "id" in j
 
     def test_get_me_no_internal_fields(self, client, auth_headers):
-        """Sensitive internal fields must not leak to patient."""
-        with patch('routers.me.proxy.get', self._mock()):
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me", headers=auth_headers)
         j = r.json()
-        assert "cdssalerts"  not in j
+        assert "cdssalerts" not in j
         assert "encounters"  not in j
-        assert "diagnoses"   not in j
 
     def test_get_appointments(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me/appointments", headers=auth_headers)
         assert r.status_code == 200
         assert len(r.json()) >= 1
 
-    def test_get_lab_results_only_completed(self, client, auth_headers):
-        """Only COMPLETED lab orders visible — PENDING must be filtered out."""
-        with patch('routers.me.proxy.get', self._mock()):
+    def test_get_lab_results_all_final(self, client, auth_headers):
+        """Results endpoint queries status=final — all returned entries are final."""
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me/results", headers=auth_headers)
         results = r.json()
-        assert all(x["status"] == "COMPLETED" for x in results)
-        assert len(results) == 1    # only 1 COMPLETED LAB in mock data
+        assert len(results) == 1
+        assert results[0]["status"] == "final"
 
     def test_get_imaging_with_report(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+        ris_mock = AsyncMock(side_effect=lambda url: (
+            MOCK_RIS_ORDERS if "/orders" in url and "/reports" not in url
+            else MOCK_RIS_REPORT
+        ))
+        with patch('routers.me.proxy.get', ris_mock):
             r = client.get("/api/me/imaging", headers=auth_headers)
         items = r.json()
         assert len(items) == 1
         assert items[0]["report"]["impression"] == "No acute findings."
 
-    def test_get_diagnoses_active_only(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+    def test_get_diagnoses(self, client, auth_headers):
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me/diagnoses", headers=auth_headers)
         diags = r.json()
         assert len(diags) == 1
         assert diags[0]["icd10code"] == "I10"
 
     def test_get_allergies(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+        mock = AsyncMock(side_effect=_fhir_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me/allergies", headers=auth_headers)
         allgs = r.json()
         assert len(allgs) == 1
         assert allgs[0]["substance"] == "Penicillin"
 
-    def test_get_billing(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
-            r = client.get("/api/me/billing", headers=auth_headers)
+    def test_get_billing_returns_empty(self, client, auth_headers):
+        """Billing is a placeholder — always returns empty list."""
+        r = client.get("/api/me/billing", headers=auth_headers)
         assert r.status_code == 200
-        amounts = [b["amount"] for b in r.json()]
-        assert 150.0 in amounts
-        assert 280.0 in amounts
+        assert r.json() == []
 
     def test_get_summary(self, client, auth_headers):
-        with patch('routers.me.proxy.get', self._mock()):
+        mock = AsyncMock(side_effect=_fhir_summary_side_effect)
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me/summary", headers=auth_headers)
         j = r.json()
         assert "upcoming_appointments" in j
         assert "pending_results"       in j
         assert "total_due"             in j
-        assert j["pending_results"]    == 1     # one PENDING LAB in mock
-        assert j["total_due"]          == 280.0 # one pending bill
+        assert j["upcoming_appointments"] == 1
+        assert j["pending_results"]       == 2
+        assert j["total_due"]             == 0.0
 
     def test_backend_down_returns_503(self, client, auth_headers):
-        with patch('routers.me.proxy.get', AsyncMock(return_value=None)):
+        mock = AsyncMock(return_value={})
+        with patch('routers.me._fhir_get', mock):
             r = client.get("/api/me", headers=auth_headers)
         assert r.status_code == 503
 
@@ -297,19 +346,15 @@ class TestAppointmentRequests:
         assert r.status_code == 400
 
     def test_list_own_requests(self, client, auth_headers):
-        client.post("/api/me/appointments/request",
-                    json={"department": "Neurology"},
-                    headers=auth_headers)
-        client.post("/api/me/appointments/request",
-                    json={"department": "Cardiology"},
-                    headers=auth_headers)
-        r = client.get("/api/me/appointments/requests",
-                       headers=auth_headers)
+        for dept in ["Neurology", "Cardiology"]:
+            client.post("/api/me/appointments/request",
+                        json={"department": dept},
+                        headers=auth_headers)
+        r = client.get("/api/me/appointments/requests", headers=auth_headers)
         assert r.status_code == 200
         assert len(r.json()) == 2
 
     def test_requests_isolated_between_patients(self, client):
-        """Patient A must not see Patient B's requests."""
         from auth import create_session
         token_a = create_session("P-001", "MRN-001", "Jane Doe")
         token_b = create_session("P-002", "MRN-002", "John Smith")

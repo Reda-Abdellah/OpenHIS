@@ -101,79 +101,158 @@ The inspiration is [Bahmni](https://github.com/Bahmni/bahmni-core) — a product
 
 ---
 
-### Phase 2 — OpenELIS Global 2  ⬜ PENDING
+### Phase 2 — OpenELIS Global 2  🔄 IN PROGRESS
 **Goal:** Stand up OpenELIS alongside the existing stack. No wiring yet.
 
-**Plan:**
-- Add `openelis-db` (PostgreSQL, `clinlims` DB) + `openelis` service to `docker-compose.yml`
-- Image: `ghcr.io/i-tech-uw/openelis-global-2:latest`
-- Add nginx location block for `/openelis/`
-- Add Makefile targets: `openelis-up`, `openelis-verify`
-- Write `scripts/verify_openelis.py` — checks health, REST API, FHIR R4 endpoint
+**What was done:**
+- Added `openelis-db` (PostgreSQL 14, `clinlims` DB) + `openelis` service to `docker-compose.yml`
+- Added volumes: `openelis-pg`, `openelis-lucene`
+- Image: `itechuw/openelis-global-2:latest` (DockerHub — the ghcr.io mirror is not the primary distribution)
+- CATALINA_OPTS used to configure datasource URL/user/password pointing to `openelis-db`
+- OpenELIS exposed on host port **8082** (HTTP) for direct UI/API access
+- Added nginx upstream `openelis_be` and location block for `/openelis/` (path-stripping proxy — works for FHIR/REST calls; HTML UI navigation requires using port 8082 directly)
+- Added Makefile targets: `openelis-up`, `openelis-logs`, `openelis-verify`, `openelis-clean`
+- Created `scripts/verify_openelis.py` — 5 acceptance checks
 
-**Key endpoints:**
-- FHIR R4: `/fhir/R4/`
-- REST API: `/api/`
-- Admin UI: `/`
+**Key notes:**
+- OpenELIS does NOT have a built-in context path (unlike OpenMRS `/openmrs`); it serves from root `/`
+- First boot runs Liquibase migrations against PostgreSQL; expect 3–5 min before healthy
+- Default credentials: `admin` / `adminADMIN!`
+- Liquibase contexts: production (no `-Dspring.liquibase.contexts=test` needed for real data)
+
+**Access:**
+- UI (direct): `http://localhost:8082/`
+- FHIR R4: `http://localhost:8082/fhir/R4/`
+- REST API: `http://localhost:8082/api/`
+- Via nginx (FHIR/REST only): `http://localhost/openelis/fhir/R4/`
+
+**Acceptance criteria:**
+1. ⬜ `GET /fhir/R4/metadata` returns HTTP 200
+2. ⬜ CapabilityStatement has `fhirVersion=4.0.1`
+3. ⬜ Authenticated FHIR R4 Patient query returns a Bundle
+4. ⬜ REST API endpoint reachable
+5. ⬜ Admin UI root page reachable
 
 ---
 
-### Phase 3 — Odoo 17 Community  ⬜ PENDING
+### Phase 3 — Odoo 17 Community  🔄 IN PROGRESS
 **Goal:** Stand up Odoo alongside the existing stack. No wiring yet.
 
-**Plan:**
-- Add `odoo-db` (PostgreSQL) + `odoo` service to `docker-compose.yml`
-- Image: `odoo:17.0`
-- Add nginx location block for `/odoo/`
-- Add Makefile targets: `odoo-up`, `odoo-verify`
-- Install modules: `sale`, `stock`, `account`, `medical` (if available)
+**What was done:**
+- Added `odoo-db` (PostgreSQL 15) + `odoo` (Odoo 17.0) services + 2 volumes
+- Created `infra/odoo/odoo.conf` — sets `proxy_mode = True`, DB connection, master password
+- Odoo exposed on host port **8069** for direct UI access
+- Added nginx upstream `odoo_be` + `/odoo/` location (path-stripping) + `/odoo/longpolling/` (WebSocket upgrade for gevent worker)
+- Added Makefile targets: `odoo-up`, `odoo-logs`, `odoo-verify`, `odoo-clean`
+- Created `scripts/verify_odoo.py` — 5 acceptance checks
 
-**Key endpoints:**
-- XML-RPC: `/xmlrpc/2/` (legacy integration)
-- REST: `/api/` (Odoo 17+)
-- Web UI: `/web`
+**Key notes:**
+- `POSTGRES_DB=postgres` intentionally; Odoo creates its own app database via the "Create Database" web page
+- First boot: visit `http://localhost:8069/web/database/manager` and create DB named `odoo` with master password `admin`
+- Install modules: Sale, Inventory, Accounting (needed for Phase 4 pharmacy integration)
+- Default admin credentials: `admin` / `admin` (set during DB creation)
+
+**Access:**
+- Web UI (direct): `http://localhost:8069/web`
+- XML-RPC: `http://localhost:8069/xmlrpc/2/`
+- REST (Odoo 17): `http://localhost:8069/api/`
+- Via nginx (XML-RPC/REST only): `http://localhost/odoo/xmlrpc/2/`
+
+**Acceptance criteria:**
+1. ⬜ `GET /web/health` returns `{"status": "pass"}`
+2. ⬜ XML-RPC `common.version()` returns `server_version=17.x`
+3. ⬜ XML-RPC `db.list()` is reachable
+4. ⬜ Root UI reachable (HTTP 200 after redirect)
+5. ⬜ Admin can authenticate via XML-RPC (requires DB to exist)
 
 ---
 
-### Phase 4 — Integration Hub  ⬜ PENDING
-**Goal:** Build `integration-hub` FastAPI service that replaces `fhir-bridge`. Implements patient sync and lab order/result round-trips between OpenMRS and OpenELIS.
+### Phase 4 — Integration Hub  🔄 IN PROGRESS
+**Goal:** Build `integration-hub` FastAPI service that wires OpenMRS, OpenELIS, and Odoo. Runs alongside `fhir-bridge` (which is removed in Phase 5).
 
-**Plan:**
-- New service `services/integration-hub` (FastAPI, Python)
-- Polls OpenMRS AtomFeed for patient and order events
-- Routes lab orders from OpenMRS → OpenELIS via FHIR R4 (`ServiceRequest`)
-- Routes lab results from OpenELIS → OpenMRS via FHIR R4 (`DiagnosticReport`)
-- Routes pharmacy orders from OpenMRS → Odoo via XML-RPC or REST
-- Replaces `fhir-bridge` in `docker-compose.yml` and nginx
+**What was done:**
+- Created `services/integration-hub/` — FastAPI service on port 8012
+- Background polling worker (`app/worker.py`) runs every `POLL_INTERVAL_S` seconds:
+  - **Patient sync**: OpenMRS FHIR → OpenELIS FHIR (idempotent upsert by identifier)
+  - **Lab order routing**: OpenMRS `ServiceRequest` → OpenELIS `ServiceRequest`
+  - **Result routing**: OpenELIS final `DiagnosticReport` → OpenMRS FHIR
+- `app/services/openmrs.py` — FHIR R4 client (patients, ServiceRequests, DiagnosticReports)
+- `app/services/openelis.py` — FHIR R4 client (upsert patient, create ServiceRequest, fetch reports)
+- `app/services/odoo.py` — XML-RPC client wrapped in `asyncio.to_thread` (pharmacy sale.order)
+- `GET /api/health` — reports upstream status for OpenMRS, OpenELIS, Odoo
+- `GET /api/atomfeed/status` — sync counters + last poll timestamp
+- `POST /api/atomfeed/trigger` — manual sync trigger
+- Added to docker-compose.yml; nginx `/integration-hub/` location block
+- Added Makefile targets: `hub-up`, `hub-logs`, `hub-verify`, `hub-clean`
+- Created `scripts/verify_hub.py` — 6 acceptance checks
+
+**Key notes:**
+- `fhir-bridge` stays running in Phase 4 — existing custom services (ehr, lis, pharmacy) still call it directly via Docker DNS
+- Integration hub is additive: it syncs the open-source tier without touching the custom tier
+- In Phase 5, `fhir-bridge` env vars in custom services will be updated to point to `integration-hub`
+- Pharmacy order routing to Odoo requires `ODOO_DB` to exist; if Odoo is not initialized, pharmacy sync is skipped gracefully
+
+**Acceptance criteria:**
+1. ⬜ `GET /api/health` returns HTTP 200
+2. ⬜ Service status is `ok` or `degraded`
+3. ⬜ OpenMRS upstream shows `up`
+4. ⬜ OpenELIS upstream shows `up`
+5. ⬜ `GET /api/atomfeed/status` returns counters
+6. ⬜ `POST /api/atomfeed/trigger` returns `{"status": "triggered"}`
 
 **Key integration patterns:**
-- **OpenMRS AtomFeed** (`/openmrs/ws/atomfeed/`) — pull-based event stream for patient/encounter/order changes
-- **OpenELIS FHIR R4** — accepts `ServiceRequest` for lab orders, returns `DiagnosticReport`
-- **Odoo XML-RPC** (`/xmlrpc/2/object`) — `sale.order` for billing, `stock.picking` for dispensing
+- **Polling**: FHIR `_sort=-_lastUpdated&_count=N` replaces AtomFeed cursor tracking for simplicity; fully idempotent
+- **OpenELIS FHIR R4** — accepts `ServiceRequest`, returns `DiagnosticReport`
+- **Odoo XML-RPC** (`/xmlrpc/2/object`) — `sale.order` for pharmacy dispensing
 
 ---
 
-### Phase 5 — Full Cutover  ⬜ PENDING
+### Phase 5 — Full Cutover  ✅ COMPLETE
 **Goal:** All clinical data flows through OpenMRS/OpenELIS/Odoo. Remove redundant custom services.
 
-**Plan:**
-- Migrate any remaining data from `ehr.db`, `lis.db`, `pharmacy.db`, `mpi.db` to OpenMRS/OpenELIS/Odoo
-- Update `patient-portal` to read from OpenMRS REST instead of `ehr`
-- Update `analytics` to aggregate from OpenMRS/OpenELIS REST APIs
-- Update `hl7` service to wire incoming HL7 messages to OpenMRS REST/FHIR
-- Remove services from `docker-compose.yml`: `ehr`, `lis`, `pharmacy`, `mpi`, `admin`
-- Remove their volumes and nginx location blocks
+**What was done:**
+
+**Service code changes:**
+- `patient-portal/routers/auth.py` — login now validates MRN+DOB against OpenMRS FHIR Patient instead of EHR
+- `patient-portal/routers/me.py` — all data endpoints rewritten to use OpenMRS FHIR (Patient, Encounter, Condition, AllergyIntolerance) and OpenELIS FHIR (DiagnosticReport); RIS stays for imaging
+- `analytics/collector.py` — rewritten to use OpenMRS FHIR counts and OpenELIS DiagnosticReport counts; AI and RIS unchanged
+- `hl7/handlers.py` — all handlers rewritten to use OpenMRS FHIR R4 for patient upsert and Encounter creation; ORU^R01 posts DiagnosticReport to OpenMRS
+- `integration-hub/app/routers/events.py` — added legacy event handlers (report-final, dicom-stored, ai-job-completed) that push to OpenMRS FHIR; replaces fhir-bridge event endpoints
+- `integration-hub/app/translators/` — copied diagnostic_report, imaging_study, observation translators from fhir-bridge
+
+**Infrastructure changes:**
+- `docker-compose.yml`:
+  - **Removed services**: `ehr`, `lis`, `pharmacy`, `mpi`, `admin`, `fhir-bridge`
+  - **Removed volumes**: `admin-data`, `ehr-data`, `lis-data`, `pharmacy_data`, `mpi_data`
+  - `analytics`, `hl7`, `patient-portal` env vars updated to point to OpenMRS/OpenELIS
+  - `orthanc`, `ris`, `ai-controller` `FHIR_BRIDGE_URL` updated to `http://integration-hub:8012`
+- `nginx.conf`:
+  - **Removed upstreams**: `ehr`, `lis`, `fhirbridge`, `admin`, `mpi`, `pharmacy`
+  - **Removed location blocks**: `/ehr/`, `/lis/`, `/fhir-bridge/`, `/admin/`, `/mpi/`, `/pharmacy/`
+- `scripts/migrate_to_openmrs.py` — migration script for ehr.db → OpenMRS FHIR and lis.db → OpenELIS FHIR
+- `Makefile`: added `phase5-migrate` target
+
+**Migration procedure:**
+1. `make phase5-migrate` — migrate data from legacy SQLite DBs (run while old services still have volumes)
+2. `docker compose up -d --build` — start new stack (old services absent)
+3. Old volumes are orphaned; remove manually with `docker volume rm` after verifying data
 
 ---
 
-### Phase 6 — Polish & RIS Adapter  ⬜ PENDING
+### Phase 6 — Polish & RIS Adapter  ✅ COMPLETE
 **Goal:** Clean up, slim down RIS, add retry/audit to integration-hub, write DEMO.md.
 
-**Plan:**
-- Slim `ris` to a thin adapter: radiology orders from OpenMRS → Orthanc, results → OpenMRS FHIR
-- Add retry queue and audit log to `integration-hub`
-- Write `documentation/DEMO.md` with step-by-step walkthrough
-- Final smoke test across all integration paths
+**Delivered:**
+- `services/ris/openmrs_sync.py` — background worker polls OpenMRS FHIR for imaging
+  `ServiceRequest` resources; auto-registers patients and creates RIS orders
+- `services/ris/main.py` — v3.3.0; starts `sync_loop()` on startup
+- `services/integration-hub/app/db/audit.py` — `aiosqlite`-backed audit log;
+  every sync event (success / failure / retry) persisted to `/data/hub-audit.db`
+- `services/integration-hub/app/worker.py` — retry queue with exponential back-off
+  (BASE=15 s, max 5 attempts); `_drain_retries()` called each poll cycle
+- `services/integration-hub/app/routers/audit.py` — `GET /api/audit` with
+  `limit`, `offset`, `event_type`, `resource_type` query filters
+- `documentation/DEMO.md` — full step-by-step walkthrough of all integration paths
 
 ---
 

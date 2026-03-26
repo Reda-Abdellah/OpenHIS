@@ -1,25 +1,42 @@
 """
-Pulls metrics from every service and stores JSON snapshots in SQLite.
-Each service maps to a domain key: ehr | orders | billing | ai | mpi | lis | ris
+Pulls metrics from OpenMRS, OpenELIS, RIS, and AI Controller,
+then stores JSON snapshots in SQLite.
+
+Domain keys (preserved for frontend compat):
+  ehr     → patient / encounter counts from OpenMRS
+  orders  → lab/imaging order counts from OpenMRS + OpenELIS + RIS
+  lis     → lab result counts from OpenELIS FHIR
+  ai      → AI pipeline job metrics (unchanged)
 """
-import datetime, json, logging, os
+import datetime
+import json
+import logging
+import os
+
 import httpx
+
 from database import get_db
 
-log = logging.getLogger('analytics.collector')
+log = logging.getLogger("analytics.collector")
 
-EHR_URL = os.environ.get('EHR_URL',            'http://ehr:8003/api')
-LIS_URL = os.environ.get('LIS_URL',            'http://lis:8004/api')
-RIS_URL = os.environ.get('RIS_URL',            'http://ris:8002/api')
-AI_URL  = os.environ.get('AI_CONTROLLER_URL',  'http://ai-controller:8000/api')
-MPI_URL = os.environ.get('MPI_URL',            'http://mpi:8007/api')
+OPENMRS_URL   = os.environ.get("OPENMRS_URL",   "http://openmrs:8080")
+OPENMRS_USER  = os.environ.get("OPENMRS_USER",  "admin")
+OPENMRS_PASS  = os.environ.get("OPENMRS_PASS",  "Admin123")
+OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
+OPENELIS_USER = os.environ.get("OPENELIS_USER", "admin")
+OPENELIS_PASS = os.environ.get("OPENELIS_PASS", "adminADMIN!")
+RIS_URL       = os.environ.get("RIS_URL",        "http://ris:8002/api")
+AI_URL        = os.environ.get("AI_CONTROLLER_URL", "http://ai-controller:8000/api")
 
-_LAST_REFRESH: dict = {}   # domain → captured_at
+_OMRS_FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_OE_FHIR   = f"{OPENELIS_URL}/fhir/R4"
+
+_LAST_REFRESH: dict = {}
 
 
-async def _get(client, url):
+async def _get(client: httpx.AsyncClient, url: str, auth=None, params: dict = None):
     try:
-        r = await client.get(url, timeout=8.0)
+        r = await client.get(url, auth=auth, params=params, timeout=10.0)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -27,119 +44,86 @@ async def _get(client, url):
         return None
 
 
-def _tat_hours(items, created='createdat', updated='updatedat',
-               status_field='status', done_status='COMPLETED'):
-    tats = []
-    for item in (items or []):
-        if item.get(status_field) != done_status:
-            continue
-        try:
-            t0 = datetime.datetime.fromisoformat(item[created])
-            t1 = datetime.datetime.fromisoformat(item[updated])
-            h  = (t1 - t0).total_seconds() / 3600
-            if 0 < h < 720:
-                tats.append(h)
-        except Exception:
-            pass
-    return round(sum(tats) / len(tats), 2) if tats else None
-
-
-def _by_status(items, field='status'):
-    out = {}
-    for item in (items or []):
-        k = item.get(field, 'UNKNOWN')
-        out[k] = out.get(k, 0) + 1
-    return out
+async def _fhir_count(client: httpx.AsyncClient, url: str, auth: tuple,
+                      params: dict = None) -> int:
+    p = dict(params or {})
+    p.update({"_count": "0", "_summary": "count"})
+    data = await _get(client, url, auth=auth, params=p)
+    return (data or {}).get("total", 0)
 
 
 async def collect_all() -> dict:
-    today  = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-    result = {}
+    result    = {}
+    omrs_auth = (OPENMRS_USER, OPENMRS_PASS)
+    oe_auth   = (OPENELIS_USER, OPENELIS_PASS)
 
-    async with httpx.AsyncClient(timeout=10.0) as c:
+    async with httpx.AsyncClient(timeout=12.0) as c:
 
-        # ── EHR ──────────────────────────────────────────────────────────────
-        patients   = await _get(c, f"{EHR_URL}/patients")
-        encounters = await _get(c, f"{EHR_URL}/encounters")
-        if patients is not None:
-            active_enc = [e for e in (encounters or []) if e.get('status') == 'active']
-            new_today  = [p for p in patients if (p.get('createdat') or '').startswith(today)]
-            ward_map   = {}
-            for e in active_enc:
-                w = e.get('ward') or 'Unknown'
-                ward_map[w] = ward_map.get(w, 0) + 1
-            result['ehr'] = {
-                'total_patients':     len(patients),
-                'active_encounters':  len(active_enc),
-                'new_patients_today': len(new_today),
-                'ward_breakdown':     ward_map,
-            }
+        # ── EHR domain → OpenMRS ──────────────────────────────────────────────
+        total_patients = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   omrs_auth)
+        active_enc     = await _fhir_count(c, f"{_OMRS_FHIR}/Encounter", omrs_auth,
+                                           {"status": "in-progress"})
+        today_str      = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        new_today      = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   omrs_auth,
+                                           {"_lastUpdated": f"ge{today_str}"})
+        result["ehr"] = {
+            "total_patients":     total_patients,
+            "active_encounters":  active_enc,
+            "new_patients_today": new_today,
+            "ward_breakdown":     {},
+        }
 
-        # ── Orders & TAT ─────────────────────────────────────────────────────
-        ehr_orders = await _get(c, f"{EHR_URL}/orders")
-        lis_orders = await _get(c, f"{LIS_URL}/orders")
-        ris_orders = await _get(c, f"{RIS_URL}/orders")
-        if ehr_orders is not None:
-            lab_orders = [o for o in ehr_orders if o.get('ordertype') == 'LAB']
-            img_orders = [o for o in ehr_orders if o.get('ordertype') == 'IMAGING']
-            result['orders'] = {
-                'lab_pending':       len([o for o in lab_orders if o.get('status') == 'PENDING']),
-                'lab_completed':     len([o for o in lab_orders if o.get('status') == 'COMPLETED']),
-                'lab_tat_hours':     _tat_hours(lis_orders or lab_orders),
-                'imaging_pending':   len([o for o in img_orders if o.get('status') == 'PENDING']),
-                'imaging_completed': len([o for o in img_orders if o.get('status') == 'COMPLETED']),
-                'imaging_tat_hours': _tat_hours(ris_orders or img_orders),
-                'lab_by_status':     _by_status(lab_orders),
-                'img_by_status':     _by_status(img_orders),
-            }
+        # ── Orders domain ─────────────────────────────────────────────────────
+        lab_active    = await _fhir_count(c, f"{_OMRS_FHIR}/ServiceRequest", omrs_auth,
+                                          {"status": "active"})
+        lab_final     = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport",  oe_auth,
+                                          {"status": "final"})
+        ris_orders    = await _get(c, f"{RIS_URL}/orders")
+        img_completed = sum(1 for o in (ris_orders or []) if o.get("status") == "COMPLETED")
+        img_pending   = sum(1 for o in (ris_orders or []) if o.get("status") != "COMPLETED")
+        result["orders"] = {
+            "lab_pending":       lab_active,
+            "lab_completed":     lab_final,
+            "lab_tat_hours":     None,
+            "imaging_pending":   img_pending,
+            "imaging_completed": img_completed,
+            "imaging_tat_hours": None,
+        }
 
-        # ── Billing ───────────────────────────────────────────────────────────
-        billing = await _get(c, f"{EHR_URL}/billing")
-        if billing is not None:
-            total   = sum(b.get('amount', 0) for b in billing)
-            paid    = sum(b.get('amount', 0) for b in billing if b.get('status') == 'paid')
-            partial = sum(b.get('amount', 0) for b in billing if b.get('status') == 'partial')
-            result['billing'] = {
-                'record_count':     len(billing),
-                'total_amount':     round(total, 2),
-                'paid_amount':      round(paid, 2),
-                'partial_amount':   round(partial, 2),
-                'pending_amount':   round(total - paid - partial, 2),
-                'unpaid_count':     len([b for b in billing if b.get('status') == 'pending']),
-                'collection_rate':  round(paid / total * 100, 1) if total else 0,
-                'by_status':        _by_status(billing),
-            }
+        # ── LIS domain → OpenELIS ─────────────────────────────────────────────
+        oe_final       = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", oe_auth,
+                                           {"status": "final"})
+        oe_preliminary = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", oe_auth,
+                                           {"status": "preliminary"})
+        result["lis"] = {
+            "final_reports":   oe_final,
+            "pending_reports": oe_preliminary,
+        }
 
-        # ── AI Pipeline ───────────────────────────────────────────────────────
+        # ── AI domain (unchanged) ─────────────────────────────────────────────
         jobs = await _get(c, f"{AI_URL}/jobs?limit=500")
         if jobs is not None:
-            by_status = _by_status(jobs, 'status')
-            durations = [j['durationms'] for j in jobs if j.get('durationms')]
-            completed = by_status.get('COMPLETED', 0)
+            by_status: dict = {}
+            for j in jobs:
+                k = j.get("status", "UNKNOWN")
+                by_status[k] = by_status.get(k, 0) + 1
+            durations = [j["durationms"] for j in jobs if j.get("durationms")]
             total_j   = len(jobs)
-            result['ai'] = {
-                'total':          total_j,
-                'by_status':      by_status,
-                'success_rate':   round(completed / total_j * 100, 1) if total_j else 0,
-                'avg_duration_ms': round(sum(durations) / len(durations)) if durations else None,
-                'failed':         by_status.get('FAILED', 0),
-                'running':        by_status.get('RUNNING', 0),
-            }
-
-        # ── MPI ───────────────────────────────────────────────────────────────
-        mpi = await _get(c, f"{MPI_URL}/health")
-        if mpi:
-            result['mpi'] = {
-                'master_patients':  mpi.get('master_patients', 0),
-                'cross_references': mpi.get('cross_references', 0),
-                'pending_matches':  mpi.get('pending_matches', 0),
+            completed = by_status.get("COMPLETED", 0)
+            result["ai"] = {
+                "total":           total_j,
+                "by_status":       by_status,
+                "success_rate":    round(completed / total_j * 100, 1) if total_j else 0,
+                "avg_duration_ms": round(sum(durations) / len(durations)) if durations else None,
+                "failed":          by_status.get("FAILED", 0),
+                "running":         by_status.get("RUNNING", 0),
             }
 
     return result
 
 
 async def collect_and_store():
-    now = datetime.datetime.utcnow().isoformat(timespec='seconds')
+    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     try:
         data = await collect_all()
         with get_db() as db:
@@ -150,7 +134,6 @@ async def collect_and_store():
                         (domain, json.dumps(payload), now)
                     )
                     _LAST_REFRESH[domain] = now
-            # Retain 90 days
             db.execute("DELETE FROM snapshots WHERE captured_at < datetime('now', '-90 days')")
         log.info(f"Metrics stored: domains={list(data.keys())} at {now}")
     except Exception as e:

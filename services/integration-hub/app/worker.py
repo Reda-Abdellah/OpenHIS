@@ -1,0 +1,203 @@
+"""
+Background polling worker with retry queue and audit log.
+
+Runs a continuous loop every POLL_INTERVAL_S seconds:
+  1. Patient sync:      OpenMRS FHIR → OpenELIS FHIR
+  2. Lab order routing: OpenMRS ServiceRequest → OpenELIS ServiceRequest
+  3. Result routing:    OpenELIS DiagnosticReport → OpenMRS DiagnosticReport
+
+Failed items are placed on a retry queue with exponential back-off
+(BASE_BACKOFF_S × 2^(attempt-1), up to MAX_RETRY_ATTEMPTS attempts).
+Every event — success or failure — is written to the SQLite audit log.
+"""
+import asyncio
+import logging
+import time
+from collections import deque
+from datetime import datetime, timezone
+from typing import Callable
+
+from app.config import POLL_INTERVAL_S
+from app.services import openmrs, openelis
+from app.db import audit
+import app.state as state
+
+log = logging.getLogger("hub.worker")
+
+# In-memory dedup sets — reset on restart (all upserts are idempotent)
+_synced_patients: set[str] = set()
+_synced_orders:   set[str] = set()
+_synced_reports:  set[str] = set()
+
+# Retry queue: (next_retry_at, coro_factory, resource_type, resource_id, direction, attempts)
+_retry_queue: deque = deque()
+MAX_RETRY_ATTEMPTS = 5
+BASE_BACKOFF_S     = 15
+
+
+def _schedule_retry(
+    coro_factory: Callable,
+    resource_type: str,
+    resource_id: str,
+    direction: str,
+    attempts: int,
+) -> None:
+    backoff = BASE_BACKOFF_S * (2 ** (attempts - 1))
+    _retry_queue.append(
+        (time.monotonic() + backoff, coro_factory,
+         resource_type, resource_id, direction, attempts)
+    )
+    log.info(
+        "Retry scheduled for %s/%s in %ds (attempt %d)",
+        resource_type, resource_id, backoff, attempts,
+    )
+
+
+async def _sync_patients() -> int:
+    patients = await openmrs.get_recent_patients()
+    count = 0
+    for p in patients:
+        pid = p.get("id", "")
+        if pid in _synced_patients:
+            continue
+        try:
+            oe_id = await openelis.upsert_patient(p)
+            if oe_id:
+                _synced_patients.add(pid)
+                count += 1
+                await audit.log_event(
+                    "patient_synced", "Patient", pid, "omrs→oe", "ok",
+                )
+        except Exception as exc:
+            await audit.log_event(
+                "patient_sync_failed", "Patient", pid, "omrs→oe", "failed",
+                str(exc),
+            )
+            _schedule_retry(
+                lambda _p=p: openelis.upsert_patient(_p),
+                "Patient", pid, "omrs→oe", 1,
+            )
+    return count
+
+
+async def _sync_orders() -> int:
+    orders = await openmrs.get_active_service_requests()
+    count = 0
+    for sr in orders:
+        oid = sr.get("id", "")
+        if oid in _synced_orders:
+            continue
+        try:
+            oe_id = await openelis.create_service_request(sr)
+            if oe_id:
+                _synced_orders.add(oid)
+                count += 1
+                await audit.log_event(
+                    "order_routed", "ServiceRequest", oid, "omrs→oe", "ok",
+                )
+        except Exception as exc:
+            await audit.log_event(
+                "order_route_failed", "ServiceRequest", oid, "omrs→oe", "failed",
+                str(exc),
+            )
+            _schedule_retry(
+                lambda _sr=sr: openelis.create_service_request(_sr),
+                "ServiceRequest", oid, "omrs→oe", 1,
+            )
+    return count
+
+
+async def _sync_results() -> int:
+    reports = await openelis.get_completed_reports()
+    count = 0
+    for dr in reports:
+        rid = dr.get("id", "")
+        if rid in _synced_reports:
+            continue
+        try:
+            ok = await openmrs.post_diagnostic_report(dr)
+            if ok:
+                _synced_reports.add(rid)
+                count += 1
+                await audit.log_event(
+                    "result_routed", "DiagnosticReport", rid, "oe→omrs", "ok",
+                )
+        except Exception as exc:
+            await audit.log_event(
+                "result_route_failed", "DiagnosticReport", rid, "oe→omrs", "failed",
+                str(exc),
+            )
+            _schedule_retry(
+                lambda _dr=dr: openmrs.post_diagnostic_report(_dr),
+                "DiagnosticReport", rid, "oe→omrs", 1,
+            )
+    return count
+
+
+async def _drain_retries() -> int:
+    """Process all retry items whose back-off delay has elapsed."""
+    now = time.monotonic()
+
+    # Split queue into due vs still-pending without mutating during iteration
+    due, pending = [], []
+    while _retry_queue:
+        item = _retry_queue.popleft()
+        (due if item[0] <= now else pending).append(item)
+    _retry_queue.extend(pending)
+
+    processed = 0
+    for (_, coro_factory, resource_type, resource_id, direction, attempts) in due:
+        try:
+            await coro_factory()
+            await audit.log_event(
+                "retry_ok", resource_type, resource_id, direction, "ok",
+                attempts=attempts,
+            )
+            processed += 1
+        except Exception as exc:
+            if attempts < MAX_RETRY_ATTEMPTS:
+                _schedule_retry(
+                    coro_factory, resource_type, resource_id, direction, attempts + 1,
+                )
+                await audit.log_event(
+                    "retry_rescheduled", resource_type, resource_id, direction,
+                    "retry_scheduled", str(exc), attempts=attempts,
+                )
+            else:
+                state.errors += 1
+                await audit.log_event(
+                    "retry_exhausted", resource_type, resource_id, direction,
+                    "failed", str(exc), attempts=attempts,
+                )
+    return processed
+
+
+async def poll_once() -> dict:
+    """Run one full sync cycle. Returns a summary dict."""
+    patients = await _sync_patients()
+    orders   = await _sync_orders()
+    results  = await _sync_results()
+    retried  = await _drain_retries()
+    summary  = {
+        "patients": patients, "orders": orders,
+        "results": results,   "retried": retried,
+    }
+    log.info("Poll cycle done — %s", summary)
+    return summary
+
+
+async def poll_loop() -> None:
+    """Main background task — runs forever, sleeps between cycles."""
+    log.info("Worker started (interval=%ds)", POLL_INTERVAL_S)
+    while True:
+        try:
+            summary = await poll_once()
+            state.patients_synced += summary["patients"]
+            state.orders_synced   += summary["orders"]
+            state.reports_synced  += summary["results"]
+            state.last_poll_at     = datetime.now(timezone.utc).isoformat()
+        except Exception as e:
+            state.errors += 1
+            log.error("Poll cycle error: %s", e)
+            await audit.log_event("poll_error", status="failed", detail=str(e))
+        await asyncio.sleep(POLL_INTERVAL_S)

@@ -7,38 +7,39 @@ def fresh_db():
     """Setup fresh ris database for each test"""
     ris_path = str(Path(__file__).parent.parent.parent / "services" / "ris")
     test_db = "/tmp/test_ris.db"
-    
-    # Clear cached modules
-    mods_to_remove = [m for m in sys.modules.keys() 
-                      if m.startswith(('ris_', 'routers')) 
-                      or m in ('main', 'database')]
+
+    # Clear cached modules (include openmrs_sync so DB_PATH is re-read)
+    mods_to_remove = [m for m in sys.modules.keys()
+                      if m.startswith(('ris_', 'routers'))
+                      or m in ('main', 'database', 'openmrs_sync')]
     for mod in mods_to_remove:
         try:
             del sys.modules[mod]
         except KeyError:
             pass
-    
-    # Ensure ris is first in path
+
     if ris_path in sys.path:
         sys.path.remove(ris_path)
     sys.path.insert(0, ris_path)
-    
-    # Remove old test db
+
     if os.path.exists(test_db):
         os.remove(test_db)
-    
-    # Setup environment
+
     os.environ['DBPATH'] = test_db
     os.environ['DB_PATH'] = test_db
     os.environ['ROOT_PATH'] = ''
     os.environ['FHIR_BRIDGE_URL'] = ''
-    
+    # Point OpenMRS sync at an unreachable port so failures are instant
+    os.environ['OPENMRS_URL']  = 'http://localhost:19999'
+    os.environ['OPENMRS_USER'] = 'admin'
+    os.environ['OPENMRS_PASS'] = 'admin'
+    os.environ['POLL_INTERVAL_S'] = '99999'
+
     from database import init_db
     init_db()
-    
+
     yield
-    
-    # Cleanup
+
     if os.path.exists(test_db):
         os.remove(test_db)
 

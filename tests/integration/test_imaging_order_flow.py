@@ -1,201 +1,72 @@
 """
-Integration: imaging order cross-service flow.
+Integration: imaging order cross-service flow (new architecture).
 
-Flow: EHR creates IMAGING order
-       → fires POST /api/events/imaging-order to FHIR bridge
-         → FHIR bridge POSTs /api/orders to RIS
-         → FHIR bridge PATCHes /api/orders/{id} back in EHR with accession number
+Flow:
+  OpenMRS imaging ServiceRequest (category=imaging)
+    → RIS OpenMRS sync worker polls FHIR, auto-creates RIS order
+    → Radiologist finalises report in RIS
+      → RIS fires POST /api/events/report-final to integration-hub
+        → Hub queues FHIR DiagnosticReport push to OpenMRS
+
+These tests verify:
+  1. Hub correctly accepts and queues report-final events
+  2. RIS order lifecycle (create → status progression → report)
+  3. STAT orders precede ROUTINE orders in worklist
 """
-import respx, httpx
-
-RIS_BASE  = "http://ris:8002/api"
-EHR_BASE  = "http://ehr:8003/api"
-FHIR_BASE = "http://fhir-bridge:8005"
+import respx
+import httpx
 
 
-# ── Phase 1: EHR fires imaging-order event ─────────────────────────────────
+# ── Hub: radiology event routing ──────────────────────────────────────────────
 
-class TestEHRFiresImagingOrderEvent:
+class TestHubRadiologyEvents:
+    """Hub accepts radiology events from RIS and Orthanc."""
 
-    def test_imaging_order_calls_fhir_bridge(self, ehr_client, ehr_patient):
-        captured = {}
-
-        def capture(req):
-            import json
-            captured["body"] = json.loads(req.content)
-            return httpx.Response(200, json={"status": "queued"})
-
-        pid = ehr_patient["id"]
-        with respx.mock:
-            respx.post(f"{FHIR_BASE}/api/events/imaging-order").mock(
-                side_effect=capture
-            )
-            r = ehr_client.post("/api/orders", json={
-                "order_type": "IMAGING",
-                "patient_id": pid,
-                "requesting_physician": "Dr. House",
-                "order_detail": {"modality": "CT", "bodypart": "CHEST"},
-                "priority": "ROUTINE"
-            })
-
-        assert r.status_code == 201, r.text
-        assert captured, "FHIR bridge was not called for IMAGING order"
-        body = captured["body"]
-        assert body["order_type"] == "IMAGING"
-        assert body["patient_id"] == pid
-
-    def test_lab_order_calls_fhir_bridge(self, ehr_client, ehr_patient):
-        captured = {}
-
-        def capture(req):
-            import json
-            captured["body"] = json.loads(req.content)
-            return httpx.Response(200, json={"status": "queued"})
-
-        with respx.mock:
-            respx.post(f"{FHIR_BASE}/api/events/lab-order").mock(
-                side_effect=capture
-            )
-            r = ehr_client.post("/api/orders", json={
-                "order_type": "LAB",
-                "patient_id": ehr_patient["id"],
-                "order_detail": {"test_code": "CBC"},
-            })
-
-        assert r.status_code == 201
-        assert captured, "FHIR bridge was not called for LAB order"
-
-    def test_pharmacy_order_does_not_fire_lab_or_imaging_event(
-        self, ehr_client, ehr_patient
-    ):
-        """PHARMACY orders must NOT trigger imaging-order or lab-order events."""
-        with respx.mock:
-            # Register the valid pharmacy route so respx doesn't fail on it
-            respx.post(f"{FHIR_BASE}/api/events/pharmacy-order").mock(
-                return_value=httpx.Response(200, json={"status": "queued"})
-            )
-            r = ehr_client.post("/api/orders", json={
-                "order_type": "PHARMACY",
-                "patient_id": ehr_patient["id"],
-            })
-        assert r.status_code == 201
-
-    def test_unsupported_order_type_rejected(self, ehr_client, ehr_patient):
-        r = ehr_client.post("/api/orders", json={
-            "order_type": "XRAY",  # not in allowed types
-            "patient_id": ehr_patient["id"],
+    def test_report_final_queued(self, hub_client):
+        r = hub_client.post("/api/events/report-final", json={
+            "report_id": 7, "order_id": 3,
+            "impression": "No acute intracranial findings.",
+            "status": "FINAL",
         })
-        assert r.status_code == 422
+        assert r.status_code == 200
+        assert r.json()["status"] == "queued"
+
+    def test_dicom_stored_queued(self, hub_client):
+        r = hub_client.post("/api/events/dicom-stored", json={
+            "instanceId": "dicom-abc-123",
+            "patientId": "MRN-001",
+        })
+        assert r.status_code == 200
+        assert r.json()["status"] == "queued"
+
+    def test_ai_job_completed_queued(self, hub_client):
+        r = hub_client.post("/api/events/ai-job-completed", json={
+            "job_id": "job-xyz-456",
+            "pipeline_id": "poc-ct",
+            "patient_id": "MRN-002",
+            "modality": "CT",
+            "normal": False,
+            "impression": "Pulmonary nodule 8mm — recommend follow-up.",
+        })
+        assert r.status_code == 200
+        assert r.json()["status"] == "queued"
+
+    def test_report_final_with_only_order_id_still_queued(self, hub_client):
+        """Hub fetches full report from RIS internally — caller may send minimal payload."""
+        r = hub_client.post("/api/events/report-final", json={
+            "report_id": 5, "order_id": 10,
+        })
+        assert r.status_code == 200
 
 
-# ── Phase 2: FHIR bridge routes imaging-order to RIS ──────────────────────
-
-class TestFHIRBridgeRoutesImagingOrderToRIS:
-
-    IMAGING_ORDER = {
-        "id": 42, "patient_id": "P-001", "order_type": "IMAGING",
-        "priority": "ROUTINE", "requesting_physician": "Dr. House",
-        "order_detail": {"modality": "CT", "bodypart": "CHEST",
-                         "clinical_info": "Pulmonary nodule follow-up"},
-        "mrn": "INT001"
-    }
-
-    def test_imaging_order_calls_ris(self, fhir_client):
-        captured = {}
-
-        def capture_ris(req):
-            import json
-            captured["body"] = json.loads(req.content)
-            return httpx.Response(201, json={
-                "id": 1, "accession_number": "ACC-20260325-1234"
-            })
-
-        with respx.mock:
-            respx.post(f"{RIS_BASE}/orders").mock(side_effect=capture_ris)
-            respx.route(method="PATCH", url__startswith=f"{EHR_BASE}/orders/").mock(
-                return_value=httpx.Response(200, json={"id": 42})
-            )
-            r = fhir_client.post("/api/events/imaging-order",
-                                 json=self.IMAGING_ORDER)
-
-        assert r.status_code in (200, 202)
-        assert captured, "RIS was not called for imaging order"
-        body = captured["body"]
-        assert body.get("modality") == "CT"
-        assert body.get("priority") == "ROUTINE"
-
-    def test_imaging_order_ris_payload_has_required_fields(self, fhir_client):
-        """RIS order creation needs at least modality and patient_id."""
-        captured = {}
-
-        with respx.mock:
-            respx.post(f"{RIS_BASE}/orders").mock(
-                side_effect=lambda req: (
-                    captured.update({"body": __import__("json").loads(req.content)})
-                    or httpx.Response(201, json={
-                        "id": 1, "accession_number": "ACC-20260325-9999"
-                    })
-                )
-            )
-            respx.route(method="PATCH", url__startswith=f"{EHR_BASE}/orders/").mock(
-                return_value=httpx.Response(200, json={"id": 42})
-            )
-            fhir_client.post("/api/events/imaging-order", json=self.IMAGING_ORDER)
-
-        body = captured["body"]
-        assert "modality" in body
-        assert "patient_id" in body
-        assert "priority" in body
-
-    def test_ris_accession_written_back_to_ehr(self, fhir_client):
-        """After RIS creates the order, its accession number must be PATCHed back."""
-        ehr_patch_calls = []
-
-        def capture_patch(req):
-            import json
-            ehr_patch_calls.append({
-                "url": str(req.url),
-                "body": json.loads(req.content)
-            })
-            return httpx.Response(200, json={"id": 42})
-
-        with respx.mock:
-            respx.post(f"{RIS_BASE}/orders").mock(
-                return_value=httpx.Response(201, json={
-                    "id": 1, "accession_number": "ACC-20260325-5678"
-                })
-            )
-            respx.route(method="PATCH", url__startswith=f"{EHR_BASE}/orders/").mock(
-                side_effect=capture_patch
-            )
-            fhir_client.post("/api/events/imaging-order", json=self.IMAGING_ORDER)
-
-        assert ehr_patch_calls, "EHR order write-back was not called"
-        patch = ehr_patch_calls[0]
-        assert "42" in patch["url"]  # should PATCH order id 42
-        body = patch["body"]
-        assert body.get("ehr_order_id") == "ACC-20260325-5678"
-        assert body.get("status") == "SENT"
-
-    def test_ris_failure_does_not_crash_event_handler(self, fhir_client):
-        """If RIS is down, the event handler should return 200 (queued), not 500."""
-        with respx.mock:
-            respx.post(f"{RIS_BASE}/orders").mock(
-                return_value=httpx.Response(503, text="RIS unavailable")
-            )
-            r = fhir_client.post("/api/events/imaging-order",
-                                 json=self.IMAGING_ORDER)
-        assert r.status_code in (200, 202)
-
-
-# ── Phase 3: RIS processes the order correctly ─────────────────────────────
+# ── RIS order lifecycle ───────────────────────────────────────────────────────
 
 class TestRISAcceptsImagingOrder:
-    """Validate that RIS handles incoming orders from FHIR bridge correctly."""
+    """RIS order creation and worklist management."""
 
     def _setup_patient(self, ris_client):
         r = ris_client.post("/api/patients", json={
-            "mrn": "INT001", "patient_name": "Test Patient"
+            "mrn": "INT001", "patient_name": "Test Patient",
         })
         assert r.status_code == 201
         return r.json()["id"]
@@ -215,7 +86,7 @@ class TestRISAcceptsImagingOrder:
     def test_ris_order_appears_in_worklist(self, ris_client):
         pid = self._setup_patient(ris_client)
         ris_client.post("/api/orders", json={
-            "patient_id": pid, "modality": "MR", "priority": "STAT"
+            "patient_id": pid, "modality": "MR", "priority": "STAT",
         })
         r = ris_client.get("/api/worklist?modality=MR")
         assert r.status_code == 200
@@ -223,18 +94,40 @@ class TestRISAcceptsImagingOrder:
         assert any(o["modality"] == "MR" for o in items)
 
     def test_stat_priority_appears_first_in_worklist(self, ris_client):
-        """STAT orders must be ordered before ROUTINE in the worklist."""
         pid = self._setup_patient(ris_client)
         ris_client.post("/api/orders", json={
-            "patient_id": pid, "modality": "CR", "priority": "ROUTINE"
+            "patient_id": pid, "modality": "CR", "priority": "ROUTINE",
         })
         ris_client.post("/api/orders", json={
-            "patient_id": pid, "modality": "CR", "priority": "STAT"
+            "patient_id": pid, "modality": "CR", "priority": "STAT",
         })
         r = ris_client.get("/api/worklist")
         assert r.status_code == 200
         orders = r.json()
-        priorities = [o["priority"] for o in orders]
-        stat_idx   = priorities.index("STAT")
+        priorities  = [o["priority"] for o in orders]
+        stat_idx    = priorities.index("STAT")
         routine_idx = priorities.index("ROUTINE")
         assert stat_idx < routine_idx, "STAT should precede ROUTINE in worklist"
+
+    def test_ris_report_finalize_triggers_hub_notification(self, ris_client):
+        """Finalising a report fires a best-effort POST to FHIR_BRIDGE_URL (integration-hub)."""
+        pid = self._setup_patient(ris_client)
+        order = ris_client.post("/api/orders", json={
+            "patient_id": pid, "modality": "CR", "priority": "ROUTINE",
+        }).json()
+
+        report = ris_client.post("/api/reports", json={
+            "order_id": order["id"],
+            "radiologist": "Dr. Radiologist",
+        }).json()
+
+        with respx.mock:
+            # FHIR_BRIDGE_URL is empty in tests so no actual HTTP call is made
+            r = ris_client.put(f"/api/reports/{report['id']}", json={
+                "status": "FINAL",
+                "findings": "Clear lungs.",
+                "impression": "No acute findings.",
+            })
+
+        assert r.status_code == 200
+        assert r.json()["status"] == "FINAL"

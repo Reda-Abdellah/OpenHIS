@@ -1,40 +1,77 @@
 import os
+import httpx
 from fastapi import APIRouter, HTTPException, Depends
-from auth     import require_auth
+from auth import require_auth
 import proxy
 from database import get_db, rows_to_list
 
-router  = APIRouter(prefix="/api/me", tags=["me"])
-EHR_URL = os.environ.get('EHR_URL', 'http://ehr:8003/api')
-RIS_URL = os.environ.get('RIS_URL', 'http://ris:8002/api')
+router = APIRouter(prefix="/api/me", tags=["me"])
 
-_PATIENT_FIELDS = {
-    "id", "mrn", "firstname", "lastname",
-    "birthdate", "sex", "phone", "insuranceid",
-}
+OPENMRS_URL   = os.environ.get("OPENMRS_URL",   "http://openmrs:8080")
+OPENMRS_USER  = os.environ.get("OPENMRS_USER",  "admin")
+OPENMRS_PASS  = os.environ.get("OPENMRS_PASS",  "Admin123")
+OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
+OPENELIS_USER = os.environ.get("OPENELIS_USER", "admin")
+OPENELIS_PASS = os.environ.get("OPENELIS_PASS", "adminADMIN!")
+RIS_URL       = os.environ.get("RIS_URL",        "http://ris:8002/api")
+
+_OMRS_FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_OMRS_AUTH = (OPENMRS_USER, OPENMRS_PASS)
+_OE_FHIR   = f"{OPENELIS_URL}/fhir/R4"
+_OE_AUTH   = (OPENELIS_USER, OPENELIS_PASS)
+_FHIR_HDR  = {"Accept": "application/fhir+json"}
+
+
+async def _fhir_get(url: str, auth: tuple, params: dict = None) -> dict:
+    try:
+        async with httpx.AsyncClient(auth=auth, timeout=10) as c:
+            r = await c.get(url, params=params, headers=_FHIR_HDR)
+            r.raise_for_status()
+            return r.json()
+    except Exception:
+        return {}
 
 
 @router.get("")
 async def get_me(session: dict = Depends(require_auth)):
-    patient = await proxy.get(f"{EHR_URL}/patients/{session['patient_id']}")
-    if not patient:
+    patient_uuid = session["patient_id"]
+    data = await _fhir_get(f"{_OMRS_FHIR}/Patient/{patient_uuid}", _OMRS_AUTH)
+    if not data:
         raise HTTPException(503, "Health records temporarily unavailable")
-    return {k: v for k, v in patient.items() if k in _PATIENT_FIELDS}
+
+    name   = data.get("name", [{}])[0]
+    given  = " ".join(name.get("given", []))
+    family = name.get("family", "")
+    return {
+        "id":        patient_uuid,
+        "mrn":       session.get("patient_mrn"),
+        "firstname": given,
+        "lastname":  family,
+        "birthdate": data.get("birthDate"),
+        "sex":       data.get("gender"),
+    }
 
 
 @router.get("/appointments")
 async def get_appointments(session: dict = Depends(require_auth)):
-    data = await proxy.get(
-        f"{EHR_URL}/appointments?patientid={session['patient_id']}"
-    )
-    return data or []
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter", _OMRS_AUTH,
+                             {"patient": session["patient_id"], "_count": "50"})
+    return [
+        {
+            "id":     e["resource"].get("id"),
+            "status": e["resource"].get("status"),
+            "date":   (e["resource"].get("period") or {}).get("start"),
+            "type":   (e["resource"].get("type") or [{}])[0].get("text"),
+        }
+        for e in bundle.get("entry", [])
+    ]
 
 
 @router.post("/appointments/request", status_code=201)
 async def request_appointment(body: dict, session: dict = Depends(require_auth)):
-    dept     = (body.get("department") or "").strip()
-    pref_dt  = (body.get("preferred_date") or "").strip()
-    reason   = (body.get("reason") or "").strip()
+    dept    = (body.get("department") or "").strip()
+    pref_dt = (body.get("preferred_date") or "").strip()
+    reason  = (body.get("reason") or "").strip()
     if not dept:
         raise HTTPException(400, "department required")
     with get_db() as db:
@@ -62,44 +99,44 @@ async def get_appointment_requests(session: dict = Depends(require_auth)):
 
 @router.get("/results")
 async def get_results(session: dict = Depends(require_auth)):
-    """Completed LAB orders visible to patient."""
-    orders = await proxy.get(
-        f"{EHR_URL}/orders?patientid={session['patient_id']}&ordertype=LAB"
-    )
+    """Completed lab results from OpenELIS FHIR."""
+    bundle = await _fhir_get(
+        f"{_OE_FHIR}/DiagnosticReport", _OE_AUTH,
+        {"patient": session["patient_id"], "status": "final", "_count": "50"})
     return [
-        {k: v for k, v in o.items()
-         if k in {"id", "ordertype", "orderdetail", "status",
-                  "createdat", "updatedat", "priority", "patientname"}}
-        for o in (orders or [])
-        if o.get("status") == "COMPLETED"
+        {
+            "id":        e["resource"].get("id"),
+            "status":    e["resource"].get("status"),
+            "issued":    e["resource"].get("issued"),
+            "code":      (e["resource"].get("code") or {}).get("text"),
+            "conclusion": e["resource"].get("conclusion"),
+        }
+        for e in bundle.get("entry", [])
     ]
 
 
 @router.get("/imaging")
 async def get_imaging(session: dict = Depends(require_auth)):
-    """Completed IMAGING orders + FINAL RIS reports visible to patient."""
-    orders = await proxy.get(
-        f"{EHR_URL}/orders?patientid={session['patient_id']}&ordertype=IMAGING"
-    )
+    """Radiology orders + FINAL reports from RIS, filtered to this patient."""
+    orders = await proxy.get(f"{RIS_URL}/orders")
     if not orders:
         return []
-
+    patient_mrn = session.get("patient_mrn")
     results = []
     for o in orders:
+        if o.get("mrn") != patient_mrn:
+            continue
         if o.get("status") != "COMPLETED":
             continue
         entry = {k: v for k, v in o.items()
-                 if k in {"id", "ordertype", "orderdetail", "status",
-                          "createdat", "updatedat", "patientname"}}
-        # Try to fetch the FINAL radiology report from RIS
-        report = await proxy.get(
-            f"{RIS_URL}/reports/order/{o['id']}"
-        )
+                 if k in {"id", "modality", "body_part", "status",
+                           "accession_number", "created_at", "updated_at"}}
+        report = await proxy.get(f"{RIS_URL}/reports/order/{o['id']}")
         if report and report.get("status") == "FINAL":
             entry["report"] = {
-                "impression":      report.get("impression"),
-                "recommendation":  report.get("recommendation"),
-                "finalized_at":    report.get("finalizedat"),
+                "impression":     report.get("impression"),
+                "recommendation": report.get("recommendation"),
+                "finalized_at":   report.get("finalized_at"),
             }
         results.append(entry)
     return results
@@ -107,68 +144,59 @@ async def get_imaging(session: dict = Depends(require_auth)):
 
 @router.get("/diagnoses")
 async def get_diagnoses(session: dict = Depends(require_auth)):
-    data = await proxy.get(
-        f"{EHR_URL}/patients/{session['patient_id']}/diagnoses"
-    )
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/Condition", _OMRS_AUTH,
+                             {"patient": session["patient_id"], "_count": "50"})
     return [
-        {k: v for k, v in d.items()
-         if k in {"id", "icd10code", "description", "status", "createdat"}}
-        for d in (data or [])
-        if d.get("status") == "active"
+        {
+            "id":          e["resource"].get("id"),
+            "icd10code":   ((e["resource"].get("code") or {}).get("coding") or [{}])[0].get("code"),
+            "description": (e["resource"].get("code") or {}).get("text"),
+            "status":      (e["resource"].get("clinicalStatus") or {}).get("coding", [{}])[0].get("code"),
+            "createdat":   e["resource"].get("recordedDate"),
+        }
+        for e in bundle.get("entry", [])
     ]
 
 
 @router.get("/allergies")
 async def get_allergies(session: dict = Depends(require_auth)):
-    data = await proxy.get(
-        f"{EHR_URL}/patients/{session['patient_id']}/allergies"
-    )
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/AllergyIntolerance", _OMRS_AUTH,
+                             {"patient": session["patient_id"], "_count": "50"})
     return [
-        {k: v for k, v in a.items()
-         if k in {"id", "substance", "reaction", "severity"}}
-        for a in (data or [])
+        {
+            "id":        e["resource"].get("id"),
+            "substance": (e["resource"].get("code") or {}).get("text"),
+            "reaction":  (((e["resource"].get("reaction") or [{}])[0]).get("manifestation") or [{}])[0].get("text"),
+            "severity":  ((e["resource"].get("reaction") or [{}])[0]).get("severity"),
+        }
+        for e in bundle.get("entry", [])
     ]
 
 
 @router.get("/billing")
 async def get_billing(session: dict = Depends(require_auth)):
-    data = await proxy.get(
-        f"{EHR_URL}/billing?patientid={session['patient_id']}"
-    )
-    return [
-        {k: v for k, v in b.items()
-         if k in {"id", "cptcode", "description", "amount",
-                  "status", "createdat"}}
-        for b in (data or [])
-    ]
+    """Billing data placeholder — Odoo integration wired in Phase 5 follow-up."""
+    return []
 
 
 @router.get("/summary")
 async def get_summary(session: dict = Depends(require_auth)):
-    """One-shot summary used by the dashboard tab."""
     pid = session["patient_id"]
-    appts   = await proxy.get(f"{EHR_URL}/appointments?patientid={pid}")
-    orders  = await proxy.get(f"{EHR_URL}/orders?patientid={pid}")
-    billing = await proxy.get(f"{EHR_URL}/billing?patientid={pid}")
-
-    upcoming_appts = [
-        a for a in (appts or [])
-        if a.get("status") == "scheduled"
-    ]
-    pending_results = [
-        o for o in (orders or [])
-        if o.get("ordertype") == "LAB" and o.get("status") == "PENDING"
-    ]
-    unpaid_bills = [
-        b for b in (billing or [])
-        if b.get("status") == "pending"
-    ]
-    total_due = sum(b.get("amount", 0) for b in unpaid_bills)
-
+    enc_bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter", _OMRS_AUTH,
+                                 {"patient": pid, "status": "planned",
+                                  "_count": "10", "_sort": "date"})
+    lab_bundle = await _fhir_get(f"{_OE_FHIR}/DiagnosticReport", _OE_AUTH,
+                                 {"patient": pid, "status": "preliminary",
+                                  "_count": "0", "_summary": "count"})
+    upcoming       = enc_bundle.get("entry", [])
+    pending_results = lab_bundle.get("total", 0)
     return {
-        "upcoming_appointments": len(upcoming_appts),
-        "pending_results":       len(pending_results),
-        "unpaid_bills":          len(unpaid_bills),
-        "total_due":             round(total_due, 2),
-        "next_appointment":      upcoming_appts[0] if upcoming_appts else None,
+        "upcoming_appointments": len(upcoming),
+        "pending_results":       pending_results,
+        "unpaid_bills":          0,
+        "total_due":             0.0,
+        "next_appointment": {
+            "date": (upcoming[0]["resource"].get("period") or {}).get("start"),
+            "type": (upcoming[0]["resource"].get("type") or [{}])[0].get("text"),
+        } if upcoming else None,
     }

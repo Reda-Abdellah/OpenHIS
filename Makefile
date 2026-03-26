@@ -1,5 +1,9 @@
 .PHONY: up down build test logs clean restart ps \
-        openmrs-up openmrs-logs openmrs-seed openmrs-verify openmrs-clean
+        openmrs-up openmrs-logs openmrs-seed openmrs-verify openmrs-clean \
+        openelis-up openelis-logs openelis-verify openelis-clean \
+        odoo-up odoo-logs odoo-verify odoo-clean \
+        hub-up hub-logs hub-verify hub-clean \
+        phase5-migrate
 
 # Start all services in detached mode
 up:
@@ -72,3 +76,70 @@ openmrs-clean:
 	docker compose stop openmrs openmrs-frontend openmrs-db
 	docker compose rm -f openmrs openmrs-frontend openmrs-db
 	docker volume rm -f openhis_openmrs-mysql openhis_openmrs-data
+
+# ── Phase 2: OpenELIS ────────────────────────────────────────────────────────
+
+# Start only OpenELIS (db + app), leave other services alone
+openelis-up:
+	docker compose up -d openelis-db openelis
+
+# Follow OpenELIS logs (Liquibase migrations are the interesting part on first boot)
+openelis-logs:
+	docker compose logs -f openelis
+
+# Verify Phase 2 acceptance criteria
+openelis-verify:
+	python scripts/verify_openelis.py
+
+# Wipe OpenELIS data volumes (safe — does not touch other services)
+openelis-clean:
+	docker compose stop openelis openelis-db
+	docker compose rm -f openelis openelis-db
+	docker volume rm -f openhis_openelis-pg openhis_openelis-lucene
+
+# ── Phase 3: Odoo ────────────────────────────────────────────────────────────
+
+# Start only Odoo (db + app). First boot shows the Create Database page.
+odoo-up:
+	docker compose up -d odoo-db odoo
+
+# Follow Odoo logs
+odoo-logs:
+	docker compose logs -f odoo
+
+# Verify Phase 3 acceptance criteria
+odoo-verify:
+	python scripts/verify_odoo.py
+
+# Wipe Odoo data volumes (safe — does not touch other services)
+odoo-clean:
+	docker compose stop odoo odoo-db
+	docker compose rm -f odoo odoo-db
+	docker volume rm -f openhis_odoo-pg openhis_odoo-data
+
+# ── Phase 4: Integration Hub ─────────────────────────────────────────────────
+
+# Build and start integration-hub (requires OpenMRS, OpenELIS, Odoo to be up)
+hub-up:
+	docker compose up -d --build integration-hub
+
+# Follow integration-hub logs
+hub-logs:
+	docker compose logs -f integration-hub
+
+# Verify Phase 4 acceptance criteria
+hub-verify:
+	python scripts/verify_hub.py
+
+# Rebuild integration-hub image (after code changes)
+hub-clean:
+	docker compose stop integration-hub
+	docker compose rm -f integration-hub
+
+# ── Phase 5: Full Cutover ────────────────────────────────────────────────────
+
+# Migrate data from legacy SQLite DBs to OpenMRS + OpenELIS.
+# Run this BEFORE bringing down old services.
+# The DB paths must be the host paths of the mounted volumes.
+phase5-migrate:
+	python scripts/migrate_to_openmrs.py

@@ -7,22 +7,25 @@ networks:
 
 
 volumes:
-  admin-data:
   pg-data:
   orthanc-data:
   ris-data:
   ai-jobs:
   ai-controller-db:
-  ehr-data:
-  lis-data:
-  pharmacy_data:
-  mpi_data:
   analytics-data:
   hl7-data:
   portal-sessions:
   # Phase 1 — OpenMRS
   openmrs-mysql:
   openmrs-data:
+  # Phase 2 — OpenELIS
+  openelis-pg:
+  openelis-lucene:
+  # Phase 3 — Odoo
+  odoo-pg:
+  odoo-data:
+  # Phase 4/6 — Integration Hub audit log
+  hub-audit:
 
 services:
 
@@ -81,9 +84,7 @@ services:
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      # /health/started returns 503 while initializing; use the login page as a
-      # simpler proxy — returns 200 once Tomcat + OpenMRS WAR are fully up.
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/openmrs/login.htm"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/openmrs/health/started"]
       interval: 30s
       timeout: 10s
       retries: 20
@@ -110,6 +111,161 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # ── Phase 2: OpenELIS Global 2 ───────────────────────────────────────────────
+  #
+  # openelis-db: Dedicated PostgreSQL instance for OpenELIS.
+  #   OpenELIS requires a database named 'clinlims' owned by user 'clinlims'.
+  #   Liquibase migrations run on first boot — expect 3-5 min before the app
+  #   becomes healthy.
+  #
+  openelis-db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: clinlims
+      POSTGRES_USER: clinlims
+      POSTGRES_PASSWORD: clinlims
+    volumes:
+      - openelis-pg:/var/lib/postgresql/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinlims -d clinlims"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # openelis: OpenELIS Global 2 (Tomcat + Spring Boot webapp).
+  #   FHIR R4:    http://localhost:8082/fhir/R4/
+  #   Admin UI:   http://localhost:8082/
+  #   Default credentials: admin / adminADMIN!
+  #
+  #   NOTE: OpenELIS serves from root (/), not a context path. The nginx block
+  #   at /openelis/ strips the prefix and works for API/FHIR calls, but the
+  #   HTML UI will have broken links when accessed via /openelis/. Use port
+  #   8082 directly for UI access.
+  #
+  openelis:
+    image: itechuw/openelis-global-2:latest
+    depends_on:
+      openelis-db:
+        condition: service_healthy
+    environment:
+      DEFAULT_PW: "adminADMIN!"
+      OE_DB_PASSWORD: "clinlims"
+      CATALINA_OPTS: >-
+        -Ddatasource.url=jdbc:postgresql://openelis-db:5432/clinlims
+        -Ddatasource.username=clinlims
+        -Ddatasource.password=clinlims
+    volumes:
+      - ./infra/openelis/common.properties:/run/secrets/common.properties:ro
+      - ./infra/openelis/server.xml:/usr/local/tomcat/conf/server.xml:ro
+      - openelis-lucene:/opt/tomcat/lucene/index
+    ports:
+      - "8082:8080"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/fhir/R4/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+  # ── Phase 3: Odoo 17 Community ───────────────────────────────────────────────
+  #
+  # odoo-db: Dedicated PostgreSQL for Odoo.
+  #   The user must have CREATEDB rights so Odoo can create its own database.
+  #   POSTGRES_DB=postgres is intentional — Odoo creates its app database via
+  #   the web UI (or -d flag); we don't pre-create it.
+  #
+  odoo-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+    volumes:
+      - odoo-pg:/var/lib/postgresql/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # odoo: Odoo 17 Community Edition.
+  #   First boot shows the "Create Database" page — create a DB named "odoo"
+  #   with master password "admin" and install: Sale, Inventory, Accounting.
+  #   UI:       http://localhost:8069/
+  #   XML-RPC:  http://localhost:8069/xmlrpc/2/
+  #   REST:     http://localhost:8069/api/          (Odoo 17+)
+  #   Default master password: admin  (set in infra/odoo/odoo.conf)
+  #
+  odoo:
+    image: odoo:17.0
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: odoo
+      PASSWORD: odoo
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ./infra/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+    ports:
+      - "8069:8069"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8069/web/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ── Phase 4: Integration Hub ──────────────────────────────────────────────────
+  #
+  # integration-hub: Thin FastAPI service that wires OpenMRS, OpenELIS, and Odoo.
+  #   Runs a background poller (POLL_INTERVAL_S) that:
+  #     • Syncs patients OpenMRS → OpenELIS (FHIR Patient)
+  #     • Routes lab orders OpenMRS → OpenELIS (FHIR ServiceRequest)
+  #     • Routes completed results OpenELIS → OpenMRS (FHIR DiagnosticReport)
+  #     • Routes pharmacy orders OpenMRS → Odoo (XML-RPC sale.order)
+  #   Health: http://localhost/integration-hub/api/health
+  #   Status: http://localhost/integration-hub/api/atomfeed/status
+  #
+  integration-hub:
+    build: ./services/integration-hub
+    environment:
+      ROOT_PATH: /integration-hub
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: admin
+      OPENELIS_PASS: "adminADMIN!"
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: odoo
+      ODOO_USER: admin
+      ODOO_PASS: admin
+      POLL_INTERVAL_S: "60"
+      AUDIT_DB_PATH: /data/hub-audit.db
+    volumes:
+      - hub-audit:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8012/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # ─────────────────────────────────────────────────────────────────────────────
 
@@ -142,7 +298,7 @@ services:
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__PYTHON_SCRIPT: /etc/orthanc/plugin.py
       AI_CONTROLLER_URL: http://ai-controller:8000
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005
+      FHIR_BRIDGE_URL: http://integration-hub:8012
     volumes:
       - ./infra/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - ./infra/orthanc/plugin.py:/etc/orthanc/plugin.py:ro
@@ -152,7 +308,7 @@ services:
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8042/system')"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -184,8 +340,12 @@ services:
     environment:
       DB_PATH: /data/ris.db
       ORTHANC_URL: http://orthanc:8042
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005
+      FHIR_BRIDGE_URL: http://integration-hub:8012
       ROOT_PATH: /ris
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      POLL_INTERVAL_S: "60"
     volumes:
       - ris-data:/data
     networks: [openhis-net]
@@ -208,7 +368,7 @@ services:
       DOCKER_NETWORK: openhis_openhis-net
       POC_XRAY_IMAGE: openhis/poc-xray:latest
       POC_CT_IMAGE: openhis/poc-ct:latest
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005
+      FHIR_BRIDGE_URL: http://integration-hub:8012
     volumes:
       - ai-jobs:/data/jobs
       - /var/run/docker.sock:/var/run/docker.sock
@@ -244,121 +404,9 @@ services:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infra/ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
       - ./infra/portal/index.html:/usr/share/nginx/html/index.html:ro
-    depends_on: [orthanc, ohif, simulator, ris, ai-controller]
+    depends_on: [orthanc, ohif, simulator, ris, ai-controller, openmrs-frontend]
     networks: [openhis-net]
     restart: unless-stopped
-
-  ehr:
-    build: ./services/ehr
-    environment:
-      DB_PATH: /data/ehr.db
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005
-      RIS_URL: http://ris:8002/api
-      LIS_URL: http://lis:8004/api
-      ROOT_PATH: /ehr
-    volumes:
-      - ehr-data:/data
-    networks:
-      - openhis-net
-    restart: unless-stopped
-    depends_on:
-      - postgres
-    healthcheck:
-      test: [CMD, curl, -f, "http://localhost:8003/api/health"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-
-  lis:
-    build: ./services/lis
-    environment:
-      DB_PATH: /data/lis.db
-      EHR_URL: http://ehr:8003/api
-      FHIR_BRIDGE_URL: http://fhir-bridge:8005
-      ROOT_PATH: /lis
-    volumes:
-      - lis-data:/data
-    networks:
-      - openhis-net
-    restart: unless-stopped
-    healthcheck:
-      test: [CMD, curl, -f, "http://localhost:8004/api/health"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-
-  fhir-bridge:
-    build: ./services/fhir-bridge
-    environment:
-      EHR_URL: http://ehr:8003/api
-      RIS_URL: http://ris:8002/api
-      LIS_URL: http://lis:8004/api
-      ORTHANC_URL: http://orthanc:8042
-      AI_CONTROLLER_URL: http://ai-controller:8000/api
-      FHIR_SERVER_URL: http://fhir-server:8080/fhir    # set empty to disable
-      FHIR_ENABLED: "true"
-    networks:
-      - openhis-net
-    restart: unless-stopped
-    healthcheck:
-      test: [CMD, curl, -f, "http://localhost:8005/api/health"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-
-  pharmacy:
-    build: ./services/pharmacy
-    container_name: openhis-pharmacy
-    restart: unless-stopped
-    environment:
-      - DB_PATH=/data/pharmacy.db
-      - EHR_URL=http://ehr:8003/api
-      - FHIR_BRIDGE_URL=http://fhir-bridge:8005
-      - ROOT_PATH=/pharmacy
-    volumes:
-      - pharmacy_data:/data
-    depends_on:
-      - ehr
-    networks:
-      - openhis-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8006/api/health"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  fhir-server:
-    image: hapiproject/hapi:latest
-    volumes:
-      - ./infra/fhir/application.yaml:/data/hapi/application.yaml:ro
-    environment:
-      SPRING_CONFIG_LOCATION: file:///data/hapi/application.yaml
-    networks:
-      - openhis-net
-    restart: unless-stopped
-    depends_on:
-      - postgres
-    profiles:
-      - fhir    # opt-in: docker compose --profile fhir up -d
-
-  mpi:
-    build: ./services/mpi
-    container_name: openhis-mpi
-    restart: unless-stopped
-    environment:
-      - DB_PATH=/data/mpi.db
-      - ROOT_PATH=/mpi
-    volumes:
-      - mpi_data:/data
-    networks:
-      - openhis-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8007/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
   analytics:
     build: ./services/analytics
@@ -366,19 +414,20 @@ services:
     restart: unless-stopped
     environment:
       - DB_PATH=/data/analytics.db
-      - EHR_URL=http://ehr:8003/api
-      - LIS_URL=http://lis:8004/api
+      - OPENMRS_URL=http://openmrs:8080
+      - OPENMRS_USER=admin
+      - OPENMRS_PASS=Admin123
+      - OPENELIS_URL=http://openelis:8080
+      - OPENELIS_USER=admin
+      - OPENELIS_PASS=adminADMIN!
       - RIS_URL=http://ris:8002/api
       - AI_CONTROLLER_URL=http://ai-controller:8000/api
-      - MPI_URL=http://mpi:8007/api
       - ROOT_PATH=/analytics
       - COLLECT_INTERVAL_MIN=5
     volumes:
       - analytics-data:/data
     networks:
       - openhis-net
-    depends_on:
-      - ehr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8008/api/health"]
       interval: 30s
@@ -392,8 +441,9 @@ services:
     restart: unless-stopped
     environment:
       - DB_PATH=/data/hl7.db
-      - EHR_URL=http://ehr:8003/api
-      - MPI_URL=http://mpi:8007/api
+      - OPENMRS_URL=http://openmrs:8080
+      - OPENMRS_USER=admin
+      - OPENMRS_PASS=Admin123
       - ROOT_PATH=/hl7
       - MLLP_ENABLED=true
       - MLLP_HOST=0.0.0.0
@@ -404,8 +454,6 @@ services:
       - "2575:2575"
     networks:
       - openhis-net
-    depends_on:
-      - ehr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8009/api/health"]
       interval: 20s
@@ -419,7 +467,12 @@ services:
     restart: unless-stopped
     environment:
       - DB_PATH=/data/portal.db
-      - EHR_URL=http://ehr:8003/api
+      - OPENMRS_URL=http://openmrs:8080
+      - OPENMRS_USER=admin
+      - OPENMRS_PASS=Admin123
+      - OPENELIS_URL=http://openelis:8080
+      - OPENELIS_USER=admin
+      - OPENELIS_PASS=adminADMIN!
       - RIS_URL=http://ris:8002/api
       - ROOT_PATH=/patient-portal
       - SESSION_TTL_HOURS=24
@@ -427,42 +480,8 @@ services:
       - portal-sessions:/data
     networks:
       - openhis-net
-    depends_on:
-      - ehr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8010/api/health"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  admin:
-    build: ./services/admin
-    container_name: openhis-admin
-    restart: unless-stopped
-    environment:
-      - DB_PATH=/data/admin.db
-      - ROOT_PATH=/admin
-      - SESSION_TTL_HOURS=12
-      - ADMIN_USER=admin
-      - ADMIN_PASS=admin123
-      - EHR_HEALTH=http://ehr:8003/api/health
-      - RIS_HEALTH=http://ris:8002/api/health
-      - AI_HEALTH=http://ai-controller:8000/api/health
-      - FHIR_HEALTH=http://fhir-bridge:8005/api/health
-      - MPI_HEALTH=http://mpi:8007/api/health
-      - HL7_HEALTH=http://hl7:8009/api/health
-      - PP_HEALTH=http://patient-portal:8010/api/health
-      - AN_HEALTH=http://analytics:8008/api/health
-      - PACS_HEALTH=http://orthanc:8042/system
-    volumes:
-      - admin-data:/data
-    networks:
-      - openhis-net
-    depends_on:
-      - ehr
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8011/api/health"]
       interval: 20s
       timeout: 5s
       retries: 3

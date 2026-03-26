@@ -142,65 +142,13 @@ class TestRefresh:
         assert r.json()["status"] == "queued"
 
 
-# ── Collector unit tests (no HTTP needed) ─────────────────────────────────────
-class TestCollectorLogic:
-    def test_tat_hours_completed_only(self):
-        from collector import _tat_hours
-        items = [
-            {"status": "COMPLETED", "createdat": "2026-01-01T08:00:00",
-             "updatedat": "2026-01-01T10:00:00"},
-            {"status": "PENDING",   "createdat": "2026-01-01T08:00:00",
-             "updatedat": "2026-01-01T09:00:00"},
-        ]
-        result = _tat_hours(items)
-        assert result == 2.0
+# ── Collector smoke test ──────────────────────────────────────────────────────
+class TestCollectorModule:
+    def test_collector_importable(self):
+        """Verify the new FHIR-based collector module can be imported cleanly."""
+        import collector
+        assert hasattr(collector, "collect_all")
 
-    def test_tat_hours_empty_list(self):
-        from collector import _tat_hours
-        assert _tat_hours([]) is None
-
-    def test_tat_hours_ignores_zero_duration(self):
-        from collector import _tat_hours
-        items = [
-            {"status": "COMPLETED", "createdat": "2026-01-01T10:00:00",
-             "updatedat": "2026-01-01T10:00:00"},   # 0 hours — excluded
-        ]
-        assert _tat_hours(items) is None
-
-    def test_by_status_counts(self):
-        from collector import _by_status
-        items = [{"status": "A"}, {"status": "B"},
-                 {"status": "A"}, {"status": "A"}]
-        result = _by_status(items)
-        assert result == {"A": 3, "B": 1}
-
-    def test_by_status_empty(self):
-        from collector import _by_status
-        assert _by_status([]) == {}
-
-    def test_by_status_missing_field_uses_unknown(self):
-        from collector import _by_status
-        items = [{"status": "OK"}, {"nope": "X"}]
-        result = _by_status(items)
-        assert result.get("UNKNOWN") == 1
-
-    def test_tat_hours_multiple_orders_averaged(self):
-        from collector import _tat_hours
-        items = [
-            {"status": "COMPLETED", "createdat": "2026-01-01T08:00:00",
-             "updatedat": "2026-01-01T10:00:00"},   # 2h
-            {"status": "COMPLETED", "createdat": "2026-01-01T08:00:00",
-             "updatedat": "2026-01-01T12:00:00"},   # 4h
-        ]
-        result = _tat_hours(items)
-        assert result == 3.0
-
-    def test_tat_hours_caps_unreasonable_values(self):
-        from collector import _tat_hours
-        items = [
-            {"status": "COMPLETED", "createdat": "2020-01-01T00:00:00",
-             "updatedat": "2026-01-01T00:00:00"},   # >720h — excluded
-            {"status": "COMPLETED", "createdat": "2026-01-01T08:00:00",
-             "updatedat": "2026-01-01T09:00:00"},   # 1h — valid
-        ]
-        assert _tat_hours(items) == 1.0
+    def test_collect_all_is_coroutine(self):
+        import asyncio, collector
+        assert asyncio.iscoroutinefunction(collector.collect_all)

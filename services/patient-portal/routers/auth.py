@@ -1,13 +1,15 @@
 import os
+import httpx
 from fastapi import APIRouter, HTTPException, Header
-import proxy as _proxy
 from auth import create_session, delete_session, validate_session
 
-router  = APIRouter(prefix="/api/auth", tags=["auth"])
-EHR_URL = os.environ.get('EHR_URL', 'http://ehr:8003/api')
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Aliased so tests can patch at the module level
-proxy_get = _proxy.get
+OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
+OPENMRS_USER = os.environ.get("OPENMRS_USER", "admin")
+OPENMRS_PASS = os.environ.get("OPENMRS_PASS", "Admin123")
+_FHIR        = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_AUTH        = (OPENMRS_USER, OPENMRS_PASS)
 
 
 @router.post("/login")
@@ -17,27 +19,32 @@ async def login(body: dict):
     if not mrn or not dob:
         raise HTTPException(400, "mrn and birthdate required")
 
-    patients = await proxy_get(f"{EHR_URL}/patients?q={mrn}")
-    if not patients:
+    # Search OpenMRS FHIR for patient by MRN identifier
+    try:
+        async with httpx.AsyncClient(auth=_AUTH, timeout=10) as c:
+            r = await c.get(f"{_FHIR}/Patient",
+                            params={"identifier": mrn, "_count": "1"},
+                            headers={"Accept": "application/fhir+json"})
+        entries = r.json().get("entry", []) if r.status_code == 200 else []
+    except Exception:
+        raise HTTPException(503, "Health records temporarily unavailable")
+
+    if not entries:
         raise HTTPException(401, "Invalid credentials")
 
-    patient = next((p for p in patients if p.get("mrn") == mrn), None)
-    if not patient:
-        raise HTTPException(401, "Invalid credentials")
-
-    stored_dob = (patient.get("birthdate") or "").strip()
+    patient      = entries[0]["resource"]
+    stored_dob   = (patient.get("birthDate") or "").strip()  # FHIR format: YYYY-MM-DD
     if stored_dob != dob:
         raise HTTPException(401, "Invalid credentials")
 
-    patient_name = (
-        f"{patient.get('firstname','')} {patient.get('lastname','')}".strip()
-    )
-    token = create_session(patient["id"], mrn, patient_name)
-    return {
-        "token":        token,
-        "patient_id":   patient["id"],
-        "patient_name": patient_name,
-    }
+    patient_uuid = patient["id"]
+    name_parts   = patient.get("name", [{}])[0]
+    given        = " ".join(name_parts.get("given", []))
+    family       = name_parts.get("family", "")
+    patient_name = f"{given} {family}".strip() or mrn
+
+    token = create_session(patient_uuid, mrn, patient_name)
+    return {"token": token, "patient_id": patient_uuid, "patient_name": patient_name}
 
 
 @router.post("/logout")
