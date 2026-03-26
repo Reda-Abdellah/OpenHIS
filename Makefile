@@ -1,142 +1,208 @@
-.PHONY: up down build test logs clean restart ps \
+# OpenHIS — Makefile
+#
+# Profile-aware deployment wrapper. OPENHIS_PROFILES controls which clinical
+# modules are started. Set it in .env or pass it on the command line.
+#
+# Quick start:
+#   make up                                  # Full stack (all profiles)
+#   OPENHIS_PROFILES=imaging make up         # Imaging suite only
+#   OPENHIS_PROFILES=emr,laboratory make up  # EMR + Lab only
+#   make imaging-up                          # Convenience shorthand
+#
+# In Phase 2 the OPM CLI replaces manual compose invocation.
+# Until then, this Makefile is the primary deployment interface.
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: up down build up-build test test-service logs logs-service ps restart clean \
+        base-up imaging-up emr-up lab-up erp-up analytics-up \
         openmrs-up openmrs-logs openmrs-seed openmrs-verify openmrs-clean \
         openelis-up openelis-logs openelis-verify openelis-clean \
         odoo-up odoo-logs odoo-verify odoo-clean \
         hub-up hub-logs hub-verify hub-clean \
+        admin-up admin-logs mpi-up mpi-logs \
         phase5-migrate
 
-# Start all services in detached mode
+# ── Profile-aware compose command ─────────────────────────────────────────────
+# Read OPENHIS_PROFILES from .env (if not already in environment).
+# Shell-based parsing handles comma-separated list → multiple -f flags.
+
+_PROFILES ?= $(shell grep -s '^OPENHIS_PROFILES=' .env | cut -d'=' -f2-)
+ifeq ($(_PROFILES),)
+  _PROFILES = emr,laboratory,erp,imaging,analytics
+endif
+OPENHIS_PROFILES ?= $(_PROFILES)
+
+# Build -f flags for each profile
+_PROFILE_FLAGS = $(shell echo "$(OPENHIS_PROFILES)" | tr ',' '\n' | xargs -I{} echo "-f compose/profiles/{}.yml")
+
+# Full compose command: base + requested profiles
+DC = docker compose -f compose/base.yml $(_PROFILE_FLAGS)
+
+# ── Core targets ──────────────────────────────────────────────────────────────
+
+# Start services for active profiles in detached mode
 up:
-	docker compose up -d
+	$(DC) up -d
 
 # Stop all services
 down:
-	docker compose down
+	$(DC) down
 
 # Build (or rebuild) all service images
 build:
-	docker compose build
+	$(DC) build
 
 # Build and start (combined)
 up-build:
-	docker compose up -d --build
+	$(DC) up -d --build
 
 # Run the full test suite
 test:
 	python -m pytest tests/ -v
 
-# Run tests for a single service, e.g.: make test-service SVC=ehr
+# Run tests for a single service, e.g.: make test-service SVC=ris
 test-service:
 	python -m pytest tests/$(SVC)/ -v
 
 # Tail logs for all services (Ctrl-C to stop)
 logs:
-	docker compose logs -f
+	$(DC) logs -f
 
-# Tail logs for one service, e.g.: make logs-service SVC=ehr
+# Tail logs for one service, e.g.: make logs-service SVC=admin
 logs-service:
-	docker compose logs -f $(SVC)
+	$(DC) logs -f $(SVC)
 
 # Show running containers and their status
 ps:
-	docker compose ps
+	$(DC) ps
 
-# Restart a single service, e.g.: make restart SVC=ehr
+# Restart a single service, e.g.: make restart SVC=admin
 restart:
-	docker compose restart $(SVC)
+	$(DC) restart $(SVC)
 
 # Stop services and remove volumes (destructive — wipes all data)
 clean:
-	docker compose down -v
+	$(DC) down -v
 
-# Start with optional FHIR server profile
-up-fhir:
-	docker compose --profile fhir up -d
+# ── Profile convenience targets ───────────────────────────────────────────────
+# Start base + one specific profile without affecting others.
 
-# ── Phase 1: OpenMRS ────────────────────────────────────────────────────────
+base-up:
+	docker compose -f compose/base.yml up -d
 
-# Start only OpenMRS (db + backend + frontend), leave other services alone
+imaging-up:
+	docker compose -f compose/base.yml -f compose/profiles/imaging.yml up -d
+
+emr-up:
+	docker compose -f compose/base.yml -f compose/profiles/emr.yml up -d
+
+lab-up:
+	docker compose -f compose/base.yml -f compose/profiles/laboratory.yml up -d
+
+erp-up:
+	docker compose -f compose/base.yml -f compose/profiles/erp.yml up -d
+
+analytics-up:
+	docker compose -f compose/base.yml -f compose/profiles/analytics.yml up -d
+
+# ── Base service targets ──────────────────────────────────────────────────────
+
+admin-up:
+	docker compose -f compose/base.yml up -d admin
+
+admin-logs:
+	docker compose -f compose/base.yml logs -f admin
+
+mpi-up:
+	docker compose -f compose/base.yml up -d mpi
+
+mpi-logs:
+	docker compose -f compose/base.yml logs -f mpi
+
+# ── OpenMRS targets (emr profile) ─────────────────────────────────────────────
+
+# Start only OpenMRS (db + backend + frontend)
 openmrs-up:
-	docker compose up -d openmrs-db openmrs openmrs-frontend
+	docker compose -f compose/base.yml -f compose/profiles/emr.yml up -d openmrs-db openmrs openmrs-frontend
 
-# Follow OpenMRS logs (backend is the one with the interesting startup output)
+# Follow OpenMRS logs (backend has the interesting startup output)
 openmrs-logs:
-	docker compose logs -f openmrs
+	docker compose -f compose/base.yml -f compose/profiles/emr.yml logs -f openmrs
 
 # Seed OpenMRS with demo data (run after openmrs health check turns green)
 openmrs-seed:
 	python scripts/seed_openmrs.py
 
-# Verify Phase 1 acceptance criteria
+# Verify EMR acceptance criteria
 openmrs-verify:
 	python scripts/verify_openmrs.py
 
 # Wipe OpenMRS data volumes (safe — does not touch other services)
 openmrs-clean:
-	docker compose stop openmrs openmrs-frontend openmrs-db
-	docker compose rm -f openmrs openmrs-frontend openmrs-db
+	docker compose -f compose/base.yml -f compose/profiles/emr.yml stop openmrs openmrs-frontend openmrs-db
+	docker compose -f compose/base.yml -f compose/profiles/emr.yml rm -f openmrs openmrs-frontend openmrs-db
 	docker volume rm -f openhis_openmrs-mysql openhis_openmrs-data
 
-# ── Phase 2: OpenELIS ────────────────────────────────────────────────────────
+# ── OpenELIS targets (laboratory profile) ─────────────────────────────────────
 
-# Start only OpenELIS (db + app), leave other services alone
+# Start only OpenELIS (db + app)
 openelis-up:
-	docker compose up -d openelis-db openelis
+	docker compose -f compose/base.yml -f compose/profiles/laboratory.yml up -d openelis-db openelis
 
 # Follow OpenELIS logs (Liquibase migrations are the interesting part on first boot)
 openelis-logs:
-	docker compose logs -f openelis
+	docker compose -f compose/base.yml -f compose/profiles/laboratory.yml logs -f openelis
 
-# Verify Phase 2 acceptance criteria
+# Verify Laboratory acceptance criteria
 openelis-verify:
 	python scripts/verify_openelis.py
 
 # Wipe OpenELIS data volumes (safe — does not touch other services)
 openelis-clean:
-	docker compose stop openelis openelis-db
-	docker compose rm -f openelis openelis-db
+	docker compose -f compose/base.yml -f compose/profiles/laboratory.yml stop openelis openelis-db
+	docker compose -f compose/base.yml -f compose/profiles/laboratory.yml rm -f openelis openelis-db
 	docker volume rm -f openhis_openelis-pg openhis_openelis-lucene
 
-# ── Phase 3: Odoo ────────────────────────────────────────────────────────────
+# ── Odoo targets (erp profile) ────────────────────────────────────────────────
 
 # Start only Odoo (db + app). First boot shows the Create Database page.
 odoo-up:
-	docker compose up -d odoo-db odoo
+	docker compose -f compose/base.yml -f compose/profiles/erp.yml up -d odoo-db odoo
 
 # Follow Odoo logs
 odoo-logs:
-	docker compose logs -f odoo
+	docker compose -f compose/base.yml -f compose/profiles/erp.yml logs -f odoo
 
-# Verify Phase 3 acceptance criteria
+# Verify ERP acceptance criteria
 odoo-verify:
 	python scripts/verify_odoo.py
 
 # Wipe Odoo data volumes (safe — does not touch other services)
 odoo-clean:
-	docker compose stop odoo odoo-db
-	docker compose rm -f odoo odoo-db
+	docker compose -f compose/base.yml -f compose/profiles/erp.yml stop odoo odoo-db
+	docker compose -f compose/base.yml -f compose/profiles/erp.yml rm -f odoo odoo-db
 	docker volume rm -f openhis_odoo-pg openhis_odoo-data
 
-# ── Phase 4: Integration Hub ─────────────────────────────────────────────────
+# ── Integration Hub targets ───────────────────────────────────────────────────
 
-# Build and start integration-hub (requires OpenMRS, OpenELIS, Odoo to be up)
+# Build and start integration-hub (base service — always available)
 hub-up:
-	docker compose up -d --build integration-hub
+	docker compose -f compose/base.yml up -d --build integration-hub
 
 # Follow integration-hub logs
 hub-logs:
-	docker compose logs -f integration-hub
+	docker compose -f compose/base.yml logs -f integration-hub
 
-# Verify Phase 4 acceptance criteria
+# Verify integration-hub acceptance criteria
 hub-verify:
 	python scripts/verify_hub.py
 
 # Rebuild integration-hub image (after code changes)
 hub-clean:
-	docker compose stop integration-hub
-	docker compose rm -f integration-hub
+	docker compose -f compose/base.yml stop integration-hub
+	docker compose -f compose/base.yml rm -f integration-hub
 
-# ── Phase 5: Full Cutover ────────────────────────────────────────────────────
+# ── Data migration ────────────────────────────────────────────────────────────
 
 # Migrate data from legacy SQLite DBs to OpenMRS + OpenELIS.
 # Run this BEFORE bringing down old services.

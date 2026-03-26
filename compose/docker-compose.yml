@@ -1,0 +1,20 @@
+# ── OpenHIS Full-Stack Compose File ──────────────────────────────────────────
+# This file starts ALL profiles simultaneously — the equivalent of the legacy
+# monolithic docker-compose.yml. Use it when you want everything running.
+#
+# For selective deployment, use the Makefile profile targets instead:
+#   make up OPENHIS_PROFILES=emr,laboratory
+#   make imaging-up
+#   make emr-up
+#
+# Or in Phase 2, use the OPM CLI:
+#   opm enable emr laboratory
+# ─────────────────────────────────────────────────────────────────────────────
+
+include:
+  - path: base.yml
+  - path: profiles/emr.yml
+  - path: profiles/laboratory.yml
+  - path: profiles/erp.yml
+  - path: profiles/imaging.yml
+  - path: profiles/analytics.yml

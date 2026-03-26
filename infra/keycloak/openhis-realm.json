@@ -1,0 +1,86 @@
+{
+  "realm": "openhis",
+  "enabled": true,
+  "displayName": "OpenHIS Platform",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+
+  "roles": {
+    "realm": [
+      { "name": "admin",       "description": "Platform administrator" },
+      { "name": "clinician",   "description": "Clinical staff (physician, nurse)" },
+      { "name": "radiologist", "description": "Radiology staff" },
+      { "name": "lab-tech",    "description": "Laboratory technician" },
+      { "name": "pharmacist",  "description": "Pharmacy staff" },
+      { "name": "patient",     "description": "Patient self-service access" }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "openhis-platform",
+      "name": "OpenHIS Platform Services",
+      "description": "Shared OIDC client for all native OpenHIS services",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "secret": "openhis-platform-secret",
+      "redirectUris": ["http://localhost/*", "http://localhost/admin/*"],
+      "webOrigins": ["http://localhost"],
+      "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@openhis.local",
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "admin", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ],
+
+  "defaultRole": {
+    "name": "default-roles-openhis",
+    "description": "Default roles assigned to new users",
+    "composite": true,
+    "compositeRoles": {
+      "realm": []
+    }
+  },
+
+  "accessTokenLifespan": 300,
+  "refreshTokenMaxReuse": 0,
+  "ssoSessionMaxLifespan": 36000
+}

@@ -1,0 +1,52 @@
+# ── Legacy Profile ────────────────────────────────────────────────────────────
+# Frozen legacy services retained for development reference and data migration.
+# These services have been superseded:
+#   ehr      → OpenMRS O3     (emr profile)
+#   lis      → OpenELIS       (laboratory profile)
+#   pharmacy → Odoo           (erp profile)
+#
+# Enable: OPENHIS_PROFILES=legacy make up
+# WARNING: Do NOT run legacy alongside their replacement profiles.
+#          Run legacy only for migration or debugging — never in production.
+#
+# Services are in services-legacy/ and are NOT built or tested actively.
+# ─────────────────────────────────────────────────────────────────────────────
+x-openhis:
+  profile: legacy
+  display_name: "Legacy Services (frozen — migration reference only)"
+  requires: [base]
+  integrates_with: []
+  nginx_routes: []
+
+networks:
+  openhis-net:
+    driver: bridge
+
+services:
+
+  # Legacy EHR — replaced by OpenMRS O3 (emr profile)
+  ehr:
+    build: ../services-legacy/ehr
+    environment:
+      ROOT_PATH: /ehr
+    networks: [openhis-net]
+    restart: "no"
+    profiles: [legacy]
+
+  # Legacy LIS — replaced by OpenELIS (laboratory profile)
+  lis:
+    build: ../services-legacy/lis
+    environment:
+      ROOT_PATH: /lis
+    networks: [openhis-net]
+    restart: "no"
+    profiles: [legacy]
+
+  # Legacy Pharmacy — replaced by Odoo (erp profile)
+  pharmacy:
+    build: ../services-legacy/pharmacy
+    environment:
+      ROOT_PATH: /pharmacy
+    networks: [openhis-net]
+    restart: "no"
+    profiles: [legacy]

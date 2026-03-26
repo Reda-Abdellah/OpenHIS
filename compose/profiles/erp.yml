@@ -1,0 +1,74 @@
+# ── ERP Profile ───────────────────────────────────────────────────────────────
+# Odoo 17 Community — Pharmacy / Business Management (ERP)
+# Includes: PostgreSQL database, Odoo application server.
+#
+# Enable: OPENHIS_PROFILES=erp make up
+# Routes: /odoo/ → Odoo UI, /web → Odoo SPA (root-relative), /longpolling/ → WS
+# Direct: port 8069 (XML-RPC, REST API)
+# Default master password: admin (set in infra/odoo/odoo.conf)
+#
+# First boot shows the "Create Database" page. Create a DB named "odoo" with
+# master password "admin" and install: Sale, Inventory, Accounting.
+# ─────────────────────────────────────────────────────────────────────────────
+x-openhis:
+  profile: erp
+  display_name: "ERP / Pharmacy (Odoo 17)"
+  requires: [base]
+  integrates_with: [emr]
+  nginx_routes:
+    - { path: /odoo/,         upstream: "odoo:8069" }
+    - { path: /web,           upstream: "odoo:8069" }
+    - { path: /longpolling/,  upstream: "odoo:8069" }
+
+networks:
+  openhis-net:
+    driver: bridge
+
+volumes:
+  odoo-pg:
+  odoo-data:
+
+services:
+
+  odoo-db:
+    image: postgres:15
+    environment:
+      # POSTGRES_DB=postgres is intentional — Odoo creates its app database
+      # via the web UI (or -d flag). The user must have CREATEDB rights.
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+    volumes:
+      - odoo-pg:/var/lib/postgresql/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  odoo:
+    image: odoo:17.0
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: odoo
+      PASSWORD: odoo
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ../infra/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+    ports:
+      - "8069:8069"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8069/web/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s

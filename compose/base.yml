@@ -1,0 +1,194 @@
+name: openhis
+
+# ── Base compose file ─────────────────────────────────────────────────────────
+# Always-on services: infrastructure + management plane + core integration.
+# All profile files (-f compose/profiles/*.yml) extend this file.
+#
+# Relative paths use ../ to resolve from OpenHIS project root.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  openhis-net:
+    driver: bridge
+
+volumes:
+  pg-data:
+  admin-data:
+  mpi-data:
+  hl7-data:
+  hub-audit:
+
+services:
+
+  # ── Shared PostgreSQL ───────────────────────────────────────────────────────
+  # Hosts the Orthanc database today. Future phases add admin + mpi schemas here.
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: orthanc
+      POSTGRES_USER: ${POSTGRES_USER:-orthanc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orthanc}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orthanc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Admin management plane ─────────────────────────────────────────────────
+  # FastAPI service: users, config, service health, audit log, announcements.
+  # UI:      http://localhost/admin/
+  # Health:  http://localhost/admin/api/health
+  # Default credentials: admin / admin123 (override with ADMIN_USER / ADMIN_PASS)
+  admin:
+    build: ../services/admin
+    environment:
+      ROOT_PATH: /admin
+      DB_PATH: /data/admin.db
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-admin123}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_ADMIN:-12}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: openhis
+      KEYCLOAK_CLIENT_ID: openhis-platform
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-openhis-platform-secret}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - admin-data:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Master Patient Index ───────────────────────────────────────────────────
+  # Cross-reference registry that links patient identities across all apps.
+  # UI:      http://localhost/mpi/
+  # Health:  http://localhost/mpi/api/health
+  mpi:
+    build: ../services/mpi
+    environment:
+      ROOT_PATH: /mpi
+      DB_PATH: /data/mpi.db
+    volumes:
+      - mpi-data:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Integration Hub ────────────────────────────────────────────────────────
+  # Polls and syncs: OpenMRS ↔ OpenELIS (patients, lab orders, results),
+  # OpenMRS → Odoo (pharmacy orders). Background worker with retry queue.
+  # Health:  http://localhost/integration-hub/api/health
+  integration-hub:
+    build: ../services/integration-hub
+    environment:
+      ROOT_PATH: /integration-hub
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: admin
+      OPENELIS_PASS: "adminADMIN!"
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: odoo
+      ODOO_USER: admin
+      ODOO_PASS: admin
+      POLL_INTERVAL_S: "60"
+      AUDIT_DB_PATH: /data/hub-audit.db
+    volumes:
+      - hub-audit:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8012/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── HL7 Gateway ────────────────────────────────────────────────────────────
+  # Accepts and emits HL7 v2 messages (ADT, ORU, ORM) via MLLP on port 2575.
+  # Health:  http://localhost/hl7/api/health
+  hl7:
+    build: ../services/hl7
+    environment:
+      DB_PATH: /data/hl7.db
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      ROOT_PATH: /hl7
+      MLLP_ENABLED: "true"
+      MLLP_HOST: "0.0.0.0"
+      MLLP_PORT: "2575"
+    volumes:
+      - hl7-data:/data
+    ports:
+      - "2575:2575"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Keycloak Identity Provider ────────────────────────────────────────────
+  # Single sign-on for all native services (JWT Bearer tokens).
+  # Admin console: http://localhost/keycloak/
+  # OIDC discovery: http://keycloak:8080/realms/openhis/.well-known/openid-configuration
+  # Default admin credentials: admin / admin  (change in production!)
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_RELATIVE_PATH: /keycloak
+      KC_PROXY: edge
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    volumes:
+      - ../infra/keycloak/openhis-realm.json:/opt/keycloak/data/import/openhis-realm.json:ro
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL",
+             "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /keycloak/health/ready HTTP/1.0\r\n\r\n' >&3 && grep -q '200' <&3"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  # Single entry point on port 80. Routes to all active profile services.
+  # Services not in the active profile return 502 — this is expected.
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ../infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../infra/ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
+      - ../infra/portal/index.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      admin:
+        condition: service_healthy
+      mpi:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    networks: [openhis-net]
+    restart: unless-stopped

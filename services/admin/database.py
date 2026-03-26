@@ -47,6 +47,22 @@ CREATE TABLE IF NOT EXISTS announcements (
 CREATE INDEX IF NOT EXISTS idx_audit_user   ON audit_log(admin_user, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
 CREATE INDEX IF NOT EXISTS idx_sess_exp     ON admin_sessions(expires_at);
+
+-- Service Registry: tracks active services and their health state.
+-- Populated by OPM CLI on enable/disable; self-seeded for base services at startup.
+CREATE TABLE IF NOT EXISTS service_registry (
+    name          TEXT PRIMARY KEY,
+    profile       TEXT    NOT NULL DEFAULT 'base',
+    internal_url  TEXT    NOT NULL,
+    health_url    TEXT    NOT NULL,
+    nginx_path    TEXT,
+    status        TEXT    DEFAULT 'unknown',
+    registered_at TEXT    DEFAULT (datetime('now')),
+    last_seen     TEXT,
+    metadata      TEXT    DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_reg_profile ON service_registry(profile);
+CREATE INDEX IF NOT EXISTS idx_reg_status  ON service_registry(status);
 """
 
 CONFIG_DEFAULTS = [

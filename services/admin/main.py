@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from security import hash_password, audit
-from routers  import auth, users, services, config, audit as audit_router, announcements
+from routers  import auth, users, services, config, audit as audit_router, announcements, registry
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('admin')
@@ -18,6 +18,7 @@ app.include_router(services.router)
 app.include_router(config.router)
 app.include_router(audit_router.router)
 app.include_router(announcements.router)
+app.include_router(registry.router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
@@ -33,6 +34,8 @@ async def index():
 async def startup():
     init_db()
     _seed_default_admin()
+    from routers.registry import seed_base_services
+    seed_base_services()
     asyncio.create_task(_purge_loop())
     log.info("Admin Dashboard v1.0 ready")
 

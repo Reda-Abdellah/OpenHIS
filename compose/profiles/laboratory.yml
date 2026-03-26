@@ -1,0 +1,85 @@
+# ── Laboratory Profile ────────────────────────────────────────────────────────
+# OpenELIS Global 2 — Laboratory Information System
+# Includes: PostgreSQL database (pre-seeded), OpenELIS Tomcat webapp.
+#
+# Enable: OPENHIS_PROFILES=laboratory make up
+# Routes: /OpenELIS-Global/ → UI+REST, /openelis-fhir/ → FHIR R4
+# Default credentials: admin / adminADMIN!
+#
+# NOTE: OpenELIS UI has broken links when accessed via /OpenELIS-Global/ nginx
+# path. Use port 8082 directly for full UI. API and FHIR calls work via nginx.
+#
+# First boot loads OpenELIS-Global.sql then runs Liquibase — expect 3–5 min.
+# ─────────────────────────────────────────────────────────────────────────────
+x-openhis:
+  profile: laboratory
+  display_name: "Laboratory Information System (OpenELIS Global 2)"
+  requires: [base]
+  integrates_with: [emr]
+  nginx_routes:
+    - { path: /OpenELIS-Global/, upstream: "openelis:8080" }
+    - { path: /openelis-fhir/,   upstream: "openelis:8080" }
+
+networks:
+  openhis-net:
+    driver: bridge
+
+volumes:
+  openelis-pg:
+  openelis-lucene:
+
+services:
+
+  openelis-db:
+    image: itechuw/openelis-global-2-database:latest
+    environment:
+      # POSTGRES_USER must be a superuser — the image's init.sh creates the
+      # clinlims and admin users internally from DB_PASSWORD /
+      # DB_SUPERUSER_PASSWORD and loads OpenELIS-Global.sql (base schema).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: clinlims
+      DB_PASSWORD: clinlims
+      DB_SUPERUSER_PASSWORD: clinlims_super
+    volumes:
+      - openelis-pg:/var/lib/postgresql/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clinlims"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  openelis:
+    image: itechuw/openelis-global-2:latest
+    depends_on:
+      openelis-db:
+        condition: service_healthy
+    environment:
+      DEFAULT_PW: "adminADMIN!"
+      OE_DB_PASSWORD: "clinlims"
+      CATALINA_OPTS: >-
+        -Ddatasource.url=jdbc:postgresql://openelis-db:5432/clinlims
+        -Ddatasource.username=clinlims
+        -Ddatasource.password=clinlims
+    volumes:
+      - ../infra/openelis/common.properties:/run/secrets/common.properties:ro
+      - ../infra/openelis/extra.properties:/run/secrets/extra.properties:ro
+      - ../infra/openelis/server.xml:/usr/local/tomcat/conf/server.xml:ro
+      - ../infra/openelis/ssl/lf.keystore:/ssl/lf.keystore:ro
+      - ../infra/openelis/ssl/lf.truststore:/ssl/lf.truststore:ro
+      - ../infra/openelis/odoo-test-product-mapping.csv:/var/lib/openelis-global/odoo/odoo-test-product-mapping.csv:ro
+      - openelis-lucene:/opt/tomcat/lucene/index
+    ports:
+      - "8082:8080"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-H", "X-Forwarded-Proto: https",
+             "http://localhost:8080/OpenELIS-Global/LoginPage"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s

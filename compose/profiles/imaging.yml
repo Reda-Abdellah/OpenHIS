@@ -1,0 +1,151 @@
+# ── Imaging Profile ───────────────────────────────────────────────────────────
+# Imaging Suite: DICOM server, OHIF viewer, RIS, AI Controller, simulator.
+# Includes: Orthanc (DICOM), OHIF (viewer), RIS (worklist), AI Controller,
+#           DICOM simulator, and AI pipeline image builders.
+#
+# Enable: OPENHIS_PROFILES=imaging make up
+# Routes: /orthanc/ /ohif/ /ris/ /ai-controller/ /simulator/
+# Direct: port 4242 (DICOM C-STORE/C-FIND/C-MOVE)
+# ─────────────────────────────────────────────────────────────────────────────
+x-openhis:
+  profile: imaging
+  display_name: "Imaging Suite (Orthanc + OHIF + RIS + AI)"
+  requires: [base]
+  integrates_with: [emr]
+  nginx_routes:
+    - { path: /orthanc/,       upstream: "orthanc:8042" }
+    - { path: /ohif/,          upstream: "ohif:80" }
+    - { path: /ris/,           upstream: "ris:8002" }
+    - { path: /ai-controller/, upstream: "ai-controller:8000" }
+    - { path: /simulator/,     upstream: "simulator:8001" }
+
+networks:
+  openhis-net:
+    driver: bridge
+
+volumes:
+  orthanc-data:
+  ris-data:
+  ai-jobs:
+  ai-controller-db:
+
+services:
+
+  # Orthanc DICOM server backed by shared PostgreSQL.
+  orthanc:
+    image: orthancteam/orthanc
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ORTHANC__POSTGRESQL__HOST: postgres
+      ORTHANC__POSTGRESQL__DATABASE: orthanc
+      ORTHANC__POSTGRESQL__USERNAME: ${POSTGRES_USER:-orthanc}
+      ORTHANC__POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-orthanc}
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__PYTHON_SCRIPT: /etc/orthanc/plugin.py
+      AI_CONTROLLER_URL: http://ai-controller:8000
+      FHIR_BRIDGE_URL: http://integration-hub:8012
+    volumes:
+      - ../infra/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ../infra/orthanc/plugin.py:/etc/orthanc/plugin.py:ro
+      - orthanc-data:/var/lib/orthanc/db
+    ports:
+      - "4242:4242"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8042/system')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # OHIF Medical Imaging Viewer (DICOMweb client).
+  ohif:
+    image: ohif/app:latest
+    volumes:
+      - ../infra/ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+    networks: [openhis-net]
+    restart: unless-stopped
+
+  # Radiology Information System — worklist and report management.
+  ris:
+    build: ../services/ris
+    environment:
+      DB_PATH: /data/ris.db
+      ORTHANC_URL: http://orthanc:8042
+      FHIR_BRIDGE_URL: http://integration-hub:8012
+      ROOT_PATH: /ris
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      POLL_INTERVAL_S: "60"
+    volumes:
+      - ris-data:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # AI Controller — orchestrates inference jobs on DICOM studies.
+  # Spawns pipeline containers (poc-xray, poc-ct) via Docker socket.
+  ai-controller:
+    build: ../services/ai-controller
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      RIS_URL: http://ris:8002/api
+      DB_PATH: /data/ai-controller.db
+      JOBS_DATA_DIR: /data/jobs
+      JOBS_VOLUME_NAME: openhis_ai-jobs
+      DOCKER_NETWORK: openhis_openhis-net
+      POC_XRAY_IMAGE: openhis/poc-xray:latest
+      POC_CT_IMAGE: openhis/poc-ct:latest
+      FHIR_BRIDGE_URL: http://integration-hub:8012
+    volumes:
+      - ai-jobs:/data/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ai-controller-db:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # DICOM acquisition simulator — generates synthetic studies for testing.
+  simulator:
+    build: ../services/simulator
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      ROOT_PATH: /simulator
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # AI pipeline image builders — not running services; built once as images.
+  # ai-controller spawns these as ephemeral containers per job.
+  poc-xray-pipeline:
+    build: ../pipelines/poc-xray
+    image: openhis/poc-xray:latest
+    restart: "no"
+    command: ["true"]
+    networks: [openhis-net]
+
+  poc-ct-pipeline:
+    build: ../pipelines/poc-ct
+    image: openhis/poc-ct:latest
+    restart: "no"
+    command: ["true"]
+    networks: [openhis-net]

@@ -1,0 +1,76 @@
+# ── Analytics Profile ─────────────────────────────────────────────────────────
+# Analytics dashboard and patient self-service portal.
+# Includes: analytics metrics collector/API, patient-portal.
+#
+# Enable: OPENHIS_PROFILES=analytics make up
+# Routes: /analytics/ /patient-portal/
+# ─────────────────────────────────────────────────────────────────────────────
+x-openhis:
+  profile: analytics
+  display_name: "Analytics & Patient Portal"
+  requires: [base]
+  integrates_with: [emr, laboratory, imaging]
+  nginx_routes:
+    - { path: /analytics/,      upstream: "analytics:8008" }
+    - { path: /patient-portal/, upstream: "patient-portal:8010" }
+
+networks:
+  openhis-net:
+    driver: bridge
+
+volumes:
+  analytics-data:
+  portal-sessions:
+
+services:
+
+  # Analytics — collects metrics from all active services, stores snapshots.
+  analytics:
+    build: ../services/analytics
+    environment:
+      DB_PATH: /data/analytics.db
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: admin
+      OPENELIS_PASS: "adminADMIN!"
+      RIS_URL: http://ris:8002/api
+      AI_CONTROLLER_URL: http://ai-controller:8000/api
+      ROOT_PATH: /analytics
+      COLLECT_INTERVAL_MIN: ${COLLECT_INTERVAL_MIN:-5}
+    volumes:
+      - analytics-data:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Patient Portal — patient-facing self-service for records and results.
+  patient-portal:
+    build: ../services/patient-portal
+    environment:
+      DB_PATH: /data/portal.db
+      OPENMRS_URL: http://openmrs:8080
+      OPENMRS_USER: admin
+      OPENMRS_PASS: Admin123
+      OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: admin
+      OPENELIS_PASS: "adminADMIN!"
+      RIS_URL: http://ris:8002/api
+      ROOT_PATH: /patient-portal
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_PORTAL:-24}
+    volumes:
+      - portal-sessions:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
