@@ -114,23 +114,28 @@ services:
 
   # ── Phase 2: OpenELIS Global 2 ───────────────────────────────────────────────
   #
-  # openelis-db: Dedicated PostgreSQL instance for OpenELIS.
-  #   OpenELIS requires a database named 'clinlims' owned by user 'clinlims'.
-  #   Liquibase migrations run on first boot — expect 3-5 min before the app
-  #   becomes healthy.
+  # openelis-db: Pre-seeded PostgreSQL for OpenELIS.
+  #   Uses itechuw/openelis-global-2-database which loads OpenELIS-Global.sql
+  #   (full 1.x base schema) on first boot. The app then runs Liquibase upgrade
+  #   migrations on top. Expect 3-5 min before the app becomes healthy.
   #
   openelis-db:
-    image: postgres:14
+    image: itechuw/openelis-global-2-database:latest
     environment:
+      # POSTGRES_USER must be a superuser (not clinlims) — the image's init.sh
+      # creates the clinlims and admin users internally from DB_PASSWORD /
+      # DB_SUPERUSER_PASSWORD and loads OpenELIS-Global.sql (base schema).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: clinlims
-      POSTGRES_USER: clinlims
-      POSTGRES_PASSWORD: clinlims
+      DB_PASSWORD: clinlims
+      DB_SUPERUSER_PASSWORD: clinlims_super
     volumes:
       - openelis-pg:/var/lib/postgresql/data
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U clinlims -d clinlims"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clinlims"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -160,14 +165,22 @@ services:
         -Ddatasource.password=clinlims
     volumes:
       - ./infra/openelis/common.properties:/run/secrets/common.properties:ro
+      - ./infra/openelis/extra.properties:/run/secrets/extra.properties:ro
       - ./infra/openelis/server.xml:/usr/local/tomcat/conf/server.xml:ro
+      - ./infra/openelis/ssl/lf.keystore:/ssl/lf.keystore:ro
+      - ./infra/openelis/ssl/lf.truststore:/ssl/lf.truststore:ro
+      - ./infra/openelis/odoo-test-product-mapping.csv:/var/lib/openelis-global/odoo/odoo-test-product-mapping.csv:ro
       - openelis-lucene:/opt/tomcat/lucene/index
     ports:
       - "8082:8080"
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/fhir/R4/metadata"]
+      # LoginPage returns 200 when the WAR is fully deployed.
+      # X-Forwarded-Proto: https is needed to satisfy the web.xml CONFIDENTIAL
+      # constraint without going through nginx.
+      test: ["CMD", "curl", "-sf", "-H", "X-Forwarded-Proto: https",
+             "http://localhost:8080/OpenELIS-Global/LoginPage"]
       interval: 30s
       timeout: 10s
       retries: 20

@@ -26,19 +26,22 @@
                          resourceName="UserDatabase" />
                </Realm>
 
+               <!-- autoDeploy=true deploys OpenELIS-Global.war at /OpenELIS-Global,
+                    which matches the nginx proxy_pass location.
+                    Datasource is configured via CATALINA_OPTS system properties
+                    and /run/secrets/common.properties — no JNDI resource needed. -->
                <Host name="localhost" appBase="webapps"
                     unpackWARs="true" autoDeploy="true">
 
-                    <Context docBase="ROOT" path="/api" />
-                    <Context docBase="OpenELIS-Global"
-                         path="/api/OpenELIS-Global/" logEffectiveWebXml="true">
-                         <Resources cacheMaxSize="102400" />
-                         <Resource auth="Container"
-                              driverClassName="org.postgresql.Driver" maxTotal="20" maxIdle="10"
-                              maxWaitMillis="-1" name="jdbc/LimsDS" type="javax.sql.DataSource"
-                              url="${datasource.url}" username="${datasource.username}"
-                              password="${datasource.password}" />
-                    </Context>
+                    <!-- RemoteIpValve: honour X-Forwarded-Proto from nginx so that
+                         Tomcat considers the request "secure" and does NOT fire the
+                         web.xml CONFIDENTIAL redirect to port 8443.
+                         internalProxies covers RFC-1918 (Docker bridge networks). -->
+                    <Valve className="org.apache.catalina.valves.RemoteIpValve"
+                         remoteIpHeader="X-Forwarded-For"
+                         protocolHeader="X-Forwarded-Proto"
+                         protocolHeaderHttpsValue="https"
+                         internalProxies="10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+" />
 
                     <Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"
                          prefix="localhost_access_log" suffix=".txt"
