@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from app.config import POLL_INTERVAL_S
-from app.services import openmrs, openelis
+from app.services import openmrs, openelis, odoo
 from app.db import audit
 from app import bus
 import app.state as state
@@ -69,9 +69,11 @@ async def _sync_patients() -> int:
                 await audit.log_event(
                     "patient_synced", "Patient", pid, "omrs→oe", "ok",
                 )
+                odoo_id = await odoo.upsert_patient(p)
                 await bus.publish("patient.synced", {
                     "omrs_id": pid,
                     "oe_id": oe_id,
+                    "odoo_id": odoo_id,
                     "mrn": p.get("identifier", [{}])[0].get("value"),
                 })
         except Exception as exc:

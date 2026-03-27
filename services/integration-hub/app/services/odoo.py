@@ -47,6 +47,51 @@ async def async_health_check() -> bool:
     return await asyncio.to_thread(health_check)
 
 
+def _upsert_patient_sync(patient: dict) -> Optional[str]:
+    """Find or create a res.partner in Odoo for this FHIR Patient.
+    Uses MRN (first identifier value) as the external reference (ref field).
+    Returns the Odoo partner id as a string, or None on failure.
+    """
+    uid = _authenticate()
+    if not uid:
+        return None
+
+    mrn = (patient.get("identifier") or [{}])[0].get("value") or ""
+    name_part = (patient.get("name") or [{}])[0]
+    given = (name_part.get("given") or [""])[0]
+    family = name_part.get("family") or ""
+    full_name = f"{given} {family}".strip() or mrn or "Unknown"
+
+    models = _models()
+
+    # Search by external reference (MRN) first
+    if mrn:
+        existing = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASS,
+            "res.partner", "search", [[["ref", "=", mrn]]],
+        )
+        if existing:
+            log.debug("Odoo partner %s already exists for MRN %s", existing[0], mrn)
+            return str(existing[0])
+
+    partner_id = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASS,
+        "res.partner", "create",
+        [{"name": full_name, "ref": mrn, "patient_rank": 1, "is_company": False}],
+    )
+    log.info("Odoo res.partner/%s created for MRN %s (%s)", partner_id, mrn, full_name)
+    return str(partner_id)
+
+
+async def upsert_patient(patient: dict) -> Optional[str]:
+    """Async wrapper — find or create a res.partner in Odoo for this FHIR Patient."""
+    try:
+        return await asyncio.to_thread(_upsert_patient_sync, patient)
+    except Exception as e:
+        log.warning("upsert_patient: %s", e)
+        return None
+
+
 def _create_pharmacy_order_sync(patient_name: str, drug_name: str,
                                 quantity: float, notes: str) -> Optional[int]:
     uid = _authenticate()

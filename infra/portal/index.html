@@ -15,9 +15,30 @@
       background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       min-height: 100vh; display: flex; flex-direction: column; align-items: center;
-      padding: 48px 24px 64px;
+      padding: 0 24px 64px;
     }
-    .hero { text-align: center; margin-bottom: 48px; }
+
+    /* ── User bar ─────────────────────────────────────────────── */
+    #user-bar {
+      display: none;
+      width: 100%; background: var(--bg-card); border-bottom: 1px solid var(--border);
+      padding: 8px 24px; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 100;
+      font-size: .8rem; margin: 0 -24px;
+    }
+    #ub-avatar { font-size: 1rem; }
+    #ub-name   { color: var(--text); font-weight: 600; }
+    #ub-roles  { color: var(--mute); }
+    #ub-warn   { display: none; color: var(--orange); }
+    #btn-logout {
+      margin-left: auto; background: transparent; border: 1px solid var(--border);
+      color: var(--mute); padding: 4px 14px; border-radius: 6px;
+      cursor: pointer; font-size: .75rem; font-family: inherit;
+    }
+    #btn-logout:hover { border-color: var(--link); color: var(--link); }
+
+    /* ── Layout ───────────────────────────────────────────────── */
+    .hero { text-align: center; margin: 48px 0 48px; }
     .hero h1 { font-size: 1.7rem; font-weight: 700; color: var(--link); margin-bottom: 8px; }
     .hero p  { font-size: .9rem; color: var(--mute); max-width: 560px; line-height: 1.65; }
 
@@ -59,11 +80,21 @@
     .tag-fhir     { color: #79c0ff; border-color: #1a3a5a; background: #0d1e30; }
     .tag-patient  { color: #3fb950; border-color: #1a4a2a; background: #0d2016; }
     .tag-finance  { color: #ffa657; border-color: #4a3000; background: #1a1200; }
+    .tag-admin    { color: #d2a8ff; border-color: #3a1060; background: #1a0a2e; }
 
     footer { margin-top: 56px; font-size: .73rem; color: var(--mute); }
   </style>
+  <script src="/keycloak/js/keycloak.min.js"></script>
 </head>
 <body>
+
+  <div id="user-bar">
+    <span id="ub-avatar">👤</span>
+    <span id="ub-name"></span>
+    <span id="ub-roles"></span>
+    <span id="ub-warn"></span>
+    <button id="btn-logout">Sign out</button>
+  </div>
 
   <div class="hero">
     <h1>⚕ OpenHIS</h1>
@@ -74,7 +105,7 @@
   <div class="section-label">Clinical</div>
   <div class="grid">
 
-    <a class="card" href="/openmrs/spa/" target="_blank">
+    <a class="card" href="/openmrs/spa/" target="_blank" data-roles="clinician">
       <div class="card-header">
         <span class="card-icon">🏥</span>
         <div>
@@ -86,7 +117,7 @@
       <span class="card-tag tag-clinical">Clinical · FHIR R4</span>
     </a>
 
-    <a class="card" href="/OpenELIS-Global/" target="_blank">
+    <a class="card" href="/OpenELIS-Global/" target="_blank" data-roles="lab-tech clinician">
       <div class="card-header">
         <span class="card-icon">🧪</span>
         <div>
@@ -98,7 +129,7 @@
       <span class="card-tag tag-clinical">Clinical · Lab · FHIR R4</span>
     </a>
 
-    <a class="card" href="/ris/" target="_blank">
+    <a class="card" href="/ris/" target="_blank" data-roles="radiologist">
       <div class="card-header">
         <span class="card-icon">📋</span>
         <div>
@@ -110,7 +141,7 @@
       <span class="card-tag tag-clinical">Clinical · Radiology</span>
     </a>
 
-    <a class="card" href="/patient-portal/" target="_blank">
+    <a class="card" href="/patient-portal/" target="_blank" data-roles="patient">
       <div class="card-header">
         <span class="card-icon">🙋</span>
         <div>
@@ -128,7 +159,7 @@
   <div class="section-label">Finance &amp; Administration</div>
   <div class="grid">
 
-    <a class="card" href="/odoo/" target="_blank">
+    <a class="card" href="/odoo/" target="_blank" data-roles="pharmacist clinician">
       <div class="card-header">
         <span class="card-icon">💼</span>
         <div>
@@ -146,7 +177,7 @@
   <div class="section-label">Imaging</div>
   <div class="grid">
 
-    <a class="card" href="/ohif/" target="_blank">
+    <a class="card" href="/ohif/" target="_blank" data-roles="radiologist">
       <div class="card-header">
         <span class="card-icon">🖼️</span>
         <div>
@@ -158,7 +189,7 @@
       <span class="card-tag tag-imaging">Imaging</span>
     </a>
 
-    <a class="card" href="/orthanc/" target="_blank">
+    <a class="card" href="/orthanc/" target="_blank" data-roles="radiologist">
       <div class="card-header">
         <span class="card-icon">🗄️</span>
         <div>
@@ -170,7 +201,7 @@
       <span class="card-tag tag-imaging">Imaging · DICOM</span>
     </a>
 
-    <a class="card" href="/simulator/" target="_blank">
+    <a class="card" href="/simulator/" target="_blank" data-roles="radiologist">
       <div class="card-header">
         <span class="card-icon">⚡</span>
         <div>
@@ -188,7 +219,7 @@
   <div class="section-label">AI &amp; Pipelines</div>
   <div class="grid">
 
-    <a class="card" href="/ai-controller/" target="_blank">
+    <a class="card" href="/ai-controller/" target="_blank" data-roles="radiologist">
       <div class="card-header">
         <span class="card-icon">🤖</span>
         <div>
@@ -230,6 +261,18 @@
       <span class="card-tag tag-infra">HL7 v2 · MLLP</span>
     </a>
 
+    <a class="card" href="/mpi/" target="_blank">
+      <div class="card-header">
+        <span class="card-icon">🪪</span>
+        <div>
+          <div class="card-name">MPI</div>
+          <div class="card-path">/mpi/</div>
+        </div>
+      </div>
+      <div class="card-desc">Master Patient Index. Cross-reference registry linking patient identities across OpenMRS, OpenELIS and Odoo by MRN. Probabilistic deduplication.</div>
+      <span class="card-tag tag-fhir">Identity · FHIR</span>
+    </a>
+
   </div>
 
   <!-- ── Infrastructure ─────────────────────────────────── -->
@@ -248,8 +291,116 @@
       <span class="card-tag tag-infra">Metrics · Export</span>
     </a>
 
+    <a class="card" href="/admin/" target="_blank" data-roles="admin">
+      <div class="card-header">
+        <span class="card-icon">🛠️</span>
+        <div>
+          <div class="card-name">Admin Dashboard</div>
+          <div class="card-path">/admin/</div>
+        </div>
+      </div>
+      <div class="card-desc">Platform management plane. Service registry and health status, profile enable/disable, audit log, system announcements and live event stream.</div>
+      <span class="card-tag tag-admin">Admin · Registry</span>
+    </a>
+
+    <a class="card" href="/keycloak/admin/" target="_blank" data-roles="admin">
+      <div class="card-header">
+        <span class="card-icon">🔑</span>
+        <div>
+          <div class="card-name">Keycloak Admin</div>
+          <div class="card-path">/keycloak/admin/</div>
+        </div>
+      </div>
+      <div class="card-desc">Identity and access management. Create users, assign roles (clinician, lab-tech, radiologist, pharmacist, patient), manage SSO clients and sessions. Log in with Keycloak master admin credentials.</div>
+      <span class="card-tag tag-admin">IAM · SSO</span>
+    </a>
+
   </div>
 
   <footer>OpenHIS &mdash; local Docker Compose stack &mdash; all data is synthetic</footer>
+
+  <script>
+    (function () {
+      var _kc = new Keycloak({
+        url: '/keycloak',
+        realm: 'openhis',
+        clientId: 'openhis-spa'
+      });
+
+      _kc.init({ onLoad: 'login-required', checkLoginIframe: false })
+        .then(function () {
+          _applyAuth(_kc);
+        })
+        .catch(function (err) {
+          console.warn('Keycloak init failed — running without auth:', err);
+          var bar = document.getElementById('user-bar');
+          var warn = document.getElementById('ub-warn');
+          warn.textContent = '⚠ Identity provider unreachable — authentication disabled';
+          warn.style.display = 'inline';
+          document.getElementById('btn-logout').style.display = 'none';
+          bar.style.display = 'flex';
+        });
+
+      function _applyAuth(kc) {
+        // Store JWT in cookie so nginx-njs guards can read it
+        _setCookie(kc.token);
+
+        // Refresh token before it expires (check every 30s, refresh if expiring in 60s)
+        setInterval(function () {
+          kc.updateToken(60)
+            .then(function (refreshed) { if (refreshed) _setCookie(kc.token); })
+            .catch(function () { kc.login(); });
+        }, 30000);
+
+        var parsed = kc.tokenParsed || {};
+        var name = parsed.name || parsed.preferred_username || '';
+        var roles = parsed.roles || [];
+
+        // Populate user bar
+        document.getElementById('ub-name').textContent = name;
+        document.getElementById('ub-roles').textContent = roles.length ? '(' + roles.join(', ') + ')' : '';
+        document.getElementById('btn-logout').onclick = function () {
+          _clearCookie();
+          kc.logout({ redirectUri: window.location.href });
+        };
+        document.getElementById('user-bar').style.display = 'flex';
+
+        // Filter portal cards based on Keycloak roles
+        _filterCards(roles);
+      }
+
+      function _filterCards(userRoles) {
+        var isAdmin = userRoles.indexOf('admin') >= 0;
+
+        document.querySelectorAll('a.card[data-roles]').forEach(function (card) {
+          var required = (card.dataset.roles || '').split(' ').filter(Boolean);
+          var allowed = isAdmin ||
+            required.some(function (r) { return userRoles.indexOf(r) >= 0; });
+          if (!allowed) card.style.display = 'none';
+        });
+
+        // Hide section labels when all cards in their grid are hidden
+        document.querySelectorAll('.section-label').forEach(function (label) {
+          var grid = label.nextElementSibling;
+          if (!grid || !grid.classList.contains('grid')) return;
+          var visible = Array.from(grid.querySelectorAll('a.card'))
+            .filter(function (c) { return c.style.display !== 'none'; });
+          if (visible.length === 0) {
+            label.style.display = 'none';
+            grid.style.display = 'none';
+          }
+        });
+      }
+
+      function _setCookie(token) {
+        document.cookie = 'openhis_token=' + token + '; path=/; SameSite=Lax';
+      }
+
+      function _clearCookie() {
+        document.cookie = 'openhis_token=; path=/; max-age=0; SameSite=Lax';
+      }
+    }());
+  </script>
+
 </body>
 </html>

@@ -194,11 +194,14 @@ services:
   # Single entry point on port 80. Routes to all active profile services.
   # Services not in the active profile return 502 — this is expected.
   nginx:
-    image: nginx:1.25-alpine
+    build:
+      context: ../infra/nginx
+      dockerfile: Dockerfile
     ports:
       - "80:80"
     volumes:
       - ../infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../infra/nginx/njs:/etc/nginx/njs:ro
       - ../infra/ohif/ai-panel.html:/usr/share/nginx/html/ai-panel.html:ro
       - ../infra/portal/index.html:/usr/share/nginx/html/index.html:ro
     depends_on:

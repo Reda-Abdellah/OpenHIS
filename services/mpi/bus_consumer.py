@@ -45,9 +45,10 @@ async def _handle_patient_synced(payload: dict) -> None:
     skipped (the MPI record will be created via the REST API when the patient
     is registered directly).
     """
-    mrn    = payload.get("mrn")
+    mrn     = payload.get("mrn")
     omrs_id = payload.get("omrs_id")
     oe_id   = payload.get("oe_id")
+    odoo_id = payload.get("odoo_id")
 
     if not mrn:
         return
@@ -63,7 +64,7 @@ async def _handle_patient_synced(payload: dict) -> None:
 
         master_id = row["id"]
 
-        for system, system_id in [("openmrs", omrs_id), ("openelis", oe_id)]:
+        for system, system_id in [("openmrs", omrs_id), ("openelis", oe_id), ("odoo", odoo_id)]:
             if not system_id:
                 continue
             db.execute(
@@ -75,7 +76,7 @@ async def _handle_patient_synced(payload: dict) -> None:
                 (master_id, system, system_id, mrn),
             )
 
-    log.info("Crossref upserted for MRN %s (omrs=%s, oe=%s)", mrn, omrs_id, oe_id)
+    log.info("Crossref upserted for MRN %s (omrs=%s, oe=%s, odoo=%s)", mrn, omrs_id, oe_id, odoo_id)
 
 
 _HANDLERS = {
