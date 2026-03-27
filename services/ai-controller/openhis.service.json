@@ -1,0 +1,14 @@
+{
+  "name": "ai-controller",
+  "display_name": "AI Controller",
+  "port": 8000,
+  "profile": "imaging",
+  "nginx_path": "/ai/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": ["ai_job.completed"],
+    "subscribes": ["lab_result.ready", "patient.synced"]
+  },
+  "depends_on": ["redis"],
+  "description": "AI pipeline orchestration. Runs containerised models on imaging (DICOM), lab results, and EMR events. Subscribes to bus events to auto-trigger clinical pipelines."
+}

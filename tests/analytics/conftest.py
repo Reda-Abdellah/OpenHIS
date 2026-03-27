@@ -9,7 +9,7 @@ def fresh_db():
 
     mods_to_remove = [m for m in sys.modules.keys()
                       if m.startswith(('analytics_', 'routers', 'scheduler', 'collector'))
-                      or m in ('main', 'database')]
+                      or m in ('main', 'database', 'bus_consumer')]
     for mod in mods_to_remove:
         try:
             del sys.modules[mod]

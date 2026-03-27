@@ -1,0 +1,14 @@
+{
+  "name": "hl7",
+  "display_name": "HL7 Gateway",
+  "port": 8009,
+  "profile": "base",
+  "nginx_path": "/hl7/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": [],
+    "subscribes": []
+  },
+  "depends_on": [],
+  "description": "Accepts and emits HL7 v2 messages (ADT, ORU, ORM) via MLLP on port 2575."
+}

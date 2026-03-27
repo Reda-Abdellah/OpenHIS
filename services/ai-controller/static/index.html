@@ -189,12 +189,24 @@ function modTag(m){
 function triggerBadge(t){
   return `<span class="badge ${t==='AUTO'?'b-auto':'b-manual'}">${t||'MANUAL'}</span>`;
 }
+function sourceBadge(st){
+  const cfg={
+    imaging:    {cls:'b-running', icon:'🏥', label:'Imaging'},
+    lab_result: {cls:'b-completed',icon:'🧪', label:'Lab'},
+    emr_event:  {cls:'b-auto',    icon:'🫀', label:'EMR'},
+  };
+  const c=cfg[st]||{cls:'b-manual',icon:'⚙️',label:st||'—'};
+  return `<span class="badge ${c.cls}">${c.icon} ${c.label}</span>`;
+}
 function resultBadge(summary){
   if(!summary)return '';
   const s=typeof summary==='string'?JSON.parse(summary):summary;
-  if(s.critical) return '<span class="badge b-critical">CRITICAL</span>';
-  if(!s.normal)  return '<span class="badge b-abnormal">Abnormal</span>';
-  return '<span class="badge b-normal">Normal</span>';
+  let out='';
+  if(s.critical)      out='<span class="badge b-critical">CRITICAL</span>';
+  else if(!s.normal)  out='<span class="badge b-abnormal">Abnormal</span>';
+  else                out='<span class="badge b-normal">Normal</span>';
+  if(s.risk_score!=null) out+=` <span class="badge b-manual" title="Risk score">⚠ ${(s.risk_score*100).toFixed(0)}%</span>`;
+  return out;
 }
 function humanBytes(b){ if(!b)return ''; if(b<1024)return b+'B'; if(b<1048576)return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB'; }
 
@@ -242,10 +254,11 @@ async function renderDashboard(){
   <div class="card-title">Recent Jobs</div>
   ${jobs.length===0?'<div class="empty">No jobs yet</div>':
   `<div class="tbl-wrap"><table>
-    <thead><tr><th>Patient</th><th>Modality</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th></tr></thead>
+    <thead><tr><th>Source</th><th>Subject / Patient</th><th>Modality</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th></tr></thead>
     <tbody>${jobs.map(j=>`<tr onclick="openJob('${j.id}')">
-      <td>${esc(j.patient_name)||'—'}</td>
-      <td>${modTag(j.modality)}</td>
+      <td>${sourceBadge(j.source_type)}</td>
+      <td>${j.source_type==='imaging'?esc(j.patient_name)||'—':esc(j.event_source_id)||'—'}</td>
+      <td>${j.source_type==='imaging'?modTag(j.modality):'<span style="color:var(--mute);font-size:.72rem">n/a</span>'}</td>
       <td style="font-size:.75rem;color:var(--mute)">${esc(j.pipeline_name)}</td>
       <td>${statusBadge(j.status)}</td>
       <td>${j.result_summary?resultBadge(j.result_summary):''}</td>
@@ -267,10 +280,11 @@ async function renderPipelines(){
     _pipelines = await api('/api/pipelines');
     el.innerHTML=`
 <div class="tbl-wrap"><table>
-  <thead><tr><th>Name</th><th>Docker Image</th><th>Version</th><th>Output Types</th><th>Rules</th><th>Jobs</th><th>Enabled</th></tr></thead>
+  <thead><tr><th>Name</th><th>Source</th><th>Docker Image</th><th>Version</th><th>Output Types</th><th>Rules</th><th>Jobs</th><th>Enabled</th></tr></thead>
   <tbody id="pipe-tbody">
     ${_pipelines.map(p=>`<tr>
       <td><strong>${esc(p.name)}</strong><br><small style="color:var(--mute)">${esc(p.description)}</small></td>
+      <td>${sourceBadge(p.source_type)}</td>
       <td style="font-family:monospace;font-size:.75rem">${esc(p.docker_image)}</td>
       <td style="color:var(--mute)">${esc(p.version)}</td>
       <td style="font-size:.75rem;color:var(--mute)">${esc(p.output_types)}</td>
@@ -306,12 +320,15 @@ async function renderRules(){
     const rules=await api('/api/rules');
     el.innerHTML=`
 <div class="tbl-wrap"><table>
-  <thead><tr><th>Pipeline</th><th>Rule Name</th><th>Modality</th><th>Body Part</th><th>Auto-Trigger</th><th>Auto-Saveback</th><th>Priority</th><th>Enabled</th><th></th></tr></thead>
+  <thead><tr><th>Pipeline</th><th>Rule Name</th><th>Trigger Filter</th><th>Modality</th><th>Body Part</th><th>Auto-Trigger</th><th>Auto-Saveback</th><th>Priority</th><th>Enabled</th><th></th></tr></thead>
   <tbody>
-    ${rules.length===0?'<tr><td colspan="9" class="empty">No rules configured yet.</td></tr>':
-    rules.map(r=>`<tr>
+    ${rules.length===0?'<tr><td colspan="10" class="empty">No rules configured yet.</td></tr>':
+    rules.map(r=>{
+      const tf=r.trigger_filter&&r.trigger_filter!=='{}'?`<code style="font-size:.68rem;color:var(--purple)">${esc(r.trigger_filter)}</code>`:'<span style="color:var(--mute)">—</span>';
+      return `<tr>
       <td style="color:var(--link);font-size:.78rem">${esc(r.pipeline_name)}</td>
       <td>${esc(r.name)}</td>
+      <td>${tf}</td>
       <td>${(r.modality||'').split(',').filter(Boolean).map(m=>modTag(m.trim())).join(' ')||'<span style="color:var(--mute)">any</span>'}</td>
       <td style="font-size:.78rem">${esc(r.body_part)||'<span style="color:var(--mute)">any</span>'}</td>
       <td><span class="badge ${r.auto_trigger?'b-completed':'b-failed'}">${r.auto_trigger?'ON':'OFF'}</span></td>
@@ -319,7 +336,7 @@ async function renderRules(){
       <td style="color:var(--mute)">${r.priority}</td>
       <td><label class="toggle"><input type="checkbox" ${r.enabled?'checked':''} onchange="toggleRule(${r.id},this.checked)"><span class="toggle-slider"></span></label></td>
       <td><button class="btn sm danger" onclick="deleteRule(${r.id})">Delete</button></td>
-    </tr>`).join('')}
+    </tr>`;}).join('')}
   </tbody>
 </table></div>
 <div id="add-rule-form"></div>`;
@@ -334,20 +351,24 @@ function showAddRule(){
   <div class="card-title">New Rule</div>
   <div class="form-row">
     <div class="form-group" style="min-width:160px"><label>Pipeline</label>
-      <select id="r-pipe">${_pipelines.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
-    <div class="form-group" style="flex:2"><label>Rule Name</label><input id="r-name" placeholder="e.g. Auto – Chest X-Ray"></div>
+      <select id="r-pipe" onchange="_ruleFormAdapt()">${_pipelines.map(p=>`<option value="${p.id}" data-st="${p.source_type||'imaging'}">${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="form-group" style="flex:2"><label>Rule Name</label><input id="r-name" placeholder="e.g. Auto – Lab Risk"></div>
+    <div class="form-group"><label>Priority</label><input id="r-prio" type="number" value="0" style="width:70px"></div>
   </div>
-  <div class="form-row">
+  <div class="form-row" id="r-imaging-fields">
     <div class="form-group"><label>Modality (comma-sep)</label><input id="r-mod" placeholder="CR,DX"></div>
     <div class="form-group"><label>Body Part (comma-sep)</label><input id="r-bp" placeholder="CHEST,THORAX"></div>
-    <div class="form-group"><label>Priority</label><input id="r-prio" type="number" value="0" style="width:70px"></div>
+  </div>
+  <div class="form-row" id="r-clinical-fields" style="display:none">
+    <div class="form-group" style="flex:2"><label>Trigger Filter (JSON, empty = match all)</label>
+      <input id="r-tf" placeholder='{"panel":"CBC"}' value="{}"></div>
   </div>
   <div class="form-row">
     <div class="form-group"><label>Auto-Trigger</label>
       <select id="r-at"><option value="0">OFF</option><option value="1">ON</option></select></div>
-    <div class="form-group"><label>Auto-Saveback</label>
+    <div class="form-group" id="r-saveback-group"><label>Auto-Saveback</label>
       <select id="r-as"><option value="0">OFF</option><option value="1">ON</option></select></div>
-    <div class="form-group" style="flex:2"><label>Saveback Types (JSON array)</label>
+    <div class="form-group" style="flex:2" id="r-saveback-types-group"><label>Saveback Types (JSON array)</label>
       <input id="r-st" value='["report","secondary_capture"]'></div>
   </div>
   <div class="form-row">
@@ -355,17 +376,35 @@ function showAddRule(){
     <button class="btn" onclick="document.getElementById('add-rule-form').innerHTML=''">Cancel</button>
   </div>
 </div>`;
+  _ruleFormAdapt();
+}
+
+function _ruleFormAdapt(){
+  const sel=document.getElementById('r-pipe');
+  if(!sel) return;
+  const opt=sel.options[sel.selectedIndex];
+  const st=opt?opt.dataset.st:'imaging';
+  const isImaging=(st==='imaging');
+  document.getElementById('r-imaging-fields').style.display=isImaging?'':'none';
+  document.getElementById('r-clinical-fields').style.display=isImaging?'none':'';
+  document.getElementById('r-saveback-group').style.display=isImaging?'':'none';
+  document.getElementById('r-saveback-types-group').style.display=isImaging?'':'none';
 }
 
 async function saveRule(){
+  const sel=document.getElementById('r-pipe');
+  const opt=sel?sel.options[sel.selectedIndex]:null;
+  const st=opt?opt.dataset.st:'imaging';
+  const isImaging=(st==='imaging');
   const body={
-    pipeline_id: document.getElementById('r-pipe').value,
+    pipeline_id: sel?.value,
     name: document.getElementById('r-name').value.trim(),
-    modality: document.getElementById('r-mod').value.trim()||null,
-    body_part: document.getElementById('r-bp').value.trim()||null,
+    modality: isImaging?(document.getElementById('r-mod')?.value.trim()||null):null,
+    body_part: isImaging?(document.getElementById('r-bp')?.value.trim()||null):null,
+    trigger_filter: isImaging?'{}':(document.getElementById('r-tf')?.value.trim()||'{}'),
     auto_trigger: parseInt(document.getElementById('r-at').value),
-    auto_saveback: parseInt(document.getElementById('r-as').value),
-    saveback_types: document.getElementById('r-st').value.trim(),
+    auto_saveback: isImaging?parseInt(document.getElementById('r-as')?.value||'0'):0,
+    saveback_types: isImaging?(document.getElementById('r-st')?.value.trim()||'[]'):'[]',
     priority: parseInt(document.getElementById('r-prio').value)||0,
     enabled: 1,
   };
@@ -392,7 +431,7 @@ async function toggleRule(id,enabled){
 // ── JOBS ──────────────────────────────────────────────────────────────────────
 async function renderJobs(){
   const el=document.getElementById('content');
-  document.getElementById('topbar-actions').innerHTML='';
+  document.getElementById('topbar-actions').innerHTML='<button class="btn pri" onclick="showNewJob()">＋ New Job</button>';
   el.innerHTML='<div class="empty">Loading…</div>';
   try{
     if(!_pipelines.length) _pipelines=await api('/api/pipelines');
@@ -403,27 +442,109 @@ async function renderJobs(){
   <select id="j-status"><option value="">All Statuses</option>
     <option value="PENDING">Pending</option><option value="RUNNING">Running</option>
     <option value="COMPLETED">Completed</option><option value="FAILED">Failed</option></select>
+  <select id="j-src"><option value="">All Sources</option>
+    <option value="imaging">🏥 Imaging</option>
+    <option value="lab_result">🧪 Lab</option>
+    <option value="emr_event">🫀 EMR</option></select>
   <button class="btn" onclick="refreshJobs()">↻ Refresh</button>
   <span id="j-active-badge"></span>
 </div>
+<div id="new-job-form"></div>
 <div id="jobs-table"><div class="empty">Loading…</div></div>`;
     await refreshJobs();
   }catch(e){ el.innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`; }
 }
 
+function showNewJob(){
+  const f=document.getElementById('new-job-form');
+  if(!f) return;
+  f.innerHTML=`
+<div class="card" style="margin-bottom:14px">
+  <div class="card-title">Trigger Job Manually</div>
+  <div class="form-row">
+    <div class="form-group" style="min-width:200px"><label>Pipeline</label>
+      <select id="nj-pipe" onchange="_newJobAdapt()">${_pipelines.map(p=>`<option value="${p.id}" data-st="${p.source_type||'imaging'}">${esc(p.name)}</option>`).join('')}</select></div>
+  </div>
+  <div id="nj-imaging-fields">
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>Orthanc Series ID</label>
+        <input id="nj-series" placeholder="e.g. a1b2c3d4-…" style="font-family:monospace"></div>
+    </div>
+    <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Use the PACS Browser tab to pick a series from Orthanc, or paste its UUID here.</div>
+  </div>
+  <div id="nj-clinical-fields" style="display:none">
+    <div class="form-row">
+      <div class="form-group" style="min-width:180px"><label>Event Source ID</label>
+        <input id="nj-source-id" placeholder="e.g. OE-12345 or MRN-00789"></div>
+      <div class="form-group" style="flex:2"><label>Event Payload (JSON)</label>
+        <input id="nj-payload" placeholder='{"oe_id":"123","subject":"John Doe"}' value="{}"></div>
+    </div>
+    <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Simulates a bus event; the pipeline will run with this payload as input.</div>
+  </div>
+  <div class="form-row">
+    <button class="btn pri" onclick="submitNewJob()">▶ Run</button>
+    <button class="btn" onclick="document.getElementById('new-job-form').innerHTML=''">Cancel</button>
+  </div>
+</div>`;
+  _newJobAdapt();
+}
+
+function _newJobAdapt(){
+  const sel=document.getElementById('nj-pipe');
+  if(!sel) return;
+  const opt=sel.options[sel.selectedIndex];
+  const st=opt?opt.dataset.st:'imaging';
+  document.getElementById('nj-imaging-fields').style.display=(st==='imaging')?'':'none';
+  document.getElementById('nj-clinical-fields').style.display=(st==='imaging')?'none':'';
+}
+
+async function submitNewJob(){
+  const sel=document.getElementById('nj-pipe');
+  const opt=sel?sel.options[sel.selectedIndex]:null;
+  const st=opt?opt.dataset.st:'imaging';
+  const pipeId=sel?.value;
+  if(!pipeId){ toast('Select a pipeline','err'); return; }
+  let body={pipeline_id:pipeId,trigger_type:'MANUAL'};
+  if(st==='imaging'){
+    const sid=document.getElementById('nj-series')?.value.trim();
+    if(!sid){ toast('Series ID required for imaging pipelines','err'); return; }
+    body.orthanc_series_id=sid;
+  } else {
+    const srcId=document.getElementById('nj-source-id')?.value.trim();
+    if(!srcId){ toast('Event Source ID required','err'); return; }
+    let payload={};
+    try{ payload=JSON.parse(document.getElementById('nj-payload')?.value||'{}'); }
+    catch(_){ toast('Payload must be valid JSON','err'); return; }
+    body.event_source_id=srcId;
+    body.event_payload=payload;
+  }
+  try{
+    const r=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast(`Job ${r.job_id.slice(0,8)}… queued`,'ok');
+    document.getElementById('new-job-form').innerHTML='';
+    refreshJobs();
+  }catch(e){ toast('Error: '+e.message,'err'); }
+}
+
 async function refreshJobs(){
   const pipe=document.getElementById('j-pipe')?.value||'';
   const status=document.getElementById('j-status')?.value||'';
-  let url=`/api/jobs?limit=200${pipe?'&pipeline_id='+pipe:''}${status?'&status='+status:''}`;
+  const src=document.getElementById('j-src')?.value||'';
+  let url=`/api/jobs?limit=200${pipe?'&pipeline_id='+pipe:''}${status?'&status='+status:''}${src?'&source_type='+src:''}`;
   try{
     const jobs=await api(url);
     const running=jobs.filter(j=>['PENDING','RUNNING'].includes(j.status)).length;
     const badge=document.getElementById('j-active-badge');
     if(badge) badge.innerHTML=running?`<span class="badge b-running">${running} active</span>`:'';
 
-    const tbody=jobs.map(j=>`<tr onclick="openJob('${j.id}')">
-      <td>${esc(j.patient_name)||'—'}</td>
-      <td>${modTag(j.modality)} <span style="font-size:.72rem;color:var(--mute)">${esc(j.body_part)}</span></td>
+    const tbody=jobs.map(j=>{
+      const isImaging=(j.source_type||'imaging')==='imaging';
+      const subjectCell=isImaging
+        ?`${modTag(j.modality)} <span style="font-size:.75rem">${esc(j.patient_name)||'—'}</span>`
+        :`<span style="font-size:.75rem;color:var(--mute)">${esc(j.event_source_id)||'—'}</span>`;
+      return `<tr onclick="openJob('${j.id}')">
+      <td>${sourceBadge(j.source_type)}</td>
+      <td>${subjectCell}</td>
       <td style="font-size:.75rem;color:var(--link)">${esc(j.pipeline_name)}</td>
       <td>${statusBadge(j.status)}</td>
       <td>${j.result_summary?resultBadge(j.result_summary):''}</td>
@@ -431,10 +552,10 @@ async function refreshJobs(){
       <td style="font-size:.72rem;color:var(--mute)">${fmtDate(j.created_at)}</td>
       <td style="color:var(--mute)">${fmtDur(j.duration_ms)}</td>
       <td><button class="btn sm danger" onclick="event.stopPropagation();deleteJob('${j.id}')">Del</button></td>
-    </tr>`).join('');
+    </tr>`;}).join('');
     document.getElementById('jobs-table').innerHTML=jobs.length===0?'<div class="empty">No jobs found.</div>':
       `<div class="tbl-wrap"><table>
-        <thead><tr><th>Patient</th><th>Modality / Body</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th><th>Duration</th><th></th></tr></thead>
+        <thead><tr><th>Source</th><th>Subject / Patient</th><th>Pipeline</th><th>Status</th><th>Result</th><th>Trigger</th><th>Created</th><th>Duration</th><th></th></tr></thead>
         <tbody>${tbody}</tbody>
       </table></div>`;
 
@@ -456,7 +577,7 @@ async function renderPacs(){
   try{
     if(!_pipelines.length) _pipelines=await api('/api/pipelines');
     const series=await api('/api/orthanc/series');
-    const pipeOpts=_pipelines.filter(p=>p.enabled).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    const pipeOpts=_pipelines.filter(p=>p.enabled&&(p.source_type||'imaging')==='imaging').map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
     el.innerHTML=`
 <div style="font-size:.8rem;color:var(--mute);margin-bottom:12px">${series.length} series found in Orthanc. Select a pipeline and click Run to create a manual job.</div>
 <div class="tbl-wrap"><table>
@@ -501,24 +622,35 @@ async function openJob(id){
     document.getElementById('modal-title').innerHTML=`Job <code style="font-size:.8rem">${id.slice(0,8)}…</code> &nbsp; ${statusBadge(job.status)}`;
 
     // ── Overview ─────────────────────────────────────────────────────────────
+    const isImagingJob=(job.source_type||'imaging')==='imaging';
+    const overviewRows=[
+      ['Pipeline',    esc(job.pipeline_name)],
+      ['Source',      sourceBadge(job.source_type||'imaging')],
+      ['Trigger',     triggerBadge(job.trigger_type)],
+      ['Status',      statusBadge(job.status)],
+      ['Created',     fmtDate(job.created_at)],
+      ['Started',     fmtDate(job.started_at)],
+      ['Finished',    fmtDate(job.finished_at)],
+      ['Duration',    fmtDur(job.duration_ms)],
+    ];
+    if(isImagingJob){
+      overviewRows.push(['Patient', esc(job.patient_name)||'—']);
+      overviewRows.push(['Modality', modTag(job.modality)||'—']);
+      overviewRows.push(['Body Part', esc(job.body_part)||'—']);
+    } else {
+      overviewRows.push(['Event Source', `<code style="font-size:.78rem">${esc(job.event_source_id)||'—'}</code>`]);
+    }
     const overviewHTML=`
 <div class="card" style="margin-bottom:10px">
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;font-size:.8rem">
-    ${[
-      ['Pipeline', esc(job.pipeline_name)],
-      ['Trigger',  triggerBadge(job.trigger_type)],
-      ['Patient',  esc(job.patient_name)||'—'],
-      ['Modality', modTag(job.modality)],
-      ['Body Part',esc(job.body_part)||'—'],
-      ['Status',   statusBadge(job.status)],
-      ['Created',  fmtDate(job.created_at)],
-      ['Started',  fmtDate(job.started_at)],
-      ['Finished', fmtDate(job.finished_at)],
-      ['Duration', fmtDur(job.duration_ms)],
-    ].map(([l,v])=>`<div><div style="font-size:.65rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">${l}</div><div>${v}</div></div>`).join('')}
+    ${overviewRows.map(([l,v])=>`<div><div style="font-size:.65rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">${l}</div><div>${v}</div></div>`).join('')}
   </div>
   ${job.error?`<div style="margin-top:10px;padding:8px;background:#180d0d;border:1px solid #3d1a1a;border-radius:5px;font-size:.78rem;color:var(--red)">${esc(job.error)}</div>`:''}
 </div>
+${summary.risk_score!=null?`<div class="card" style="margin-bottom:10px">
+  <div class="card-title">Risk Score</div>
+  <div style="font-size:1.6rem;font-weight:700;color:${summary.risk_score>0.7?'var(--red)':summary.risk_score>0.4?'var(--orange)':'var(--green)'}">${(summary.risk_score*100).toFixed(1)}%</div>
+</div>`:''}
 ${summary.impression?`<div class="card" style="margin-bottom:10px">
   <div class="card-title">Impression</div>
   <div style="font-size:.85rem;line-height:1.65;color:${summary.critical?'var(--red)':summary.normal?'var(--green)':'var(--text)'}">${esc(summary.impression)}</div>

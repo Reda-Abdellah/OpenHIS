@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -6,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from database import init_db, get_db, rows_to_list
 from routers import pipelines, rules, jobs, artifacts, saveback
+import bus_consumer
 import orthanc_client as oc
 
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +37,7 @@ async def index():
 @app.on_event("startup")
 async def startup():
     init_db()
+    asyncio.create_task(bus_consumer.consume_loop())
     log.info("AI Controller v1.0 ready")
 
 

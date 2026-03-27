@@ -6,3 +6,4 @@ numpy==1.26.4
 docker==7.0.0
 python-multipart==0.0.9
 requests==2.31.0
+redis[asyncio]==5.0.7

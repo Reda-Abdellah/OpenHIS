@@ -11,6 +11,7 @@ class RuleCreate(BaseModel):
     name: str
     modality: Optional[str] = None
     body_part: Optional[str] = None
+    trigger_filter: str = "{}"
     auto_trigger: int = 0
     auto_saveback: int = 0
     saveback_types: str = '["report"]'
@@ -48,11 +49,12 @@ def get_rule(rule_id: int):
 def create_rule(body: RuleCreate):
     with get_db() as db:
         cur = db.execute(
-            "INSERT INTO rules (pipeline_id,name,modality,body_part,auto_trigger,"
-            "auto_saveback,saveback_types,priority,enabled) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO rules (pipeline_id,name,modality,body_part,trigger_filter,"
+            "auto_trigger,auto_saveback,saveback_types,priority,enabled)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
             (body.pipeline_id, body.name, body.modality, body.body_part,
-             body.auto_trigger, body.auto_saveback, body.saveback_types,
-             body.priority, body.enabled),
+             body.trigger_filter, body.auto_trigger, body.auto_saveback,
+             body.saveback_types, body.priority, body.enabled),
         )
         row = db.execute("SELECT * FROM rules WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -60,8 +62,8 @@ def create_rule(body: RuleCreate):
 
 @router.patch("/{rule_id}")
 def update_rule(rule_id: int, body: dict):
-    allowed = {"name", "modality", "body_part", "auto_trigger", "auto_saveback",
-               "saveback_types", "priority", "enabled"}
+    allowed = {"name", "modality", "body_part", "trigger_filter",
+               "auto_trigger", "auto_saveback", "saveback_types", "priority", "enabled"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields provided")

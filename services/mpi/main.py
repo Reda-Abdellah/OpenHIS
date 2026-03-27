@@ -1,9 +1,10 @@
-import os, logging
+import asyncio, os, logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from routers import patients, crossref, matching, sync, audit
+import bus_consumer
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("mpi")
@@ -27,6 +28,7 @@ async def index():
 @app.on_event("startup")
 async def startup():
     init_db()
+    asyncio.create_task(bus_consumer.consume_loop())
     log.info("MPI v1.0 ready")
 
 

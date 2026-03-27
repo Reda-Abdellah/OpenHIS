@@ -20,6 +20,7 @@ from typing import Callable
 from app.config import POLL_INTERVAL_S
 from app.services import openmrs, openelis
 from app.db import audit
+from app import bus
 import app.state as state
 
 log = logging.getLogger("hub.worker")
@@ -68,6 +69,11 @@ async def _sync_patients() -> int:
                 await audit.log_event(
                     "patient_synced", "Patient", pid, "omrs→oe", "ok",
                 )
+                await bus.publish("patient.synced", {
+                    "omrs_id": pid,
+                    "oe_id": oe_id,
+                    "mrn": p.get("identifier", [{}])[0].get("value"),
+                })
         except Exception as exc:
             await audit.log_event(
                 "patient_sync_failed", "Patient", pid, "omrs→oe", "failed",
@@ -95,6 +101,10 @@ async def _sync_orders() -> int:
                 await audit.log_event(
                     "order_routed", "ServiceRequest", oid, "omrs→oe", "ok",
                 )
+                await bus.publish("lab_order.routed", {
+                    "omrs_id": oid,
+                    "oe_id": oe_id,
+                })
         except Exception as exc:
             await audit.log_event(
                 "order_route_failed", "ServiceRequest", oid, "omrs→oe", "failed",
@@ -122,6 +132,10 @@ async def _sync_results() -> int:
                 await audit.log_event(
                     "result_routed", "DiagnosticReport", rid, "oe→omrs", "ok",
                 )
+                await bus.publish("lab_result.ready", {
+                    "oe_id": rid,
+                    "subject": dr.get("subject", {}).get("reference"),
+                })
         except Exception as exc:
             await audit.log_event(
                 "result_route_failed", "DiagnosticReport", rid, "oe→omrs", "failed",

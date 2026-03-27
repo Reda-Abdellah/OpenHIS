@@ -71,15 +71,6 @@
     }
   ],
 
-  "defaultRole": {
-    "name": "default-roles-openhis",
-    "description": "Default roles assigned to new users",
-    "composite": true,
-    "compositeRoles": {
-      "realm": []
-    }
-  },
-
   "accessTokenLifespan": 300,
   "refreshTokenMaxReuse": 0,
   "ssoSessionMaxLifespan": 36000

@@ -13,8 +13,10 @@ class PipelineCreate(BaseModel):
     description: str = ""
     docker_image: str
     version: str = "1.0.0"
+    source_type: str = "imaging"
     output_types: Union[List[str], str] = '["report"]'
     config_json: str = "{}"
+    input_schema: str = "{}"
 
     @field_validator("output_types", mode="before")
     @classmethod
@@ -51,10 +53,12 @@ def create_pipeline(body: PipelineCreate):
     with get_db() as db:
         try:
             db.execute(
-                "INSERT INTO pipelines (id,name,description,docker_image,version,output_types,config_json)"
-                " VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO pipelines (id,name,description,docker_image,version,"
+                "source_type,output_types,config_json,input_schema)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
                 (body.id, body.name, body.description, body.docker_image,
-                 body.version, body.output_types, body.config_json),
+                 body.version, body.source_type, body.output_types,
+                 body.config_json, body.input_schema),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, f"Pipeline '{body.id}' already exists")
@@ -64,7 +68,8 @@ def create_pipeline(body: PipelineCreate):
 
 @router.patch("/{pipeline_id}")
 def update_pipeline(pipeline_id: str, body: dict):
-    allowed = {"name", "description", "docker_image", "version", "enabled", "output_types", "config_json"}
+    allowed = {"name", "description", "docker_image", "version", "enabled",
+               "source_type", "output_types", "config_json", "input_schema"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields provided")

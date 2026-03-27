@@ -30,3 +30,32 @@ def test_delete_rule(client):
     }).json()
     r = client.delete(f"/api/rules/{rule['id']}")
     assert r.status_code == 204
+
+
+def test_rule_trigger_filter_defaults_to_empty(client):
+    client.post("/api/pipelines", json={"id": "tf-pipe1", "name": "TF1", "docker_image": "x/y:1"})
+    r = client.post("/api/rules", json={
+        "pipeline_id": "tf-pipe1", "name": "No Filter Rule"
+    })
+    assert r.status_code == 201
+    assert r.json()["trigger_filter"] == "{}"
+
+
+def test_rule_trigger_filter_stored_correctly(client):
+    client.post("/api/pipelines", json={"id": "tf-pipe2", "name": "TF2", "docker_image": "x/y:1"})
+    f = '{"test_code": "CBC"}'
+    r = client.post("/api/rules", json={
+        "pipeline_id": "tf-pipe2", "name": "CBC Filter",
+        "trigger_filter": f
+    })
+    assert r.status_code == 201
+    assert r.json()["trigger_filter"] == f
+
+
+def test_rule_trigger_filter_patchable(client):
+    client.post("/api/pipelines", json={"id": "tf-pipe3", "name": "TF3", "docker_image": "x/y:1"})
+    rule = client.post("/api/rules", json={
+        "pipeline_id": "tf-pipe3", "name": "Patch Filter"
+    }).json()
+    r = client.patch(f"/api/rules/{rule['id']}", json={"trigger_filter": '{"panel": "HBA1C"}'})
+    assert r.status_code == 200

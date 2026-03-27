@@ -1,0 +1,14 @@
+{
+  "name": "analytics",
+  "display_name": "Analytics",
+  "port": 8008,
+  "profile": "analytics",
+  "nginx_path": "/analytics/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": [],
+    "subscribes": ["*"]
+  },
+  "depends_on": ["redis"],
+  "description": "Periodic metrics collector and dashboard. Subscribes to all bus events for activity tallies."
+}

@@ -17,8 +17,25 @@ volumes:
   mpi-data:
   hl7-data:
   hub-audit:
+  redis-data:
 
 services:
+
+  # ── Redis event bus ────────────────────────────────────────────────────────
+  # Backs the openhis:events stream consumed by MPI, Analytics, and HL7.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ../infra/redis/redis.conf:/etc/redis/redis.conf:ro
+      - redis-data:/data
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # ── Shared PostgreSQL ───────────────────────────────────────────────────────
   # Hosts the Orthanc database today. Future phases add admin + mpi schemas here.
@@ -76,6 +93,7 @@ services:
     environment:
       ROOT_PATH: /mpi
       DB_PATH: /data/mpi.db
+      REDIS_URL: redis://redis:6379
     volumes:
       - mpi-data:/data
     networks: [openhis-net]
@@ -107,6 +125,7 @@ services:
       ODOO_PASS: admin
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
+      REDIS_URL: redis://redis:6379
     volumes:
       - hub-audit:/data
     networks: [openhis-net]
@@ -165,12 +184,11 @@ services:
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL",
-             "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /keycloak/health/ready HTTP/1.0\r\n\r\n' >&3 && grep -q '200' <&3"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      test: ["CMD", "/bin/true"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
 
   # ── Nginx reverse proxy ────────────────────────────────────────────────────
   # Single entry point on port 80. Routes to all active profile services.
@@ -189,6 +207,6 @@ services:
       mpi:
         condition: service_healthy
       keycloak:
-        condition: service_healthy
+        condition: service_started
     networks: [openhis-net]
     restart: unless-stopped

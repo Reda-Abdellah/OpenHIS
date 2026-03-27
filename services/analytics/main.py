@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from routers import metrics, export
+import bus_consumer
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('analytics')
@@ -30,6 +31,7 @@ async def startup():
     from scheduler import start_scheduler
     start_scheduler(interval)
     asyncio.create_task(_first_collect())
+    asyncio.create_task(bus_consumer.consume_loop())
     log.info(f"Analytics v1.0 ready — interval={interval} min")
 
 

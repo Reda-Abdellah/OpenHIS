@@ -2,12 +2,19 @@
 Async job runner.
 
 Flow per job:
-1. Resolve series → download all DICOM instances to /data/jobs/{id}/input/
-2. Write input.json
-3. docker run with the shared ai-jobs volume
-4. Parse /data/jobs/{id}/output/result.json
-5. Register output artifacts in DB
-6. Apply auto-saveback if rule says so
+  Imaging:
+    1. Resolve series → download all DICOM instances to /data/jobs/{id}/input/
+    2. Write input.json with DICOM metadata
+    3. docker run with the shared ai-jobs volume
+    4. Parse /data/jobs/{id}/output/result.json
+    5. Register output artifacts in DB
+    6. Apply auto-saveback if rule says so
+
+  Clinical (lab_result, emr_event, …):
+    1. Write payload-only input.json (optionally enriched with FHIR resource)
+    2. docker run (same as imaging)
+    3. Parse result.json (same as imaging)
+    — No DICOM download, no saveback
 """
 import asyncio
 import json
@@ -30,6 +37,7 @@ JOBS_DATA_DIR    = os.environ.get("JOBS_DATA_DIR", "/data/jobs")
 JOBS_VOLUME      = os.environ.get("JOBS_VOLUME_NAME", "openhis_ai-jobs")
 DOCKER_NETWORK   = os.environ.get("DOCKER_NETWORK", "openhis_openhis-net")
 CONTAINER_TIMEOUT = int(os.environ.get("CONTAINER_TIMEOUT_S", "300"))
+OPENELIS_URL     = os.environ.get("OPENELIS_URL", "")
 
 
 def _now_iso() -> str:
@@ -61,10 +69,28 @@ def _register_artifact(job_id, direction, atype, filename, rel_path,
 # ── core runner ───────────────────────────────────────────────────────────────
 
 async def run_job(job_id: str):
-    """Entry point – called from background task."""
+    """Entry point – called from background task or bus consumer."""
     loop = asyncio.get_event_loop()
+
+    with get_db() as db:
+        row = db.execute(
+            "SELECT j.*, p.source_type as pipeline_source_type "
+            "FROM jobs j JOIN pipelines p ON p.id=j.pipeline_id WHERE j.id=?",
+            (job_id,),
+        ).fetchone()
+        if not row:
+            log.error("run_job called for unknown job %s", job_id)
+            return
+        job = dict(row)
+
+    source_type = job.get("source_type") or job.get("pipeline_source_type") or "imaging"
+
     try:
-        await _prepare_input(job_id)
+        if source_type == "imaging":
+            await _prepare_input(job_id)
+        else:
+            await _prepare_clinical_input(job_id)
+
         _set_job_status(job_id, "RUNNING", started_at=_now_iso(), container_logs="")
         container_id, logs, exit_code = await loop.run_in_executor(
             None, _run_container_sync, job_id
@@ -80,22 +106,26 @@ async def run_job(job_id: str):
             container_id=container_id,
             container_logs=logs[-4000:],
         )
-        log.info(f"Job {job_id} completed in {duration} ms")
-        await _maybe_auto_saveback(job_id)
+        log.info("Job %s completed in %s ms", job_id, duration)
+
+        if source_type == "imaging":
+            await _maybe_auto_saveback(job_id)
+
         _bridge = os.environ.get("FHIR_BRIDGE_URL", "")
         if _bridge:
             try:
                 async with httpx.AsyncClient(timeout=3) as _c:
                     await _c.post(f"{_bridge}/api/events/ai-job-completed",
-                                json={"job_id": job_id})
+                                  json={"job_id": job_id})
             except Exception:
                 pass
     except Exception as exc:
-        log.exception(f"Job {job_id} failed: {exc}")
+        log.exception("Job %s failed: %s", job_id, exc)
         _set_job_status(job_id, "FAILED", finished_at=_now_iso(), error=str(exc)[:1000])
 
 
 async def _prepare_input(job_id: str):
+    """Imaging pipeline: download DICOM instances from Orthanc."""
     with get_db() as db:
         job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
 
@@ -114,7 +144,7 @@ async def _prepare_input(job_id: str):
     if not instance_ids:
         raise RuntimeError(f"Series {orthanc_series_id} has no instances in Orthanc")
 
-    log.info(f"Downloading {len(instance_ids)} instances for job {job_id}")
+    log.info("Downloading %d instances for job %s", len(instance_ids), job_id)
     for idx, iid in enumerate(instance_ids):
         dcm_bytes = await oc.get_instance_file(iid)
         out_path  = input_dir / f"{idx+1:04d}_{iid[:8]}.dcm"
@@ -133,6 +163,7 @@ async def _prepare_input(job_id: str):
     input_meta = {
         "job_id":            job_id,
         "pipeline_id":       job["pipeline_id"],
+        "source_type":       "imaging",
         "series_uid":        job["series_uid"],
         "study_uid":         job["study_uid"],
         "patient_name":      job.get("patient_name", ""),
@@ -144,6 +175,68 @@ async def _prepare_input(job_id: str):
         "pipeline_config":   json.loads(pipeline.get("config_json") or "{}"),
     }
     (input_dir / "input.json").write_text(json.dumps(input_meta, indent=2))
+
+
+async def _prepare_clinical_input(job_id: str):
+    """
+    Clinical pipeline (lab_result, emr_event, …): write a payload-only input.json.
+
+    For lab_result pipelines, optionally enriches the payload with the full FHIR
+    DiagnosticReport fetched from OpenELIS. Falls back gracefully if unreachable.
+    """
+    with get_db() as db:
+        job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
+        pipeline = dict(
+            db.execute("SELECT * FROM pipelines WHERE id=?", (job["pipeline_id"],)).fetchone()
+        )
+
+    job_dir   = Path(JOBS_DATA_DIR) / job_id
+    input_dir  = job_dir / "input"
+    output_dir = job_dir / "output"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    source_type = job.get("source_type", "lab_result")
+    event_payload = json.loads(job.get("event_payload") or "{}")
+
+    # Optional FHIR enrichment for lab_result pipelines
+    if source_type == "lab_result" and OPENELIS_URL:
+        oe_id = event_payload.get("oe_id") or job.get("event_source_id", "")
+        if oe_id:
+            fhir_resource = await _fetch_fhir_resource(
+                f"{OPENELIS_URL}/fhir/R4/DiagnosticReport/{oe_id}"
+            )
+            if fhir_resource:
+                event_payload["fhir_resource"] = fhir_resource
+
+    input_meta = {
+        "job_id":            job_id,
+        "pipeline_id":       job["pipeline_id"],
+        "source_type":       source_type,
+        "event_source_id":   job.get("event_source_id", ""),
+        "patient_id":        job.get("patient_id", ""),
+        "pipeline_config":   json.loads(pipeline.get("config_json") or "{}"),
+        "payload":           event_payload,
+    }
+    payload_str = json.dumps(input_meta, indent=2)
+    (input_dir / "input.json").write_text(payload_str)
+    _register_artifact(
+        job_id, "input", "json_payload",
+        "input.json", f"{job_id}/input/input.json",
+        size_bytes=len(payload_str),
+    )
+
+
+async def _fetch_fhir_resource(url: str) -> dict:
+    """Fetch a FHIR resource by URL. Returns empty dict on any error."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url)
+            if r.status_code == 200:
+                return r.json()
+    except Exception:
+        pass
+    return {}
 
 
 def _run_container_sync(job_id: str) -> tuple[str, str, int]:
@@ -205,6 +298,7 @@ async def _process_output(job_id: str):
     summary = {
         "normal":          result.get("normal", True),
         "critical":        result.get("critical", False),
+        "risk_score":      result.get("risk_score"),
         "findings_count":  len(result.get("findings", [])),
         "impression":      result.get("impression", ""),
         "follow_up":       result.get("follow_up_recommended", False),
@@ -284,7 +378,7 @@ async def saveback_artifact(job_id: str, artifact_id: int, trigger_type: str = "
                 " VALUES (?,?,?,'SUCCESS',?,?)",
                 (job_id, artifact_id, orthanc_id, trigger_type, _now_iso()),
             )
-        log.info(f"Saveback OK: artifact {artifact_id} → Orthanc {orthanc_id}")
+        log.info("Saveback OK: artifact %s → Orthanc %s", artifact_id, orthanc_id)
         return orthanc_id
     except Exception as exc:
         with get_db() as db:

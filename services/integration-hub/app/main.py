@@ -21,4 +21,10 @@ app.include_router(audit.router)
 @app.on_event("startup")
 async def startup():
     await init_audit_db()
+    await worker.bus.ensure_stream()
     asyncio.create_task(worker.poll_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await worker.bus.close()

@@ -35,3 +35,46 @@ def test_get_pipeline(client):
     r = client.get("/api/pipelines/get-pipe")
     assert r.status_code == 200
     assert r.json()["id"] == "get-pipe"
+
+
+def test_pipeline_source_type_defaults_to_imaging(client):
+    r = client.post("/api/pipelines", json={
+        "id": "st-default", "name": "ST Default", "docker_image": "x/y:z"
+    })
+    assert r.status_code == 201
+    assert r.json()["source_type"] == "imaging"
+
+
+def test_pipeline_source_type_lab_result(client):
+    r = client.post("/api/pipelines", json={
+        "id": "st-lab", "name": "Lab Pipeline", "docker_image": "x/y:z",
+        "source_type": "lab_result"
+    })
+    assert r.status_code == 201
+    assert r.json()["source_type"] == "lab_result"
+
+
+def test_pipeline_source_type_emr_event(client):
+    r = client.post("/api/pipelines", json={
+        "id": "st-emr", "name": "EMR Pipeline", "docker_image": "x/y:z",
+        "source_type": "emr_event"
+    })
+    assert r.status_code == 201
+    assert r.json()["source_type"] == "emr_event"
+
+
+def test_pipeline_input_schema_stored(client):
+    schema = '{"oe_id": "string", "subject": "string"}'
+    r = client.post("/api/pipelines", json={
+        "id": "schema-pipe", "name": "Schema", "docker_image": "x/y:z",
+        "input_schema": schema
+    })
+    assert r.status_code == 201
+    assert r.json()["input_schema"] == schema
+
+
+def test_seed_contains_clinical_pipelines(client):
+    r = client.get("/api/pipelines")
+    ids = [p["id"] for p in r.json()]
+    assert "poc-lab-risk" in ids
+    assert "poc-emr-alert" in ids

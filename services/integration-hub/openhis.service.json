@@ -1,0 +1,14 @@
+{
+  "name": "integration-hub",
+  "display_name": "Integration Hub",
+  "port": 8012,
+  "profile": "base",
+  "nginx_path": "/integration-hub/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": ["patient.synced", "lab_order.routed", "lab_result.ready"],
+    "subscribes": []
+  },
+  "depends_on": ["redis"],
+  "description": "Polling sync engine: OpenMRS ↔ OpenELIS via FHIR R4 with retry queue and audit log."
+}

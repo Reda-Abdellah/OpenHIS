@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from security import hash_password, audit
-from routers  import auth, users, services, config, audit as audit_router, announcements, registry
+from routers  import auth, users, services, config, audit as audit_router, announcements, registry, platform, profiles, events as events_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('admin')
@@ -19,6 +19,9 @@ app.include_router(config.router)
 app.include_router(audit_router.router)
 app.include_router(announcements.router)
 app.include_router(registry.router)
+app.include_router(platform.router)
+app.include_router(profiles.router)
+app.include_router(events_router.router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
