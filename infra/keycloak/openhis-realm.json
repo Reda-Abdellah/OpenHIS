@@ -9,18 +9,34 @@
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
-
   "roles": {
     "realm": [
-      { "name": "admin",       "description": "Platform administrator" },
-      { "name": "clinician",   "description": "Clinical staff (physician, nurse)" },
-      { "name": "radiologist", "description": "Radiology staff" },
-      { "name": "lab-tech",    "description": "Laboratory technician" },
-      { "name": "pharmacist",  "description": "Pharmacy staff" },
-      { "name": "patient",     "description": "Patient self-service access" }
+      {
+        "name": "admin",
+        "description": "Platform administrator"
+      },
+      {
+        "name": "clinician",
+        "description": "Clinical staff (physician, nurse)"
+      },
+      {
+        "name": "radiologist",
+        "description": "Radiology staff"
+      },
+      {
+        "name": "lab-tech",
+        "description": "Laboratory technician"
+      },
+      {
+        "name": "pharmacist",
+        "description": "Pharmacy staff"
+      },
+      {
+        "name": "patient",
+        "description": "Patient self-service access"
+      }
     ]
   },
-
   "clients": [
     {
       "clientId": "openhis-platform",
@@ -37,7 +53,53 @@
       "secret": "openhis-platform-secret",
       "redirectUris": [],
       "webOrigins": [],
-      "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "odoo-oidc",
+      "name": "Odoo ERP (OAuth2 SSO)",
+      "description": "Confidential OIDC client for Odoo 17 auth_oauth module \u2014 server-side code exchange",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "secret": "odoo-oidc-secret",
+      "redirectUris": [
+        "http://localhost/web/auth_oauth/signin"
+      ],
+      "webOrigins": [
+        "http://localhost"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
       "protocolMappers": [
         {
           "name": "realm-roles",
@@ -57,7 +119,7 @@
     {
       "clientId": "openhis-spa",
       "name": "OpenHIS Portal (SPA)",
-      "description": "Public OIDC client for the browser portal — no secret, uses PKCE",
+      "description": "Public OIDC client for the browser portal \u2014 no secret, uses PKCE",
       "enabled": true,
       "publicClient": true,
       "bearerOnly": false,
@@ -66,9 +128,18 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
-      "redirectUris": ["http://localhost/*"],
-      "webOrigins": ["http://localhost"],
-      "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
+      "redirectUris": [
+        "http://localhost/*"
+      ],
+      "webOrigins": [
+        "http://localhost"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256"
       },
@@ -89,7 +160,6 @@
       ]
     }
   ],
-
   "users": [
     {
       "username": "admin",
@@ -99,9 +169,15 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "admin", "temporary": false }
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["admin"],
+      "realmRoles": [
+        "admin"
+      ],
       "clientRoles": {
         "realm-management": [
           "realm-admin",
@@ -115,7 +191,6 @@
       }
     }
   ],
-
   "accessTokenLifespan": 300,
   "refreshTokenMaxReuse": 0,
   "ssoSessionMaxLifespan": 36000

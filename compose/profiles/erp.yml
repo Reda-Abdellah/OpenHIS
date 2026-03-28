@@ -72,3 +72,27 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+
+  # ── Odoo OIDC init — runs once after Odoo is healthy ───────────────────
+  # Installs auth_oauth, sets web.base.url, creates the Keycloak provider.
+  # Re-run manually if the database was recreated:
+  #   docker compose -f compose/base.yml -f compose/profiles/erp.yml run --rm odoo-init
+  odoo-init:
+    build:
+      context: ../infra/odoo
+      dockerfile: Dockerfile.init
+    depends_on:
+      odoo:
+        condition: service_healthy
+    environment:
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: ${ODOO_DB:-odoo}
+      ODOO_MASTER_PASS: ${ODOO_MASTER_PASS:-admin}
+      ODOO_ADMIN_PASS: ${ODOO_ADMIN_PASS:-admin}
+      ODOO_LANG: ${ODOO_LANG:-en_US}
+      ODOO_OIDC_CLIENT_ID: odoo-oidc
+      ODOO_OIDC_CLIENT_SECRET: ${ODOO_OIDC_SECRET:-odoo-oidc-secret}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: openhis
+    networks: [openhis-net]
+    restart: "no"

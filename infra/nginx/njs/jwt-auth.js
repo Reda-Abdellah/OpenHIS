@@ -48,13 +48,19 @@ function _guard(r, allowed) {
     }
 
     var roles = payload.roles || [];
-    if (roles.indexOf('admin') >= 0) { r.return(200); return; }
-
-    for (var i = 0; i < allowed.length; i++) {
-        if (roles.indexOf(allowed[i]) >= 0) { r.return(200); return; }
+    var granted = roles.indexOf('admin') >= 0;
+    for (var i = 0; !granted && i < allowed.length; i++) {
+        if (roles.indexOf(allowed[i]) >= 0) { granted = true; }
     }
 
-    r.return(403);
+    if (!granted) { r.return(403); return; }
+
+    // Emit identity headers — captured by auth_request_set in nginx.conf
+    // and forwarded to the upstream service as X-Remote-* proxy headers.
+    r.headersOut['X-Remote-User']  = payload.preferred_username || payload.sub || '';
+    r.headersOut['X-Remote-Roles'] = roles.join(',');
+    r.headersOut['X-Remote-Email'] = payload.email || '';
+    r.return(200);
 }
 
 function require_clinician(r)   { _guard(r, ['clinician']); }

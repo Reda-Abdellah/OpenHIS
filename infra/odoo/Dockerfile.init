@@ -1,0 +1,4 @@
+FROM python:3.11-slim
+# xmlrpc.client is in Python stdlib; no extra packages needed
+COPY setup_oidc.py /setup_oidc.py
+CMD ["python", "/setup_oidc.py"]
