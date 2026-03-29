@@ -71,15 +71,17 @@ services:
 
   # Radiology Information System — worklist and report management.
   ris:
-    build: ../services/ris
+    build:
+      context: ../..
+      dockerfile: services/ris/Dockerfile
     environment:
       DB_PATH: /data/ris.db
       ORTHANC_URL: http://orthanc:8042
       FHIR_BRIDGE_URL: http://integration-hub:8012
       ROOT_PATH: /ris
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: admin
-      OPENMRS_PASS: Admin123
+      OPENMRS_USER: ${OPENMRS_USER:-admin}
+      OPENMRS_PASS: ${OPENMRS_PASS}
       POLL_INTERVAL_S: "60"
     volumes:
       - ris-data:/data
@@ -95,7 +97,9 @@ services:
   # AI Controller — orchestrates inference jobs on DICOM studies.
   # Spawns pipeline containers (poc-xray, poc-ct) via Docker socket.
   ai-controller:
-    build: ../services/ai-controller
+    build:
+      context: ../..
+      dockerfile: services/ai-controller/Dockerfile
     environment:
       ORTHANC_URL: http://orthanc:8042
       RIS_URL: http://ris:8002/api

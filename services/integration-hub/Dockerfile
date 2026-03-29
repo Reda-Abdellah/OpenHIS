@@ -1,9 +1,11 @@
 FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY requirements.txt .
+COPY libs/openhis_sdk /openhis_sdk
+RUN pip install --no-cache-dir -e /openhis_sdk
+COPY services/integration-hub/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app/ ./app/
+COPY services/integration-hub/app/ ./app/
 EXPOSE 8012
 HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:8012/api/health || exit 1

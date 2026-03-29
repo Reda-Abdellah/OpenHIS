@@ -26,15 +26,17 @@ services:
 
   # Analytics — collects metrics from all active services, stores snapshots.
   analytics:
-    build: ../services/analytics
+    build:
+      context: ../..
+      dockerfile: services/analytics/Dockerfile
     environment:
       DB_PATH: /data/analytics.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: admin
-      OPENMRS_PASS: Admin123
+      OPENMRS_USER: ${OPENMRS_USER:-admin}
+      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: admin
-      OPENELIS_PASS: "adminADMIN!"
+      OPENELIS_USER: ${OPENELIS_USER:-admin}
+      OPENELIS_PASS: ${OPENELIS_PASS}
       RIS_URL: http://ris:8002/api
       AI_CONTROLLER_URL: http://ai-controller:8000/api
       ROOT_PATH: /analytics
@@ -52,15 +54,17 @@ services:
 
   # Patient Portal — patient-facing self-service for records and results.
   patient-portal:
-    build: ../services/patient-portal
+    build:
+      context: ../..
+      dockerfile: services/patient-portal/Dockerfile
     environment:
       DB_PATH: /data/portal.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: admin
-      OPENMRS_PASS: Admin123
+      OPENMRS_USER: ${OPENMRS_USER:-admin}
+      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: admin
-      OPENELIS_PASS: "adminADMIN!"
+      OPENELIS_USER: ${OPENELIS_USER:-admin}
+      OPENELIS_PASS: ${OPENELIS_PASS}
       RIS_URL: http://ris:8002/api
       ROOT_PATH: /patient-portal
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_PORTAL:-24}

@@ -4,7 +4,7 @@ import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.config import ROOT_PATH
-from app.routers import health, feed, events, audit
+from app.routers import health, feed, events, audit, fhir
 from app.db.audit import init_audit_db
 from app import worker, registry
 from app.log_config import configure as _configure_logging
@@ -49,3 +49,4 @@ app.include_router(health.router)
 app.include_router(feed.router)
 app.include_router(events.router)
 app.include_router(audit.router)
+app.include_router(fhir.router)

@@ -7,6 +7,33 @@ on:
     branches: [master, main]
 
 jobs:
+  # ── SDK drift guard ─────────────────────────────────────────────────────────
+  # Fails if any service contains a full copy of jwt_auth or log_config
+  # instead of the thin re-export from openhis_sdk.
+  sdk-lint:
+    name: SDK Drift Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check no full jwt_auth copies outside libs/
+        run: |
+          found=$(grep -rl "class JWTMiddleware" services/ 2>/dev/null || true)
+          if [ -n "$found" ]; then
+            echo "ERROR: Full JWTMiddleware implementation found outside libs/:"
+            echo "$found"
+            exit 1
+          fi
+
+      - name: Check no full log_config copies outside libs/
+        run: |
+          found=$(grep -rl "def configure" services/ 2>/dev/null || true)
+          if [ -n "$found" ]; then
+            echo "ERROR: Full log configure implementation found outside libs/:"
+            echo "$found"
+            exit 1
+          fi
+
   # ── Unit tests ──────────────────────────────────────────────────────────────
   unit-tests:
     name: Unit Tests
@@ -58,6 +85,11 @@ jobs:
           for req in services/*/requirements.txt; do
             pip install -r "$req"
           done
+
+      - name: Run Admin tests
+        env:
+          LOG_FORMAT: text
+        run: pytest tests/unit/admin/ -v
 
       - name: Run MPI tests
         env:
@@ -123,6 +155,49 @@ jobs:
           LOG_FORMAT: text
         run: pytest tests/simulator/ -v
 
+  # ── Smoke tests ─────────────────────────────────────────────────────────────
+  # Requires a full running stack; runs on push to main/master only.
+  # Waits for all core service health endpoints to return 200.
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy env file
+        run: cp .env.example .env && sed -i 's/CHANGE_ME_BEFORE_DEPLOY/test_ci_value/g' .env
+
+      - name: Start base stack
+        run: docker compose -f compose/base.yml up -d --wait --wait-timeout 120
+        env:
+          ADMIN_PASS: test_ci_value
+          POSTGRES_PASSWORD: test_ci_value
+          MPI_DB_PASS: test_ci_value
+          KEYCLOAK_ADMIN_PASSWORD: test_ci_value
+          KEYCLOAK_CLIENT_SECRET: test_ci_value
+
+      - name: Set up Python for smoke tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install smoke test deps
+        run: pip install pytest httpx
+
+      - name: Run smoke tests
+        run: pytest tests/smoke/ -v -m smoke
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f compose/base.yml logs --tail=50
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f compose/base.yml down -v
+
   # ── Docker build check ──────────────────────────────────────────────────────
   docker-build:
     name: Docker Build Check
@@ -143,6 +218,7 @@ jobs:
 
       - name: Build ${{ matrix.service }}
         run: |
-          docker build services/${{ matrix.service }} \
+          docker build . \
+            -f services/${{ matrix.service }}/Dockerfile \
             --tag openhis/${{ matrix.service }}:ci \
             --label "git-sha=${{ github.sha }}"

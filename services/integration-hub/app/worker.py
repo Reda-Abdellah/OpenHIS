@@ -17,7 +17,10 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.config import POLL_INTERVAL_S
+import httpx
+import redis.asyncio as aioredis
+
+from app.config import POLL_INTERVAL_S, REDIS_URL, MPI_URL
 from app.services import openmrs, openelis, odoo
 from app.db import audit
 from app import bus
@@ -25,10 +28,84 @@ import app.state as state
 
 log = logging.getLogger("hub.worker")
 
-# In-memory dedup sets — reset on restart (all upserts are idempotent)
-_synced_patients: set[str] = set()
-_synced_orders:   set[str] = set()
-_synced_reports:  set[str] = set()
+# Redis-backed dedup sets with 7-day TTL — survive restarts.
+# Falls back to in-memory sets when REDIS_URL is not configured.
+_DEDUP_TTL = 7 * 24 * 3600   # 7 days in seconds
+_redis: aioredis.Redis | None = None
+
+
+def _get_redis() -> aioredis.Redis | None:
+    global _redis
+    if _redis is None and REDIS_URL:
+        _redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    return _redis
+
+
+async def _dedup_check(key: str, value: str) -> bool:
+    """Return True if value is already in the Redis dedup set; add it if not."""
+    r = _get_redis()
+    if r is None:
+        return False   # no Redis — always process (upserts are idempotent)
+    full_key = f"hub:dedup:{key}"
+    added = await r.sadd(full_key, value)
+    await r.expire(full_key, _DEDUP_TTL)
+    return added == 0   # 0 means value already existed
+
+
+def _extract_mrn(fhir_patient: dict) -> str:
+    """Extract MRN from FHIR Patient identifier array."""
+    for ident in fhir_patient.get("identifier", []):
+        type_code = (
+            ident.get("type", {})
+            .get("coding", [{}])[0]
+            .get("code", "")
+        )
+        if type_code in ("MR", "MRN") or not type_code:
+            return ident.get("value", "")
+    return ""
+
+
+async def _sync_to_mpi(fhir_patient: dict, omrs_id: str, oe_id: str | None) -> None:
+    """
+    Register the patient in MPI and record OpenMRS + OpenELIS crossrefs.
+    Best-effort: errors are logged but do not fail the main sync loop.
+    """
+    mrn = _extract_mrn(fhir_patient)
+    if not mrn:
+        log.debug("MPI sync skipped for %s — no MRN in FHIR patient", omrs_id)
+        return
+
+    name = (fhir_patient.get("name") or [{}])[0]
+    given = (name.get("given") or [""])[0]
+    family = name.get("family", "")
+    payload = {
+        "id":        omrs_id,
+        "mrn":       mrn,
+        "firstname": given,
+        "lastname":  family,
+        "birthdate": fhir_patient.get("birthDate"),
+        "sex":       fhir_patient.get("gender"),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            # Upsert master patient + register OpenMRS crossref
+            r = await c.post(f"{MPI_URL}/api/sync/from-ehr", json=payload)
+            if r.status_code not in (200, 201, 202):
+                log.warning("MPI sync failed for %s: HTTP %s", omrs_id, r.status_code)
+                return
+            master_id = r.json().get("master_id")
+
+            # Register OpenELIS crossref if we have it
+            if oe_id and master_id:
+                await c.post(f"{MPI_URL}/api/crossref", json={
+                    "master_id": master_id,
+                    "system":    "openelis",
+                    "system_id": oe_id,
+                    "mrn":       mrn,
+                })
+    except Exception as exc:
+        log.warning("MPI sync error for %s: %s", omrs_id, exc)
 
 # Retry queue: (next_retry_at, coro_factory, resource_type, resource_id, direction, attempts)
 _retry_queue: deque = deque()
@@ -59,7 +136,7 @@ async def _sync_patients() -> int:
     count = 0
     for p in patients:
         pid = p.get("id", "")
-        if pid in _synced_patients:
+        if await _dedup_check("patients", pid):
             continue
 
         # OpenELIS sync — primary; failure triggers retry
@@ -67,7 +144,6 @@ async def _sync_patients() -> int:
         try:
             oe_id = await openelis.upsert_patient(p)
             if oe_id:
-                _synced_patients.add(pid)
                 count += 1
                 await audit.log_event(
                     "patient_synced", "Patient", pid, "omrs→oe", "ok",
@@ -77,6 +153,7 @@ async def _sync_patients() -> int:
                     "oe_id": oe_id,
                     "mrn": p.get("identifier", [{}])[0].get("value"),
                 })
+                await _sync_to_mpi(p, pid, oe_id)
         except Exception as exc:
             await audit.log_event(
                 "patient_sync_failed", "Patient", pid, "omrs→oe", "failed",
@@ -107,12 +184,11 @@ async def _sync_orders() -> int:
     count = 0
     for sr in orders:
         oid = sr.get("id", "")
-        if oid in _synced_orders:
+        if await _dedup_check("orders", oid):
             continue
         try:
             oe_id = await openelis.create_service_request(sr)
             if oe_id:
-                _synced_orders.add(oid)
                 count += 1
                 await audit.log_event(
                     "order_routed", "ServiceRequest", oid, "omrs→oe", "ok",
@@ -138,12 +214,11 @@ async def _sync_results() -> int:
     count = 0
     for dr in reports:
         rid = dr.get("id", "")
-        if rid in _synced_reports:
+        if await _dedup_check("reports", rid):
             continue
         try:
             ok = await openmrs.post_diagnostic_report(dr)
             if ok:
-                _synced_reports.add(rid)
                 count += 1
                 await audit.log_event(
                     "result_routed", "DiagnosticReport", rid, "oe→omrs", "ok",

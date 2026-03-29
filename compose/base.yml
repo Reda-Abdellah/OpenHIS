@@ -61,7 +61,9 @@ services:
   # Health:  http://localhost/admin/api/health
   # Default credentials: admin / admin123 (override with ADMIN_USER / ADMIN_PASS)
   admin:
-    build: ../services/admin
+    build:
+      context: ..
+      dockerfile: services/admin/Dockerfile
     environment:
       ROOT_PATH: /admin
       DB_PATH: /data/admin.db
@@ -89,7 +91,9 @@ services:
   # UI:      http://localhost/mpi/
   # Health:  http://localhost/mpi/api/health
   mpi:
-    build: ../services/mpi
+    build:
+      context: ..
+      dockerfile: services/mpi/Dockerfile
     environment:
       ROOT_PATH: /mpi
       MPI_DATABASE_URL: postgresql://mpi:${MPI_DB_PASS:-mpi}@postgres:5432/mpi
@@ -111,7 +115,9 @@ services:
   # OpenMRS → Odoo (pharmacy orders). Background worker with retry queue.
   # Health:  http://localhost/integration-hub/api/health
   integration-hub:
-    build: ../services/integration-hub
+    build:
+      context: ..
+      dockerfile: services/integration-hub/Dockerfile
     environment:
       ROOT_PATH: /integration-hub
       OPENMRS_URL: http://openmrs:8080
@@ -127,6 +133,7 @@ services:
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
       REDIS_URL: redis://redis:6379
+      MPI_URL: http://mpi:8007
     volumes:
       - hub-audit:/data
       - ../services/admin/openhis.service.json:/app/manifests/admin.json:ro
@@ -148,7 +155,9 @@ services:
   # Accepts and emits HL7 v2 messages (ADT, ORU, ORM) via MLLP on port 2575.
   # Health:  http://localhost/hl7/api/health
   hl7:
-    build: ../services/hl7
+    build:
+      context: ..
+      dockerfile: services/hl7/Dockerfile
     environment:
       DB_PATH: /data/hl7.db
       OPENMRS_URL: http://openmrs:8080

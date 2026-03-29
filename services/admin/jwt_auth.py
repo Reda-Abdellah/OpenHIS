@@ -11,8 +11,9 @@ Usage:
     async def protected(claims: dict = Depends(require_token)):
         return {"user": claims["preferred_username"]}
 
-If KEYCLOAK_URL is not set, validation is skipped and the dependency
-returns an empty claims dict (dev/test mode).
+Auth enforcement requires KEYCLOAK_URL to be set.
+For local dev without Keycloak, set OPENHIS_DEV_SKIP_AUTH=1 (prints a
+startup warning). Never set this in production.
 """
 import logging
 import os
@@ -27,7 +28,14 @@ log = logging.getLogger("jwt_auth")
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "")
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "openhis")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "openhis-platform")
-KEYCLOAK_CLIENT_SECRET = os.environ.get("KEYCLOAK_CLIENT_SECRET", "openhis-platform-secret")
+KEYCLOAK_CLIENT_SECRET = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
+_DEV_SKIP_AUTH = os.environ.get("OPENHIS_DEV_SKIP_AUTH", "").strip() == "1"
+
+if _DEV_SKIP_AUTH:
+    log.warning(
+        "⚠  OPENHIS_DEV_SKIP_AUTH=1 — JWT validation is DISABLED. "
+        "Never set this in production."
+    )
 
 _JWKS_CACHE: Optional[dict] = None
 _JWKS_FETCHED_AT: float = 0.0
@@ -58,8 +66,7 @@ async def _get_jwks() -> dict:
 async def validate_jwt(token: str) -> dict:
     """Validate a JWT Bearer token. Returns decoded claims on success."""
     if not KEYCLOAK_URL:
-        # Keycloak not configured — dev/test mode
-        return {}
+        raise HTTPException(503, "Identity provider not configured")
 
     try:
         from jose import jwt as jose_jwt, JWTError
@@ -89,7 +96,12 @@ async def require_token(authorization: str = Header(default=None)) -> dict:
     """
     FastAPI dependency: validates Keycloak JWT OR falls back to admin session.
     Use this in place of require_admin on endpoints that accept both auth flows.
+
+    Dev bypass: set OPENHIS_DEV_SKIP_AUTH=1 to skip all validation (local dev only).
     """
+    if _DEV_SKIP_AUTH:
+        return {"preferred_username": "dev", "roles": ["admin"], "sub": "dev"}
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Authentication required",
                             headers={"WWW-Authenticate": "Bearer"})
@@ -99,7 +111,7 @@ async def require_token(authorization: str = Header(default=None)) -> dict:
     if KEYCLOAK_URL:
         return await validate_jwt(token)
 
-    # Fallback: admin session token
+    # Fallback: admin session token (no Keycloak, no dev-skip → use local sessions)
     from security import validate_admin_session
     session = validate_admin_session(token)
     if not session:

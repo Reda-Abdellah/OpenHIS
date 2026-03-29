@@ -4,9 +4,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
+COPY libs/openhis_sdk /openhis_sdk
+RUN pip install --no-cache-dir -e /openhis_sdk
+COPY services/ai-controller/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+COPY services/ai-controller .
 
 RUN mkdir -p /data/jobs
 

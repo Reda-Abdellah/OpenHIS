@@ -106,9 +106,26 @@ def cli():
 
 # ── opm init ─────────────────────────────────────────────────────────────────
 
+_CHANGEME_SENTINEL = "CHANGE_ME_BEFORE_DEPLOY"
+_CREDENTIAL_KEYS = ["POSTGRES_PASSWORD", "ADMIN_PASS", "KEYCLOAK_ADMIN_PASSWORD",
+                    "KEYCLOAK_CLIENT_SECRET"]
+
+
 @cli.command()
-@click.option("--non-interactive", is_flag=True, help="Use defaults without prompting")
-def init(non_interactive: bool):
+@click.option("--non-interactive", is_flag=True,
+              help="Use env-var credentials only; fails if any are unset or sentinel values.")
+@click.option("--postgres-pass", envvar="OPENHIS_POSTGRES_PASS", default=None,
+              help="PostgreSQL password (required in --non-interactive mode).")
+@click.option("--admin-pass", envvar="OPENHIS_ADMIN_PASS", default=None,
+              help="Admin panel password (required in --non-interactive mode).")
+@click.option("--keycloak-pass", envvar="OPENHIS_KEYCLOAK_PASS", default=None,
+              help="Keycloak admin password (required in --non-interactive mode).")
+@click.option("--keycloak-secret", envvar="OPENHIS_KEYCLOAK_SECRET", default=None,
+              help="Keycloak client secret (required in --non-interactive mode).")
+@click.option("--validate", is_flag=True,
+              help="Validate that no CHANGE_ME_BEFORE_DEPLOY tokens remain before writing.")
+def init(non_interactive: bool, postgres_pass, admin_pass, keycloak_pass,
+         keycloak_secret, validate: bool):
     """First-run wizard: choose profiles, set passwords, write .env."""
     click.echo("\n  OpenHIS Platform Manager — first-run setup\n")
 
@@ -144,28 +161,54 @@ def init(non_interactive: bool):
 
     # Passwords
     if non_interactive:
-        env["POSTGRES_PASSWORD"] = "changeme"
-        env["ADMIN_PASS"] = "admin123"
-        env["KEYCLOAK_ADMIN_PASSWORD"] = "admin"
-        env["KEYCLOAK_CLIENT_SECRET"] = "openhis-platform-secret"
+        # Require explicit passwords via CLI flags or env vars — no defaults allowed.
+        missing = []
+        if not postgres_pass:  missing.append("--postgres-pass / OPENHIS_POSTGRES_PASS")
+        if not admin_pass:     missing.append("--admin-pass / OPENHIS_ADMIN_PASS")
+        if not keycloak_pass:  missing.append("--keycloak-pass / OPENHIS_KEYCLOAK_PASS")
+        if not keycloak_secret: missing.append("--keycloak-secret / OPENHIS_KEYCLOAK_SECRET")
+        if missing:
+            click.echo(
+                "\n  ERROR: --non-interactive requires all passwords to be supplied "
+                "explicitly.\n  Missing:\n"
+                + "".join(f"    • {m}\n" for m in missing),
+                err=True,
+            )
+            sys.exit(1)
+        env["POSTGRES_PASSWORD"]       = postgres_pass
+        env["ADMIN_PASS"]              = admin_pass
+        env["KEYCLOAK_ADMIN_PASSWORD"] = keycloak_pass
+        env["KEYCLOAK_CLIENT_SECRET"]  = keycloak_secret
     else:
         click.echo()
         env["POSTGRES_PASSWORD"] = click.prompt(
-            "  PostgreSQL password", default="changeme", hide_input=True, confirmation_prompt=True
+            "  PostgreSQL password", hide_input=True, confirmation_prompt=True
         )
         env["ADMIN_PASS"] = click.prompt(
-            "  Admin panel password", default="admin123", hide_input=True, confirmation_prompt=True
+            "  Admin panel password", hide_input=True, confirmation_prompt=True
         )
         env["KEYCLOAK_ADMIN_PASSWORD"] = click.prompt(
-            "  Keycloak admin password", default="admin", hide_input=True, confirmation_prompt=True
+            "  Keycloak admin password", hide_input=True, confirmation_prompt=True
         )
         env["KEYCLOAK_CLIENT_SECRET"] = click.prompt(
-            "  Keycloak client secret", default="openhis-platform-secret", hide_input=True
+            "  Keycloak client secret", hide_input=True
         )
 
     env["POSTGRES_USER"] = "openhis"
     env["ADMIN_USER"] = "admin"
     env["KEYCLOAK_ADMIN"] = "admin"
+
+    # --validate: reject any CHANGEME sentinel values
+    if validate:
+        bad = [k for k, v in env.items() if v == _CHANGEME_SENTINEL]
+        if bad:
+            click.echo(
+                f"\n  ERROR: The following vars still contain the sentinel value "
+                f"'{_CHANGEME_SENTINEL}':\n"
+                + "".join(f"    • {k}\n" for k in bad),
+                err=True,
+            )
+            sys.exit(1)
 
     _write_env(env)
     click.echo(f"\n  Wrote {ENV_FILE}")

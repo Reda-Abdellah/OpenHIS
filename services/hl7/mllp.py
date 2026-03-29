@@ -4,12 +4,17 @@ Frame: \x0B  <HL7 message>  \x1C\x0D
 """
 import asyncio
 import logging
+import os
 
 log = logging.getLogger('hl7.mllp')
 
 MLLP_VT = b'\x0b'   # Vertical Tab — start of block
 MLLP_FS = b'\x1c'   # File Separator — end of block
 MLLP_CR = b'\x0d'   # Carriage Return — end of transmission
+
+# Maximum raw bytes buffered per connection before the connection is dropped.
+# Prevents memory exhaustion from malformed or malicious messages.
+MLLP_MAX_MSG_BYTES: int = int(os.environ.get("MLLP_MAX_MSG_BYTES", str(1 * 1024 * 1024)))
 
 
 def wrap(msg: str) -> bytes:
@@ -41,6 +46,12 @@ async def _handle_client(reader: asyncio.StreamReader,
             if not chunk:
                 break
             buf += chunk
+            if len(buf) > MLLP_MAX_MSG_BYTES:
+                log.warning(
+                    "MLLP buffer exceeded %d bytes from %s — closing connection",
+                    MLLP_MAX_MSG_BYTES, addr,
+                )
+                break
             while MLLP_VT in buf and MLLP_FS in buf:
                 s = buf.find(MLLP_VT)
                 e = buf.find(MLLP_FS, s)
