@@ -20,7 +20,7 @@
         odoo-up odoo-logs odoo-verify odoo-clean \
         hub-up hub-logs hub-verify hub-clean \
         admin-up admin-logs mpi-up mpi-logs \
-        phase5-migrate
+        phase5-migrate health
 
 # ── Profile-aware compose command ─────────────────────────────────────────────
 # Read OPENHIS_PROFILES from .env (if not already in environment).
@@ -75,6 +75,10 @@ logs-service:
 # Show running containers and their status
 ps:
 	$(DC) ps
+
+# Show health status of all containers (healthy / unhealthy / starting)
+health:
+	docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E '(NAME|health)'
 
 # Restart a single service, e.g.: make restart SVC=admin
 restart:

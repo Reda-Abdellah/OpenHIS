@@ -1,11 +1,3 @@
-<img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
-
-# Can you create a V\&V scenario that is meant to be followed to verify end-to-end features and interoperability
-
-Based on my deep analysis of the OpenHIS codebase, here is a complete Verification \& Validation scenario document covering every integration boundary in the system.
-
-***
-
 # OpenHIS — Verification \& Validation Scenario Guide
 
 **Version:** 1.0 · **Target Stack:** `base` + `emr` + `laboratory` + `imaging` + `analytics` profiles
@@ -56,7 +48,7 @@ make health
 | Orthanc | `http://localhost/orthanc` | Orthanc Explorer |
 | OHIF Viewer | `http://localhost/ohif` | Viewer loads |
 | MPI API | `http://localhost/mpi/api/health` | `{"status":"ok"}` |
-| Integration Hub | `http://localhost/hub/api/health` | `{"status":"ok"}` |
+| Integration Hub | `http://localhost/integration-hub/api/health` | `{"status":"ok"}` |
 | HL7 MLLP | TCP port `2575` | Connection accepted |
 
 ✅ **PASS:** All 9 checks return expected responses within 5 seconds.
@@ -185,10 +177,10 @@ curl -s http://localhost/mpi/api/crossref/<openmrs_uuid> | python -m json.tool
 ❌ **FAIL:** Order missing — check bus event:
 
 ```bash
-docker exec openhis-redis redis-cli XRANGE openhis.events - + COUNT 20 | grep laborder
+docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 20 | grep lab_order
 ```
 
-If no event, the integration-hub adapter failed to publish `laborder.routed`.
+If no event, the integration-hub adapter failed to publish `lab_order.routed`.
 
 ***
 
@@ -210,10 +202,12 @@ If no event, the integration-hub adapter failed to publish `laborder.routed`.
 
 ***
 
-**Step 2.4 — Verify FHIR DiagnosticReport (within 30s)**
+**Step 2.4 — Verify DiagnosticReport was pushed to OpenMRS (within 30s)**
+
+The integration hub pushes the completed DiagnosticReport directly to OpenMRS FHIR. Verify it arrived via the OpenMRS FHIR endpoint:
 
 ```bash
-curl -s "http://localhost/hub/fhir/DiagnosticReport?patient=<openmrs_uuid>&_sort=-date" \
+curl -s "http://localhost/openmrs/ws/fhir2/R4/DiagnosticReport?patient=<openmrs_uuid>&_sort=-date" \
   -H "Accept: application/fhir+json" | python -m json.tool
 ```
 
@@ -224,10 +218,11 @@ curl -s "http://localhost/hub/fhir/DiagnosticReport?patient=<openmrs_uuid>&_sort
 - 5 `result` entries (one per CBC component)
 - `conclusion` or `interpretation` present on the WBC entry (flagged High)
 
-❌ **FAIL:** Empty bundle — check `labresult.ready` event was published:
+❌ **FAIL:** Empty bundle — check `lab_result.ready` event was published and the hub processed it:
 
 ```bash
-docker exec openhis-redis redis-cli XRANGE openhis.events - + COUNT 50 | grep labresult
+docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 50 | grep lab_result
+docker compose logs integration-hub | grep "result_routed\|result_route_failed"
 ```
 
 
@@ -252,7 +247,7 @@ docker compose logs hl7 | grep "ORU\^R01" | tail -5
 ❌ **FAIL (non-blocking):** If no downstream MLLP target is configured, verify the consumer at least *received* the event:
 
 ```bash
-docker compose logs hl7 | grep "labresult.ready"
+docker compose logs hl7 | grep "lab_result.ready"
 ```
 
 
@@ -302,7 +297,7 @@ curl -s http://localhost/ris/api/worklist | python -m json.tool
 - `modality: "CR"`
 - `status: "SCHEDULED"`
 
-❌ **FAIL:** Empty worklist — check `docker compose logs ris` and verify `laborder.routed` event was consumed.
+❌ **FAIL:** Empty worklist — check `docker compose logs ris` and verify `lab_order.routed` event was consumed.
 
 ***
 
@@ -335,7 +330,7 @@ curl http://localhost/orthanc/plugins
 **Step 3.4 — Verify `dicom.stored` event published (within 15s)**
 
 ```bash
-docker exec openhis-redis redis-cli XRANGE openhis.events - + COUNT 50 | grep dicom.stored
+docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 50 | grep dicom.stored
 ```
 
 ✅ **PASS:** Event entry present with `studyuid`, `patientid`, and `modality` fields.
@@ -420,7 +415,7 @@ Create these users in Keycloak at `http://localhost/auth` → Realm `openhis`:
 # Get a token for dr.martin
 TOKEN=$(curl -s -X POST \
   "http://localhost/auth/realms/openhis/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=openhis-client&username=dr.martin&password=DrPass123!" \
+  -d "grant_type=password&client_id=openhis-platform&username=dr.martin&password=DrPass123!" \
   | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 echo "Token acquired: ${TOKEN:0:50}..."
@@ -447,7 +442,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 # Get token for readonly user
 READONLY_TOKEN=$(curl -s -X POST \
   "http://localhost/auth/realms/openhis/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=openhis-client&username=readonly&password=ReadPass123!" \
+  -d "grant_type=password&client_id=openhis-platform&username=readonly&password=ReadPass123!" \
   | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s -o /dev/null -w "%{http_code}" \
@@ -511,7 +506,7 @@ curl -s http://localhost/admin/api/services \
   -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
 ```
 
-✅ **PASS:** Response lists all active services with `status: online` for: `mpi`, `integration-hub`, `hl7`, `ris`, `analytics`, `ai-controller`, `patient-portal`.
+✅ **PASS:** Response lists all active services with `status: online` for: `mpi`, `integration-hub`, `hl7`, `ris`, `analytics`, `ai-controller`.
 ❌ **FAIL:** Any active service shows `status: offline` — check the service's `/api/health` endpoint directly.
 
 ***
@@ -519,7 +514,7 @@ curl -s http://localhost/admin/api/services \
 **Step 5.2 — Topology graph integrity**
 
 ```bash
-curl -s http://localhost/admin/api/topology \
+curl -s http://localhost/admin/api/platform/topology \
   -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
 ```
 
