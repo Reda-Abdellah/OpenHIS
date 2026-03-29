@@ -3,8 +3,8 @@ Deterministic patient matching algorithm.
 
 Score weights:
   MRN exact match   → 1.0  (immediate certain match)
-  firstname         → 0.25
-  lastname          → 0.35
+  firstname         → 0.25  (Jaro-Winkler similarity)
+  lastname          → 0.35  (Jaro-Winkler similarity)
   birthdate exact   → 0.30
   sex exact         → 0.10
   max without MRN   → 0.99 (never reaches 1.0 to distinguish from MRN match)
@@ -14,6 +14,8 @@ Threshold for duplicate flag: 0.70
 import re
 from typing import List, Tuple
 
+import jellyfish
+
 
 def _norm(s) -> str:
     if not s:
@@ -21,16 +23,12 @@ def _norm(s) -> str:
     return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
 
-def _char_overlap(a: str, b: str) -> float:
-    """Simple character-level overlap ratio."""
+def _name_similarity(a: str, b: str) -> float:
+    """Jaro-Winkler similarity on normalised name strings."""
     a, b = _norm(a), _norm(b)
     if not a or not b:
         return 0.0
-    if a == b:
-        return 1.0
-    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    hits = sum(1 for c in shorter if c in longer)
-    return round(hits / len(longer), 4)
+    return round(jellyfish.jaro_winkler_similarity(a, b), 4)
 
 
 def compute_match_score(a: dict, b: dict) -> float:
@@ -43,8 +41,8 @@ def compute_match_score(a: dict, b: dict) -> float:
     if mrn_a and mrn_b and mrn_a == mrn_b:
         return 1.0
 
-    score  = _char_overlap(a.get("firstname", ""), b.get("firstname", "")) * 0.25
-    score += _char_overlap(a.get("lastname",  ""), b.get("lastname",  "")) * 0.35
+    score  = _name_similarity(a.get("firstname", ""), b.get("firstname", "")) * 0.25
+    score += _name_similarity(a.get("lastname",  ""), b.get("lastname",  "")) * 0.35
 
     dob_a  = (a.get("birthdate") or "").strip()
     dob_b  = (b.get("birthdate") or "").strip()

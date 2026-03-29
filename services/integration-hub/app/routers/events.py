@@ -17,6 +17,9 @@ from app.config import OPENMRS_URL, OPENMRS_USER, OPENMRS_PASS
 from app.translators.diagnostic_report import to_fhir_diagnostic_report_radiology
 from app.translators.imaging_study import to_fhir_imaging_study
 from app.translators.observation import to_fhir_observations_from_ai
+from app import bus
+from app.db import audit
+from app.utils.retry import with_retry
 
 log = logging.getLogger("hub.events")
 
@@ -70,7 +73,13 @@ async def on_report_final(payload: dict, bg: BackgroundTasks):
     return {"status": "queued"}
 
 
+@with_retry(max_attempts=3, base_delay=1.0)
+async def _push_with_retry(resource: dict) -> None:
+    await _push(resource)
+
+
 async def _handle_report_final(payload: dict):
+    await audit.log_event("webhook_received", "DiagnosticReport", "", "ris→hub", "ok")
     # Fetch full report from RIS if only order_id is provided
     report = payload
     if payload.get("order_id") and not payload.get("impression"):
@@ -82,11 +91,19 @@ async def _handle_report_final(payload: dict):
         except Exception:
             pass
 
-    patient_ref = await _resolve_patient_uuid(
-        str(report.get("ehr_patient_id", "") or report.get("patient_id", "")))
-    dr = to_fhir_diagnostic_report_radiology(report)
-    dr["subject"] = {"reference": f"Patient/{patient_ref}"}
-    await _push(dr)
+    try:
+        patient_ref = await _resolve_patient_uuid(
+            str(report.get("ehr_patient_id", "") or report.get("patient_id", "")))
+        dr = to_fhir_diagnostic_report_radiology(report)
+        dr["subject"] = {"reference": f"Patient/{patient_ref}"}
+        await _push_with_retry(dr)
+        await audit.log_event("fhir_pushed", "DiagnosticReport", report.get("order_id", ""), "hub→omrs", "ok")
+        await bus.publish("radiology.report.ready", {
+            "order_id": report.get("order_id"),
+            "patient_id": patient_ref,
+        })
+    except Exception as exc:
+        await audit.log_event("fhir_push_failed", "DiagnosticReport", report.get("order_id", ""), "hub→omrs", "failed", str(exc))
 
 
 @router.post("/dicom-stored")
@@ -97,6 +114,7 @@ async def on_dicom_stored(payload: dict, bg: BackgroundTasks):
 
 
 async def _handle_dicom_stored(payload: dict):
+    await audit.log_event("webhook_received", "ImagingStudy", "", "orthanc→hub", "ok")
     instance_id = payload.get("instanceId")
     if not instance_id:
         return
@@ -115,13 +133,24 @@ async def _handle_dicom_stored(payload: dict):
                 series["StudyMainDicomTags"] = study.get("MainDicomTags", {})
     except Exception as e:
         log.warning(f"DICOM fetch failed: {e}")
+        await audit.log_event("dicom_fetch_failed", "ImagingStudy", instance_id, "orthanc→hub", "failed", str(e))
         return
 
-    # PatientID in DICOM is typically the MRN
-    mrn = patient_tags.get("PatientID", "")
-    patient_uuid = await _resolve_patient_uuid(mrn)
-    study = to_fhir_imaging_study(series, patient_uuid)
-    await _push(study)
+    try:
+        # PatientID in DICOM is typically the MRN
+        mrn = patient_tags.get("PatientID", "")
+        patient_uuid = await _resolve_patient_uuid(mrn)
+        fhir_study = to_fhir_imaging_study(series, patient_uuid)
+        await _push_with_retry(fhir_study)
+        study_uid = series.get("MainDicomTags", {}).get("StudyInstanceUID", "")
+        await audit.log_event("fhir_pushed", "ImagingStudy", study_uid, "hub→omrs", "ok")
+        await bus.publish("dicom.stored", {
+            "study_uid": study_uid,
+            "patient_id": mrn,
+            "modality": series.get("MainDicomTags", {}).get("Modality", ""),
+        })
+    except Exception as exc:
+        await audit.log_event("fhir_push_failed", "ImagingStudy", instance_id, "hub→omrs", "failed", str(exc))
 
 
 @router.post("/ai-job-completed")
@@ -132,6 +161,7 @@ async def on_ai_job_completed(payload: dict, bg: BackgroundTasks):
 
 
 async def _handle_ai_job(payload: dict):
+    await audit.log_event("webhook_received", "Observation", "", "ai-controller→hub", "ok")
     job_id = payload.get("job_id")
     if not job_id:
         return
@@ -140,8 +170,18 @@ async def _handle_ai_job(payload: dict):
             job = (await c.get(f"http://ai-controller:8000/api/jobs/{job_id}")).json()
     except Exception as e:
         log.warning(f"AI job fetch failed: {e}")
+        await audit.log_event("ai_fetch_failed", "Observation", job_id, "ai-controller→hub", "failed", str(e))
         return
 
-    observations = to_fhir_observations_from_ai(job)
-    for obs in observations:
-        await _push(obs)
+    try:
+        observations = to_fhir_observations_from_ai(job)
+        for obs in observations:
+            await _push_with_retry(obs)
+        await audit.log_event("fhir_pushed", "Observation", job_id, "hub→omrs", "ok")
+        await bus.publish("ai.result.ready", {
+            "job_id": job_id,
+            "pipeline_id": job.get("pipeline_id"),
+            "patient_id": job.get("patient_id"),
+        })
+    except Exception as exc:
+        await audit.log_event("fhir_push_failed", "Observation", job_id, "hub→omrs", "failed", str(exc))

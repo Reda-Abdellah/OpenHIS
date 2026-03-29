@@ -14,7 +14,6 @@ networks:
 volumes:
   pg-data:
   admin-data:
-  mpi-data:
   hl7-data:
   hub-audit:
   redis-data:
@@ -47,6 +46,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orthanc}
     volumes:
       - pg-data:/var/lib/postgresql/data
+      - ../infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -66,7 +66,7 @@ services:
       ROOT_PATH: /admin
       DB_PATH: /data/admin.db
       ADMIN_USER: ${ADMIN_USER:-admin}
-      ADMIN_PASS: ${ADMIN_PASS:-admin123}
+      ADMIN_PASS: ${ADMIN_PASS}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_ADMIN:-12}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: openhis
@@ -92,10 +92,11 @@ services:
     build: ../services/mpi
     environment:
       ROOT_PATH: /mpi
-      DB_PATH: /data/mpi.db
+      MPI_DATABASE_URL: postgresql://mpi:${MPI_DB_PASS:-mpi}@postgres:5432/mpi
       REDIS_URL: redis://redis:6379
-    volumes:
-      - mpi-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -114,20 +115,26 @@ services:
     environment:
       ROOT_PATH: /integration-hub
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: admin
-      OPENMRS_PASS: Admin123
+      OPENMRS_USER: ${OPENMRS_USER:-admin}
+      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: admin
-      OPENELIS_PASS: "adminADMIN!"
+      OPENELIS_USER: ${OPENELIS_USER:-admin}
+      OPENELIS_PASS: ${OPENELIS_PASS}
       ODOO_URL: http://odoo:8069
       ODOO_DB: odoo
-      ODOO_USER: admin
-      ODOO_PASS: admin
+      ODOO_USER: ${ODOO_USER:-admin}
+      ODOO_PASS: ${ODOO_PASS}
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
       REDIS_URL: redis://redis:6379
     volumes:
       - hub-audit:/data
+      - ../services/admin/openhis.service.json:/app/manifests/admin.json:ro
+      - ../services/mpi/openhis.service.json:/app/manifests/mpi.json:ro
+      - ../services/integration-hub/openhis.service.json:/app/manifests/integration-hub.json:ro
+      - ../services/hl7/openhis.service.json:/app/manifests/hl7.json:ro
+      - ../services/analytics/openhis.service.json:/app/manifests/analytics.json:ro
+      - ../services/ai-controller/openhis.service.json:/app/manifests/ai-controller.json:ro
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -145,8 +152,13 @@ services:
     environment:
       DB_PATH: /data/hl7.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: admin
-      OPENMRS_PASS: Admin123
+      OPENMRS_USER: ${OPENMRS_USER:-admin}
+      OPENMRS_PASS: ${OPENMRS_PASS}
+      OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: ${OPENELIS_USER:-admin}
+      OPENELIS_PASS: ${OPENELIS_PASS}
+      MPI_BASE_URL: http://mpi:8007
+      REDIS_URL: redis://redis:6379
       ROOT_PATH: /hl7
       MLLP_ENABLED: "true"
       MLLP_HOST: "0.0.0.0"

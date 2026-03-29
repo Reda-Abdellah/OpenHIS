@@ -3,11 +3,15 @@ Inbound HL7 message handlers.
 Each handler propagates clinical events to OpenMRS via FHIR R4.
 All HTTP calls are best-effort: failures are logged but do not prevent ACK.
 """
+import asyncio
 import datetime
+import json
 import logging
 import os
+from datetime import timezone
 
 import httpx
+import redis.asyncio as aioredis
 
 from builder import build_ack
 from database import get_db
@@ -16,8 +20,10 @@ from parser import parse as hl7_parse
 log = logging.getLogger("hl7.handlers")
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
-OPENMRS_USER = os.environ.get("OPENMRS_USER", "admin")
-OPENMRS_PASS = os.environ.get("OPENMRS_PASS", "Admin123")
+OPENMRS_USER = os.environ.get("OPENMRS_USER")
+OPENMRS_PASS = os.environ.get("OPENMRS_PASS")
+MPI_BASE_URL = os.environ.get("MPI_BASE_URL", "http://mpi:8007")
+REDIS_URL    = os.environ.get("REDIS_URL", "")
 
 _FHIR  = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
 _AUTH  = (OPENMRS_USER, OPENMRS_PASS)
@@ -25,6 +31,30 @@ _HDR   = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+j
 TIMEOUT = httpx.Timeout(8.0)
 
 _SEX_MAP = {"M": "male", "F": "female", "U": "unknown", "O": "other"}
+
+
+# ── bus helper ────────────────────────────────────────────────────────────────
+
+async def _bus_publish(event_type: str, payload: dict) -> None:
+    """Publish an event to the openhis:events Redis stream (best-effort)."""
+    if not REDIS_URL:
+        return
+    try:
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        await r.xadd(
+            "openhis:events",
+            {
+                "type": event_type,
+                "source": "hl7",
+                "payload": json.dumps(payload),
+                "ts": datetime.datetime.now(timezone.utc).isoformat(),
+            },
+            maxlen=10_000,
+            approximate=True,
+        )
+        await r.aclose()
+    except Exception as e:
+        log.warning("Bus publish failed (%s): %s", event_type, e)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -38,6 +68,20 @@ async def _fhir_post(resource: dict) -> dict | None:
             return r.json()
     except Exception as e:
         log.warning(f"FHIR POST {rtype} failed: {e}")
+        return None
+
+
+async def _fhir_post_op(operation: str, params: dict) -> dict | None:
+    """POST a FHIR operation (e.g. Patient/$merge) with a Parameters body."""
+    try:
+        async with httpx.AsyncClient(auth=_AUTH, timeout=TIMEOUT) as c:
+            r = await c.post(f"{_FHIR}/{operation}", json=params, headers=_HDR)
+            if r.status_code not in (200, 201):
+                log.warning("FHIR op %s returned %d: %s", operation, r.status_code, r.text[:200])
+                return None
+            return r.json()
+    except Exception as e:
+        log.warning("FHIR op %s failed: %s", operation, e)
         return None
 
 
@@ -93,7 +137,7 @@ async def handle_a01_admit(parsed: dict):
         "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
                   "code": "IMP", "display": "inpatient encounter"},
         "subject": {"reference": f"Patient/{patient_uuid}"},
-        "period": {"start": datetime.datetime.utcnow().isoformat() + "Z"},
+        "period": {"start": datetime.datetime.now(timezone.utc).isoformat()},
     })
 
 
@@ -118,10 +162,53 @@ async def handle_a08_update(parsed: dict):
 
 
 async def handle_a40_merge(parsed: dict):
-    """ADT^A40 — Merge: log only (OpenMRS patient merge requires admin UI)."""
-    surviving = parsed.get("mrn")
-    retired   = parsed.get("mrg_mrn")
-    log.info(f"A40 merge received: surviving={surviving}, retired={retired} — manual merge required in OpenMRS")
+    """ADT^A40 — Merge: call MPI crossref merge, FHIR $merge on OpenMRS, publish bus event."""
+    surviving_mrn = parsed.get("mrn")
+    deprecated_mrn = parsed.get("mrg_mrn")
+
+    if not surviving_mrn or not deprecated_mrn:
+        log.warning("A40 merge missing MRN fields: surviving=%s deprecated=%s",
+                    surviving_mrn, deprecated_mrn)
+        return
+
+    log.info("A40 merge: surviving=%s deprecated=%s", surviving_mrn, deprecated_mrn)
+
+    # 1. Notify MPI to merge cross-references
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            resp = await c.post(
+                f"{MPI_BASE_URL}/api/crossref/merge",
+                json={"surviving_mrn": surviving_mrn, "deprecated_mrn": deprecated_mrn},
+            )
+            if resp.status_code not in (200, 201):
+                log.warning("MPI merge returned %d: %s", resp.status_code, resp.text[:200])
+    except Exception as e:
+        log.warning("MPI crossref merge failed: %s", e)
+
+    # 2. FHIR $merge on OpenMRS
+    surviving_uuid = await _find_patient_uuid(surviving_mrn)
+    deprecated_uuid = await _find_patient_uuid(deprecated_mrn)
+    if surviving_uuid and deprecated_uuid:
+        fhir_merge = {
+            "resourceType": "Parameters",
+            "parameter": [
+                {"name": "source-patient",
+                 "valueReference": {"reference": f"Patient/{deprecated_uuid}"}},
+                {"name": "target-patient",
+                 "valueReference": {"reference": f"Patient/{surviving_uuid}"}},
+            ],
+        }
+        await _fhir_post_op("Patient/$merge", fhir_merge)
+    else:
+        log.warning("Could not resolve UUIDs for A40 merge: surviving=%s deprecated=%s",
+                    surviving_uuid, deprecated_uuid)
+
+    # 3. Publish bus event
+    await _bus_publish("patient.merged", {
+        "surviving_mrn": surviving_mrn,
+        "deprecated_mrn": deprecated_mrn,
+        "ts": datetime.datetime.now(timezone.utc).isoformat(),
+    })
 
 
 async def handle_oru_r01(parsed: dict):
@@ -134,7 +221,7 @@ async def handle_oru_r01(parsed: dict):
         "status": "final",
         "code": {"text": parsed.get("order_id", "HL7 ORU Result")},
         "subject": subject,
-        "issued": datetime.datetime.utcnow().isoformat() + "Z",
+        "issued": datetime.datetime.now(timezone.utc).isoformat(),
         "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v2-0074",
                                    "code": "LAB"}]}],
     })

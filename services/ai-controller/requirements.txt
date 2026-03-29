@@ -7,3 +7,5 @@ docker==7.0.0
 python-multipart==0.0.9
 requests==2.31.0
 redis[asyncio]==5.0.7
+python-jose[cryptography]>=3.3
+python-json-logger>=2.0

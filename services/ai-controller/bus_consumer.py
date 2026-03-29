@@ -147,6 +147,47 @@ async def _handle_lab_result_ready(payload: dict) -> None:
         )
 
 
+async def _handle_dicom_stored(payload: dict) -> None:
+    """
+    Fired by integration-hub when an Orthanc DICOM instance is stored.
+    payload: {"study_uid": str, "patient_id": str, "modality": str, "ts": str}
+    """
+    study_uid  = payload.get("study_uid")
+    patient_id = payload.get("patient_id", "")
+    modality   = payload.get("modality", "").upper()
+
+    if not study_uid:
+        return
+
+    with get_db() as db:
+        rules = rows_to_list(db.execute("""
+            SELECT r.*, p.source_type as pipeline_source_type
+            FROM rules r
+            JOIN pipelines p ON p.id = r.pipeline_id
+            WHERE r.auto_trigger = 1
+              AND r.enabled = 1
+              AND p.enabled = 1
+              AND p.source_type = 'dicom'
+            ORDER BY r.priority DESC
+        """).fetchall())
+
+    for rule in rules:
+        rule_filter = json.loads(rule.get("trigger_filter") or "{}")
+        if rule_filter.get("modality") and modality and rule_filter["modality"].upper() != modality:
+            continue
+        if _check_existing_clinical_job(study_uid, rule["pipeline_id"]):
+            log.debug("Dedup: job already exists for study_uid=%s pipeline=%s", study_uid, rule["pipeline_id"])
+            continue
+        await _create_and_enqueue_job(
+            pipeline_id=rule["pipeline_id"],
+            rule_id=rule["id"],
+            source_type="dicom",
+            event_source_id=study_uid,
+            patient_id=patient_id,
+            event_payload=payload,
+        )
+
+
 async def _handle_patient_synced(payload: dict) -> None:
     """
     Fired by integration-hub when a patient is synced from OpenMRS → OpenELIS.
@@ -187,6 +228,7 @@ async def _handle_patient_synced(payload: dict) -> None:
 _HANDLERS = {
     "lab_result.ready": _handle_lab_result_ready,
     "patient.synced":   _handle_patient_synced,
+    "dicom.stored":     _handle_dicom_stored,
 }
 
 

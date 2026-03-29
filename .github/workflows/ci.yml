@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  # ── Unit tests ──────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: mpi
+          POSTGRES_PASSWORD: mpi
+          POSTGRES_DB: mpi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mpi"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('services/*/requirements.txt') }}
+          restore-keys: pip-
+
+      - name: Install all service dependencies
+        run: |
+          pip install pytest pytest-asyncio httpx
+          for req in services/*/requirements.txt; do
+            pip install -r "$req"
+          done
+
+      - name: Run MPI tests
+        env:
+          MPI_DATABASE_URL: postgresql://mpi:mpi@localhost:5432/mpi_test
+          REDIS_URL: redis://localhost:6379
+          LOG_FORMAT: text
+        run: pytest tests/mpi/ -v
+
+      - name: Run HL7 tests
+        env:
+          OPENMRS_USER: admin
+          OPENMRS_PASS: test
+          REDIS_URL: redis://localhost:6379
+          LOG_FORMAT: text
+        run: pytest tests/hl7/ -v
+
+      - name: Run Integration-Hub tests
+        env:
+          OPENMRS_USER: admin
+          OPENMRS_PASS: test
+          OPENELIS_USER: admin
+          OPENELIS_PASS: test
+          ODOO_USER: admin
+          ODOO_PASS: test
+          REDIS_URL: redis://localhost:6379
+          LOG_FORMAT: text
+        run: pytest tests/integration-hub/ -v
+
+      - name: Run Analytics tests
+        env:
+          OPENMRS_USER: admin
+          OPENMRS_PASS: test
+          OPENELIS_USER: admin
+          OPENELIS_PASS: test
+          REDIS_URL: redis://localhost:6379
+          LOG_FORMAT: text
+        run: pytest tests/analytics/ -v
+
+      - name: Run AI-Controller tests
+        env:
+          REDIS_URL: redis://localhost:6379
+          LOG_FORMAT: text
+        run: pytest tests/ai-controller/ -v
+
+      - name: Run RIS tests
+        env:
+          OPENMRS_USER: admin
+          OPENMRS_PASS: test
+          LOG_FORMAT: text
+        run: pytest tests/ris/ -v
+
+      - name: Run Patient Portal tests
+        env:
+          OPENMRS_USER: admin
+          OPENMRS_PASS: test
+          OPENELIS_USER: admin
+          OPENELIS_PASS: test
+          LOG_FORMAT: text
+        run: pytest tests/patient-portal/ -v
+
+      - name: Run HL7 simulator tests
+        env:
+          LOG_FORMAT: text
+        run: pytest tests/simulator/ -v
+
+  # ── Docker build check ──────────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - mpi
+          - hl7
+          - analytics
+          - ai-controller
+          - ris
+          - patient-portal
+          - admin
+          - integration-hub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build services/${{ matrix.service }} \
+            --tag openhis/${{ matrix.service }}:ci \
+            --label "git-sha=${{ github.sha }}"

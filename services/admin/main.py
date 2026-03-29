@@ -1,16 +1,45 @@
-import asyncio, logging, os
+import asyncio, logging, os, sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from security import hash_password, audit
 from routers  import auth, users, services, config, audit as audit_router, announcements, registry, platform, profiles, events as events_router
+import log_config
 
-logging.basicConfig(level=logging.INFO)
+log_config.configure("admin")
 log = logging.getLogger('admin')
 
 ROOT_PATH = os.environ.get('ROOT_PATH', '')
-app = FastAPI(title="Admin Dashboard", version="1.0.0", root_path=ROOT_PATH)
+
+_REQUIRED_ENV = ["ADMIN_PASS"]
+
+
+def _check_env() -> None:
+    missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
+    if missing:
+        sys.exit(f"FATAL: Missing required env vars: {', '.join(missing)}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _check_env()
+    init_db()
+    _seed_default_admin()
+    from routers.registry import seed_base_services
+    seed_base_services()
+    task = asyncio.create_task(_purge_loop())
+    log.info("Admin Dashboard v1.0 ready")
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="Admin Dashboard", version="1.0.0", root_path=ROOT_PATH, lifespan=lifespan)
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -33,19 +62,9 @@ async def index():
         return f.read()
 
 
-@app.on_event('startup')
-async def startup():
-    init_db()
-    _seed_default_admin()
-    from routers.registry import seed_base_services
-    seed_base_services()
-    asyncio.create_task(_purge_loop())
-    log.info("Admin Dashboard v1.0 ready")
-
-
 def _seed_default_admin():
     default_user = os.environ.get('ADMIN_USER', 'admin')
-    default_pass = os.environ.get('ADMIN_PASS', 'admin123')
+    default_pass = os.environ.get('ADMIN_PASS')
     with get_db() as db:
         if not db.execute(
             "SELECT 1 FROM admin_users WHERE username=?", (default_user,)

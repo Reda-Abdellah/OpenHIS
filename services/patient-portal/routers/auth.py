@@ -6,8 +6,8 @@ from auth import create_session, delete_session, validate_session
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
-OPENMRS_USER = os.environ.get("OPENMRS_USER", "admin")
-OPENMRS_PASS = os.environ.get("OPENMRS_PASS", "Admin123")
+OPENMRS_USER = os.environ.get("OPENMRS_USER")
+OPENMRS_PASS = os.environ.get("OPENMRS_PASS")
 _FHIR        = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
 _AUTH        = (OPENMRS_USER, OPENMRS_PASS)
 

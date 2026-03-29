@@ -52,6 +52,7 @@ def parse(raw: str) -> dict:
     pv1 = segments.get('PV1', [])
     msa = segments.get('MSA', [])
     obr = segments.get('OBR', [])
+    mrg = segments.get('MRG', [])
 
     # MSH
     msg_type    = _field(msh, 9)
@@ -91,6 +92,9 @@ def parse(raw: str) -> dict:
     # OBR (ORU)
     order_id    = _field(obr, 2)
 
+    # MRG (A40 patient merge — deprecated/retired patient identifiers)
+    mrg_mrn     = _comp(_field(mrg, 1), 0)
+
     patient_name = f"{firstname} {lastname}".strip() or None
 
     return {
@@ -119,5 +123,6 @@ def parse(raw: str) -> dict:
         "ack_ctrl_id":  ack_ctrl_id,
         "ack_text":     ack_text,
         "order_id":     order_id,
+        "mrg_mrn":      mrg_mrn,
         "_segments":    list(segments.keys()),
     }

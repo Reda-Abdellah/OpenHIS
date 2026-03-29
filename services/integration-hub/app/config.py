@@ -1,17 +1,17 @@
 import os
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
-OPENMRS_USER = os.environ.get("OPENMRS_USER", "admin")
-OPENMRS_PASS = os.environ.get("OPENMRS_PASS", "Admin123")
+OPENMRS_USER = os.environ.get("OPENMRS_USER")
+OPENMRS_PASS = os.environ.get("OPENMRS_PASS")
 
 OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
-OPENELIS_USER = os.environ.get("OPENELIS_USER", "admin")
-OPENELIS_PASS = os.environ.get("OPENELIS_PASS", "adminADMIN!")
+OPENELIS_USER = os.environ.get("OPENELIS_USER")
+OPENELIS_PASS = os.environ.get("OPENELIS_PASS")
 
 ODOO_URL  = os.environ.get("ODOO_URL",  "http://odoo:8069")
 ODOO_DB   = os.environ.get("ODOO_DB",   "odoo")
-ODOO_USER = os.environ.get("ODOO_USER", "admin")
-ODOO_PASS = os.environ.get("ODOO_PASS", "admin")
+ODOO_USER = os.environ.get("ODOO_USER")
+ODOO_PASS = os.environ.get("ODOO_PASS")
 
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "60"))
 ROOT_PATH       = os.environ.get("ROOT_PATH", "")

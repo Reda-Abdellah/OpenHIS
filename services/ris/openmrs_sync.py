@@ -7,10 +7,10 @@ manual data entry.
 
 Category filter: SNOMED 363679005 (Imaging)
 
-Env vars (all optional — sensible defaults for Docker Compose):
+Env vars:
   OPENMRS_URL      http://openmrs:8080
-  OPENMRS_USER     admin
-  OPENMRS_PASS     Admin123
+  OPENMRS_USER     (required)
+  OPENMRS_PASS     (required)
   POLL_INTERVAL_S  60
   DB_PATH          /data/ris.db
 """
@@ -25,8 +25,8 @@ from database import get_db
 log = logging.getLogger("ris.omrs_sync")
 
 OPENMRS_URL     = os.environ.get("OPENMRS_URL",     "http://openmrs:8080")
-OPENMRS_USER    = os.environ.get("OPENMRS_USER",    "admin")
-OPENMRS_PASS    = os.environ.get("OPENMRS_PASS",    "Admin123")
+OPENMRS_USER    = os.environ.get("OPENMRS_USER")
+OPENMRS_PASS    = os.environ.get("OPENMRS_PASS")
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "60"))
 
 FHIR_BASE = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"

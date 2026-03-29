@@ -8,11 +8,11 @@ from database import get_db, rows_to_list
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 OPENMRS_URL   = os.environ.get("OPENMRS_URL",   "http://openmrs:8080")
-OPENMRS_USER  = os.environ.get("OPENMRS_USER",  "admin")
-OPENMRS_PASS  = os.environ.get("OPENMRS_PASS",  "Admin123")
+OPENMRS_USER  = os.environ.get("OPENMRS_USER")
+OPENMRS_PASS  = os.environ.get("OPENMRS_PASS")
 OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
-OPENELIS_USER = os.environ.get("OPENELIS_USER", "admin")
-OPENELIS_PASS = os.environ.get("OPENELIS_PASS", "adminADMIN!")
+OPENELIS_USER = os.environ.get("OPENELIS_USER")
+OPENELIS_PASS = os.environ.get("OPENELIS_PASS")
 RIS_URL       = os.environ.get("RIS_URL",        "http://ris:8002/api")
 
 _OMRS_FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"

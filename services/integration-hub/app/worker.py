@@ -61,6 +61,9 @@ async def _sync_patients() -> int:
         pid = p.get("id", "")
         if pid in _synced_patients:
             continue
+
+        # OpenELIS sync — primary; failure triggers retry
+        oe_id = None
         try:
             oe_id = await openelis.upsert_patient(p)
             if oe_id:
@@ -69,11 +72,9 @@ async def _sync_patients() -> int:
                 await audit.log_event(
                     "patient_synced", "Patient", pid, "omrs→oe", "ok",
                 )
-                odoo_id = await odoo.upsert_patient(p)
                 await bus.publish("patient.synced", {
                     "omrs_id": pid,
                     "oe_id": oe_id,
-                    "odoo_id": odoo_id,
                     "mrn": p.get("identifier", [{}])[0].get("value"),
                 })
         except Exception as exc:
@@ -85,6 +86,19 @@ async def _sync_patients() -> int:
                 lambda _p=p: openelis.upsert_patient(_p),
                 "Patient", pid, "omrs→oe", 1,
             )
+
+        # Odoo sync — independent; failure does not block OpenELIS or bus publish
+        try:
+            await odoo.upsert_patient(p)
+            await audit.log_event(
+                "patient_synced", "Patient", pid, "omrs→odoo", "ok",
+            )
+        except Exception as exc:
+            await audit.log_event(
+                "patient_sync_failed", "Patient", pid, "omrs→odoo", "failed",
+                str(exc),
+            )
+
     return count
 
 

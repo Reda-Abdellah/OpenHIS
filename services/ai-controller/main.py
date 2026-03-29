@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -9,11 +10,29 @@ from database import init_db, get_db, rows_to_list
 from routers import pipelines, rules, jobs, artifacts, saveback
 import bus_consumer
 import orthanc_client as oc
+import log_config
 
-logging.basicConfig(level=logging.INFO)
+log_config.configure("ai-controller")
 log = logging.getLogger("ai-controller")
 
-app = FastAPI(title="AI Controller", version="1.0.0", root_path="")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    task = asyncio.create_task(bus_consumer.consume_loop())
+    log.info("AI Controller v1.0 ready")
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+from jwt_auth import JWTMiddleware
+
+app = FastAPI(title="AI Controller", version="1.0.0", root_path="", lifespan=lifespan)
+app.add_middleware(JWTMiddleware)
 
 # ── routers ───────────────────────────────────────────────────────────────────
 app.include_router(pipelines.router)
@@ -31,14 +50,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def index():
     with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
         return f.read()
-
-
-# ── startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    init_db()
-    asyncio.create_task(bus_consumer.consume_loop())
-    log.info("AI Controller v1.0 ready")
 
 
 # ── health ────────────────────────────────────────────────────────────────────

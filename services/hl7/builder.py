@@ -2,7 +2,7 @@
 HL7 v2 message builder.
 Segments are joined with \r (carriage return — HL7 spec standard).
 """
-import datetime
+from datetime import datetime, timezone
 import uuid
 
 SENDING_APP = 'HL7-SVC'
@@ -10,7 +10,7 @@ SENDING_FAC = 'LOCAL'
 
 
 def _ts() -> str:
-    return datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    return datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
 
 
 def _ctrl() -> str:
