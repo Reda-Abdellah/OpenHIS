@@ -1,0 +1,52 @@
+name: openhis
+
+# ── CI overrides ───────────────────────────────────────────────────────────────
+# Apply on top of base.yml for CI smoke tests (GitHub Actions).
+# Usage: docker compose -f compose/base.yml -f compose/overrides/ci.yml up -d
+#
+# Goals: lightweight (no persistent volumes), fast startup, no real SSL.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  keycloak:
+    # Faster startup in CI; skip theme building
+    environment:
+      KC_LOG_LEVEL: WARN
+
+  postgres:
+    # Ephemeral DB in CI — use tmpfs for speed
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    # Ephemeral in CI
+    tmpfs:
+      - /data
+
+  nginx:
+    ports:
+      - "8080:80"   # Non-privileged port; no sudo needed in CI runners
+
+# Drop named volumes — CI uses tmpfs above
+volumes:
+  pg-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  admin-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  hub-audit:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+  redis-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs

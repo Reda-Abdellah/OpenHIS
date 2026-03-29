@@ -1,0 +1,34 @@
+name: openhis
+
+# ── Production overrides ───────────────────────────────────────────────────────
+# Apply on top of base.yml for production deployments.
+# Usage: docker compose -f compose/base.yml -f compose/overrides/production.yml up -d
+#
+# Hardens Keycloak (no start-dev), enforces TLS, removes debug ports.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  keycloak:
+    # Switch from start-dev to production mode (requires valid TLS cert)
+    command: ["start", "--optimized"]
+    environment:
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:?set KEYCLOAK_HOSTNAME}
+      KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/tls.key
+      KC_HTTP_ENABLED: "false"
+    volumes:
+      - ../infra/ssl/tls.crt:/opt/keycloak/conf/tls.crt:ro
+      - ../infra/ssl/tls.key:/opt/keycloak/conf/tls.key:ro
+
+  nginx:
+    # In production, TLS termination happens at the load balancer; remove debug port
+    ports:
+      - "80:80"
+
+  # Prevent debug/admin ports from being exposed
+  postgres:
+    ports: []
+
+  redis:
+    ports: []
