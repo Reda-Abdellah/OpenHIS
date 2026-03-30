@@ -12,9 +12,10 @@ from app.log_config import configure as _configure_logging
 _configure_logging("integration-hub")
 
 _REQUIRED_ENV = [
-    "OPENMRS_USER", "OPENMRS_PASS",
-    "OPENELIS_USER", "OPENELIS_PASS",
-    "ODOO_USER", "ODOO_PASS",
+    "KEYCLOAK_TOKEN_URL",
+    "KEYCLOAK_CLIENT_ID",
+    "KEYCLOAK_CLIENT_SECRET",
+    "ODOO_ADMIN_PASS",
 ]
 
 

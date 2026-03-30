@@ -2,10 +2,11 @@ import datetime
 import httpx as _httpx
 
 import os
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -46,7 +47,7 @@ class ReportUpdate(BaseModel):
     status         : Optional[str] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("radiologist", "clinician", "admin"))])
 def list_reports(status: str = ""):
     sql, params = _LIST_SQL, []
     if status:
@@ -56,7 +57,7 @@ def list_reports(status: str = ""):
         return rows_to_list(db.execute(sql, params).fetchall())
 
 
-@router.get("/order/{order_id}")
+@router.get("/order/{order_id}", dependencies=[Depends(require_roles("radiologist", "clinician", "admin"))])
 def get_by_order(order_id: int):
     with get_db() as db:
         row = db.execute(_FULL_SQL + "WHERE r.order_id=?", (order_id,)).fetchone()
@@ -65,7 +66,7 @@ def get_by_order(order_id: int):
     return row_to_dict(row)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles("radiologist"))])
 def create_report(body: ReportCreate):
     if body.status and body.status not in VALID_STATUSES:
         raise HTTPException(422, f"Invalid status. Use: {VALID_STATUSES}")
@@ -91,7 +92,7 @@ def create_report(body: ReportCreate):
     return row_to_dict(row)
 
 
-@router.put("/{report_id}")
+@router.put("/{report_id}", dependencies=[Depends(require_roles("radiologist"))])
 def update_report(report_id: int, body: ReportUpdate, bg: BackgroundTasks):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:

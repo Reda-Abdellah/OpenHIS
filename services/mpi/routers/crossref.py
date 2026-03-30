@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from openhis_sdk.auth import require_token
 
 router = APIRouter(prefix="/api/crossref", tags=["crossref"])
 
@@ -14,7 +15,7 @@ class XRefCreate(BaseModel):
     assigning_authority: Optional[str] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_token)])
 def list_xrefs(master_id: Optional[str] = None, system: Optional[str] = None):
     clauses, params = [], []
     if master_id: clauses.append("master_id=?"); params.append(master_id)
@@ -26,7 +27,7 @@ def list_xrefs(master_id: Optional[str] = None, system: Optional[str] = None):
         ).fetchall())
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_token)])
 def create_xref(body: XRefCreate):
     with get_db() as db:
         if not db.execute(
@@ -48,7 +49,7 @@ def create_xref(body: XRefCreate):
                 f"Cross-reference ({body.system}:{body.system_id}) already registered")
 
 
-@router.delete("/{xref_id}", status_code=204)
+@router.delete("/{xref_id}", status_code=204, dependencies=[Depends(require_token)])
 def delete_xref(xref_id: int):
     with get_db() as db:
         if not db.execute(

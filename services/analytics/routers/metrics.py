@@ -1,7 +1,8 @@
 import json
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import Optional
 from database import get_db
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 KNOWN_DOMAINS = {'ehr', 'orders', 'billing', 'ai', 'mpi'}
@@ -18,13 +19,13 @@ def _latest(db, domain: str):
     return {'data': None, 'captured_at': None}
 
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require_roles("clinician", "admin"))])
 def get_summary():
     with get_db() as db:
         return {d: _latest(db, d) for d in KNOWN_DOMAINS}
 
 
-@router.get("/trends")
+@router.get("/trends", dependencies=[Depends(require_roles("clinician", "admin"))])
 def get_trends(domain: str, metric: str, limit: int = 20):
     with get_db() as db:
         rows = db.execute(
@@ -43,7 +44,7 @@ def get_trends(domain: str, metric: str, limit: int = 20):
     return {'domain': domain, 'metric': metric, 'series': series}
 
 
-@router.get("/{domain}")
+@router.get("/{domain}", dependencies=[Depends(require_roles("clinician", "admin"))])
 def get_domain(domain: str):
     if domain not in KNOWN_DOMAINS:
         raise HTTPException(404, f"Unknown domain {domain!r}. Known: {sorted(KNOWN_DOMAINS)}")
@@ -54,7 +55,7 @@ def get_domain(domain: str):
     return snap
 
 
-@router.post("/refresh", status_code=202)
+@router.post("/refresh", status_code=202, dependencies=[Depends(require_roles("admin"))])
 async def trigger_refresh(bg: BackgroundTasks):
     from collector import collect_and_store
     bg.add_task(collect_and_store)

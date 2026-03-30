@@ -14,7 +14,7 @@ import asyncio, datetime, json, time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from security import require_admin
+from jwt_auth import require_token
 from database import get_db, rows_to_list, row_to_dict
 
 router = APIRouter(prefix="/api/registry", tags=["registry"])
@@ -99,7 +99,7 @@ def _update_status(name: str, status: str):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_services(_: dict = Depends(require_admin)):
+async def list_services(_: dict = Depends(require_token)):
     with get_db() as db:
         rows = rows_to_list(
             db.execute("SELECT * FROM service_registry ORDER BY profile, name").fetchall()
@@ -119,7 +119,7 @@ async def list_services(_: dict = Depends(require_admin)):
 
 
 @router.get("/{name}")
-async def get_service(name: str, _: dict = Depends(require_admin)):
+async def get_service(name: str, _: dict = Depends(require_token)):
     with get_db() as db:
         row = row_to_dict(
             db.execute("SELECT * FROM service_registry WHERE name=?", (name,)).fetchone()
@@ -132,7 +132,7 @@ async def get_service(name: str, _: dict = Depends(require_admin)):
 
 
 @router.post("", status_code=201)
-async def register_service(entry: ServiceEntry, _: dict = Depends(require_admin)):
+async def register_service(entry: ServiceEntry, _: dict = Depends(require_token)):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     with get_db() as db:
         db.execute(
@@ -153,7 +153,7 @@ async def register_service(entry: ServiceEntry, _: dict = Depends(require_admin)
 
 
 @router.delete("/{name}", status_code=200)
-async def deregister_service(name: str, _: dict = Depends(require_admin)):
+async def deregister_service(name: str, _: dict = Depends(require_token)):
     with get_db() as db:
         db.execute("DELETE FROM service_registry WHERE name=?", (name,))
     return {"deregistered": name}

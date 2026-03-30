@@ -3,14 +3,20 @@ Odoo XML-RPC client.
 
 Uses the standard xmlrpc.client (sync) wrapped in asyncio.to_thread so it
 doesn't block the event loop.
+
+Note: Odoo XML-RPC does not support Bearer tokens. This client authenticates
+with the Odoo admin user via ODOO_ADMIN_PASS. This is separate from the Keycloak
+SSO flow that end-users use to log into the Odoo web interface.
 """
 import asyncio
 import logging
 import xmlrpc.client
 from typing import Optional
-from app.config import ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASS
+from app.config import ODOO_URL, ODOO_DB, ODOO_ADMIN_PASS
 
 log = logging.getLogger("hub.odoo")
+
+_ODOO_ADMIN_LOGIN = "admin"
 
 
 def _common() -> xmlrpc.client.ServerProxy:
@@ -27,7 +33,7 @@ def _version() -> dict:
 
 def _authenticate() -> Optional[int]:
     try:
-        uid = _common().authenticate(ODOO_DB, ODOO_USER, ODOO_PASS, {})
+        uid = _common().authenticate(ODOO_DB, _ODOO_ADMIN_LOGIN, ODOO_ADMIN_PASS, {})
         return uid if uid else None
     except Exception as e:
         log.warning(f"Odoo authenticate: {e}")
@@ -64,10 +70,9 @@ def _upsert_patient_sync(patient: dict) -> Optional[str]:
 
     models = _models()
 
-    # Search by external reference (MRN) first
     if mrn:
         existing = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASS,
+            ODOO_DB, uid, ODOO_ADMIN_PASS,
             "res.partner", "search", [[["ref", "=", mrn]]],
         )
         if existing:
@@ -75,7 +80,7 @@ def _upsert_patient_sync(patient: dict) -> Optional[str]:
             return str(existing[0])
 
     partner_id = models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS,
+        ODOO_DB, uid, ODOO_ADMIN_PASS,
         "res.partner", "create",
         [{"name": full_name, "ref": mrn, "patient_rank": 1, "is_company": False}],
     )
@@ -99,15 +104,13 @@ def _create_pharmacy_order_sync(patient_name: str, drug_name: str,
         return None
     models = _models()
 
-    # Find or create patient partner
-    partners = models.execute_kw(ODOO_DB, uid, ODOO_PASS,
+    partners = models.execute_kw(ODOO_DB, uid, ODOO_ADMIN_PASS,
         "res.partner", "search", [[["name", "=", patient_name]]])
     partner_id = partners[0] if partners else models.execute_kw(
-        ODOO_DB, uid, ODOO_PASS, "res.partner", "create",
+        ODOO_DB, uid, ODOO_ADMIN_PASS, "res.partner", "create",
         [{"name": patient_name, "is_company": False}])
 
-    # Find drug product (best-effort — order still created if not found)
-    products = models.execute_kw(ODOO_DB, uid, ODOO_PASS,
+    products = models.execute_kw(ODOO_DB, uid, ODOO_ADMIN_PASS,
         "product.product", "search", [[["name", "ilike", drug_name]]])
 
     order_vals: dict = {"partner_id": partner_id, "note": notes}
@@ -117,7 +120,7 @@ def _create_pharmacy_order_sync(patient_name: str, drug_name: str,
             "product_uom_qty": quantity,
         })]
 
-    order_id = models.execute_kw(ODOO_DB, uid, ODOO_PASS,
+    order_id = models.execute_kw(ODOO_DB, uid, ODOO_ADMIN_PASS,
         "sale.order", "create", [order_vals])
     log.info(f"Odoo sale.order/{order_id} — {patient_name} / {drug_name}")
     return order_id

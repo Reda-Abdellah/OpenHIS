@@ -7,19 +7,25 @@ DiagnosticReports back to OpenMRS.
 import logging
 from typing import Optional
 import httpx
-from app.config import OPENMRS_URL, OPENMRS_USER, OPENMRS_PASS
+from app.config import OPENMRS_URL
+from app.token import get_service_token
 
 log = logging.getLogger("hub.openmrs")
 
 _FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
-_AUTH = (OPENMRS_USER, OPENMRS_PASS)
 _HDR  = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"}
+
+
+async def _auth_headers() -> dict:
+    token = await get_service_token()
+    return {**_HDR, "Authorization": f"Bearer {token}"}
 
 
 async def health_check() -> bool:
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=8) as c:
-            r = await c.get(f"{_FHIR}/metadata")
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(f"{_FHIR}/metadata", headers=hdrs)
             return r.status_code == 200
     except Exception:
         return False
@@ -28,10 +34,11 @@ async def health_check() -> bool:
 async def get_recent_patients(count: int = 100) -> list[dict]:
     """Return the most recently updated patients, sorted newest first."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=20) as c:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=20) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"_count": count, "_sort": "-_lastUpdated"},
-                            headers=_HDR)
+                            headers=hdrs)
             r.raise_for_status()
             return [e["resource"] for e in r.json().get("entry", [])]
     except Exception as e:
@@ -42,10 +49,11 @@ async def get_recent_patients(count: int = 100) -> list[dict]:
 async def get_active_service_requests(count: int = 100) -> list[dict]:
     """Return active lab/radiology orders from OpenMRS."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=20) as c:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=20) as c:
             r = await c.get(f"{_FHIR}/ServiceRequest",
                             params={"status": "active", "_count": count},
-                            headers=_HDR)
+                            headers=hdrs)
             r.raise_for_status()
             return [e["resource"] for e in r.json().get("entry", [])]
     except Exception as e:
@@ -56,8 +64,9 @@ async def get_active_service_requests(count: int = 100) -> list[dict]:
 async def post_diagnostic_report(report: dict) -> bool:
     """Write a completed DiagnosticReport back to OpenMRS FHIR."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=15) as c:
-            r = await c.post(f"{_FHIR}/DiagnosticReport", json=report, headers=_HDR)
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(f"{_FHIR}/DiagnosticReport", json=report, headers=hdrs)
             r.raise_for_status()
             log.info(f"DiagnosticReport → OpenMRS HTTP {r.status_code}")
             return True
@@ -69,10 +78,11 @@ async def post_diagnostic_report(report: dict) -> bool:
 async def find_patient_uuid(identifier_value: str) -> Optional[str]:
     """Return the OpenMRS patient UUID matching a given identifier value."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=10) as c:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"identifier": identifier_value},
-                            headers=_HDR)
+                            headers=hdrs)
             r.raise_for_status()
             entries = r.json().get("entry", [])
             return entries[0]["resource"]["id"] if entries else None

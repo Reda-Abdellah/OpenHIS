@@ -12,7 +12,7 @@ log = logging.getLogger('patient-portal')
 
 ROOT_PATH = os.environ.get('ROOT_PATH', '')
 
-_REQUIRED_ENV = ["OPENMRS_USER", "OPENMRS_PASS", "OPENELIS_USER", "OPENELIS_PASS"]
+_REQUIRED_ENV = ["KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
 
 
 def _check_env() -> None:

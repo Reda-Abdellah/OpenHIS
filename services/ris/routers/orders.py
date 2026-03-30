@@ -1,8 +1,9 @@
 import datetime, random
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api", tags=["orders"])
 
@@ -74,7 +75,7 @@ _ORDER_SQL = """    ORDER BY
 
 # ── routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/worklist")
+@router.get("/worklist", dependencies=[Depends(require_roles("clinician", "radiologist", "admin"))])
 def get_worklist(status: str = "", priority: str = "", modality: str = ""):
     clauses, params = [], []
     if status:   clauses.append("o.status = ?");   params.append(status)
@@ -89,7 +90,7 @@ def get_worklist(status: str = "", priority: str = "", modality: str = ""):
     return rows_to_list(rows)
 
 
-@router.get("/orders")
+@router.get("/orders", dependencies=[Depends(require_roles("clinician", "radiologist", "admin"))])
 def list_orders(status: str = "", modality: str = ""):
     clauses, params = [], []
     if status:   clauses.append("o.status = ?");   params.append(status)
@@ -99,7 +100,7 @@ def list_orders(status: str = "", modality: str = ""):
         return rows_to_list(db.execute(_WORKLIST_SQL + where + _ORDER_SQL, params).fetchall())
 
 
-@router.patch("/orders/{order_id}")
+@router.patch("/orders/{order_id}", dependencies=[Depends(require_roles("radiologist", "admin"))])
 def patch_order(order_id: int, body: OrderUpdate):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
@@ -113,7 +114,7 @@ def patch_order(order_id: int, body: OrderUpdate):
     return row_to_dict(row)
 
 
-@router.post("/orders", status_code=201)
+@router.post("/orders", status_code=201, dependencies=[Depends(require_roles("radiologist", "admin"))])
 def create_order(body: OrderCreate):
     # verify patient exists
     with get_db() as db:

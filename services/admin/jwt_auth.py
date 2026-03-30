@@ -1,39 +1,33 @@
 """
-Keycloak JWT validation for OpenHIS native services.
+Keycloak JWT validation for the Admin service.
 
-Validates RS256 Bearer tokens against Keycloak's JWKS endpoint.
-JWKS keys are cached in memory with a 1-hour TTL.
+All requests require a valid Keycloak Bearer token.
+No fallback to local session tokens.
 
-Usage:
-    from jwt_auth import require_token
-
-    @router.get("/protected")
-    async def protected(claims: dict = Depends(require_token)):
-        return {"user": claims["preferred_username"]}
-
-Auth enforcement requires KEYCLOAK_URL to be set.
-For local dev without Keycloak, set OPENHIS_DEV_SKIP_AUTH=1 (prints a
-startup warning). Never set this in production.
+Dev bypass: set DEV_MODE=true to skip validation (prints a loud startup
+warning and exits with code 1 if ENV=production is also set).
 """
 import logging
 import os
+import sys
 import time
 from typing import Optional
 
 import httpx
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
-log = logging.getLogger("jwt_auth")
+log = logging.getLogger("admin.jwt_auth")
 
-KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "")
-KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "openhis")
+KEYCLOAK_URL       = os.environ.get("KEYCLOAK_URL", "")
+KEYCLOAK_REALM     = os.environ.get("KEYCLOAK_REALM", "openhis")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "openhis-platform")
-KEYCLOAK_CLIENT_SECRET = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
-_DEV_SKIP_AUTH = os.environ.get("OPENHIS_DEV_SKIP_AUTH", "").strip() == "1"
+DEV_MODE           = os.environ.get("DEV_MODE", "false").lower() == "true"
 
-if _DEV_SKIP_AUTH:
+if DEV_MODE:
+    if os.environ.get("ENV", "").lower() == "production":
+        sys.exit("FATAL: DEV_MODE=true is not allowed when ENV=production")
     log.warning(
-        "⚠  OPENHIS_DEV_SKIP_AUTH=1 — JWT validation is DISABLED. "
+        "⚠️  DEV_MODE enabled — JWT validation is DISABLED. "
         "Never set this in production."
     )
 
@@ -63,16 +57,15 @@ async def _get_jwks() -> dict:
         return _JWKS_CACHE or {}
 
 
-async def validate_jwt(token: str) -> dict:
-    """Validate a JWT Bearer token. Returns decoded claims on success."""
+async def _validate_jwt(token: str) -> dict:
     if not KEYCLOAK_URL:
-        raise HTTPException(503, "Identity provider not configured")
+        raise HTTPException(503, "Identity provider not configured (KEYCLOAK_URL missing)")
 
     try:
-        from jose import jwt as jose_jwt, JWTError
+        from jose import jwt as jose_jwt
     except ImportError:
         log.error("python-jose not installed; cannot validate JWT")
-        return {}
+        raise HTTPException(500, "JWT library unavailable")
 
     jwks = await _get_jwks()
     if not jwks:
@@ -93,30 +86,21 @@ async def validate_jwt(token: str) -> dict:
 
 
 async def require_token(authorization: str = Header(default=None)) -> dict:
-    """
-    FastAPI dependency: validates Keycloak JWT OR falls back to admin session.
-    Use this in place of require_admin on endpoints that accept both auth flows.
-
-    Dev bypass: set OPENHIS_DEV_SKIP_AUTH=1 to skip all validation (local dev only).
-    """
-    if _DEV_SKIP_AUTH:
+    """FastAPI dependency: validates Keycloak JWT. Returns decoded claims."""
+    if DEV_MODE:
         return {"preferred_username": "dev", "roles": ["admin"], "sub": "dev"}
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Authentication required",
                             headers={"WWW-Authenticate": "Bearer"})
-    token = authorization[7:].strip()
+    return await _validate_jwt(authorization[7:].strip())
 
-    # Try Keycloak JWT first (if configured)
-    if KEYCLOAK_URL:
-        return await validate_jwt(token)
 
-    # Fallback: admin session token (no Keycloak, no dev-skip → use local sessions)
-    from security import validate_admin_session
-    session = validate_admin_session(token)
-    if not session:
-        raise HTTPException(401, "Session expired or invalid",
-                            headers={"WWW-Authenticate": "Bearer"})
-    return {"preferred_username": session["username"],
-            "roles": [session.get("role", "admin")],
-            "sub": str(session["user_id"])}
+def require_roles(*roles: str):
+    """FastAPI dependency factory: require any of the given realm roles."""
+    async def check(claims: dict = Depends(require_token)) -> dict:
+        user_roles = claims.get("roles", [])
+        if not any(r in user_roles for r in roles):
+            raise HTTPException(403, "Insufficient role")
+        return claims
+    return check

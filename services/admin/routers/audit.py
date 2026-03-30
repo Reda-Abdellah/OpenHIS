@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from typing import Optional
 from database import get_db, rows_to_list
-from security import require_admin
+from jwt_auth import require_token
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
@@ -11,7 +11,7 @@ def list_audit(
     admin_user: Optional[str] = None,
     action:     Optional[str] = None,
     limit:      int = 200,
-    session: dict = Depends(require_admin),
+    claims: dict = Depends(require_token),
 ):
     clauses, params = [], []
     if admin_user: clauses.append("admin_user=?"); params.append(admin_user)

@@ -5,7 +5,7 @@ Kept for backward-compatibility; the registry router is now the source of truth.
 import asyncio, datetime, time
 import httpx
 from fastapi import APIRouter, Depends
-from security import require_admin
+from jwt_auth import require_token
 from database import get_db, rows_to_list
 
 router = APIRouter(prefix="/api/services", tags=["services"])
@@ -34,7 +34,7 @@ async def _check(name: str, url: str, path: str | None) -> dict:
 
 
 @router.get("")
-async def get_services(session: dict = Depends(require_admin)):
+async def get_services(_: dict = Depends(require_token)):
     """
     Health check all registered services.
     Pulls the service list from the registry so it automatically reflects

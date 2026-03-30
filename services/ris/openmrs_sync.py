@@ -8,11 +8,12 @@ manual data entry.
 Category filter: SNOMED 363679005 (Imaging)
 
 Env vars:
-  OPENMRS_URL      http://openmrs:8080
-  OPENMRS_USER     (required)
-  OPENMRS_PASS     (required)
-  POLL_INTERVAL_S  60
-  DB_PATH          /data/ris.db
+  OPENMRS_URL           http://openmrs:8080
+  KEYCLOAK_TOKEN_URL    (required)
+  KEYCLOAK_CLIENT_ID    (required)
+  KEYCLOAK_CLIENT_SECRET (required)
+  POLL_INTERVAL_S       60
+  DB_PATH               /data/ris.db
 """
 import asyncio
 import logging
@@ -24,9 +25,7 @@ from database import get_db
 
 log = logging.getLogger("ris.omrs_sync")
 
-OPENMRS_URL     = os.environ.get("OPENMRS_URL",     "http://openmrs:8080")
-OPENMRS_USER    = os.environ.get("OPENMRS_USER")
-OPENMRS_PASS    = os.environ.get("OPENMRS_PASS")
+OPENMRS_URL     = os.environ.get("OPENMRS_URL", "http://openmrs:8080")
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "60"))
 
 FHIR_BASE = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
@@ -176,14 +175,19 @@ async def _sync_once(client: httpx.AsyncClient) -> int:
 
 async def sync_loop() -> None:
     """Background task — runs forever, sleeping POLL_INTERVAL_S between cycles."""
+    from token import get_service_token
     log.info(
         "OpenMRS→RIS sync started (interval=%ds fhir=%s)",
         POLL_INTERVAL_S, FHIR_BASE,
     )
-    auth = (OPENMRS_USER, OPENMRS_PASS)
     while True:
         try:
-            async with httpx.AsyncClient(auth=auth, timeout=15) as client:
+            token = await get_service_token()
+            hdrs = {
+                "Accept": "application/fhir+json",
+                "Authorization": f"Bearer {token}",
+            }
+            async with httpx.AsyncClient(headers=hdrs, timeout=15) as client:
                 n = await _sync_once(client)
                 if n:
                     log.info("Mirrored %d new imaging orders from OpenMRS", n)

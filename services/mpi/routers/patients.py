@@ -1,8 +1,10 @@
 import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict, new_id
+from jwt_auth import JWTMiddleware  # noqa: F401 — imported for side-effect
+from openhis_sdk.auth import require_token, require_roles
 
 router = APIRouter(prefix="/api/patients", tags=["patients"])
 
@@ -38,7 +40,7 @@ class PatientUpdate(BaseModel):
     insurance_id: Optional[str] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
 def list_patients(q: Optional[str] = None, status: Optional[str] = "active"):
     clauses, params = [], []
     if status:
@@ -56,7 +58,7 @@ def list_patients(q: Optional[str] = None, status: Optional[str] = "active"):
         ).fetchall())
 
 
-@router.get("/lookup")
+@router.get("/lookup", dependencies=[Depends(require_token)])
 def lookup(
     mrn:          Optional[str] = None,
     system:       Optional[str] = None,
@@ -101,7 +103,7 @@ def lookup(
     raise HTTPException(404, "No matching patient found")
 
 
-@router.get("/{pid}")
+@router.get("/{pid}", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
 def get_patient(pid: str):
     with get_db() as db:
         row = db.execute(f"{_MP_SQL} WHERE m.id=?", (pid,)).fetchone()
@@ -118,7 +120,7 @@ def get_patient(pid: str):
     return p
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles("clinician", "admin"))])
 def create_patient(body: PatientCreate):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     pid = new_id()
@@ -142,7 +144,7 @@ def create_patient(body: PatientCreate):
         return row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
 
 
-@router.patch("/{pid}")
+@router.patch("/{pid}", dependencies=[Depends(require_roles("clinician", "admin"))])
 def update_patient(pid: str, body: PatientUpdate):
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
     with get_db() as db:
@@ -169,7 +171,7 @@ def update_patient(pid: str, body: PatientUpdate):
         return row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
 
 
-@router.post("/{pid}/merge")
+@router.post("/{pid}/merge", dependencies=[Depends(require_roles("admin"))])
 def merge_patients(pid: str, body: dict):
     """Merge `body.merge_id` into `pid` (pid is the surviving record)."""
     merge_id = body.get("merge_id")

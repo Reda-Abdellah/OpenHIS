@@ -15,7 +15,7 @@ import subprocess
 import sys
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from security import require_admin
+from jwt_auth import require_token
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -88,7 +88,7 @@ def active_profiles():
 
 
 @router.post("/enable")
-def enable_profiles(body: ProfileList, _=Depends(require_admin)):
+def enable_profiles(body: ProfileList, _=Depends(require_token)):
     unknown = [p for p in body.profiles if p not in _KNOWN]
     if unknown:
         raise HTTPException(400, f"Unknown profiles: {unknown}")
@@ -109,7 +109,7 @@ def enable_profiles(body: ProfileList, _=Depends(require_admin)):
 
 
 @router.post("/disable")
-def disable_profiles(body: ProfileList, _=Depends(require_admin)):
+def disable_profiles(body: ProfileList, _=Depends(require_token)):
     active = _read_active()
     to_remove = [p for p in body.profiles if p in active]
     if not to_remove:

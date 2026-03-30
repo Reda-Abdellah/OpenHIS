@@ -16,14 +16,7 @@ html,body{background:var(--bg);color:var(--text);height:100%;overflow:hidden;
 .login-icon{font-size:2.2rem;margin-bottom:12px}
 .login-card h1{font-size:1.25rem;font-weight:700;color:var(--link);margin-bottom:4px}
 .login-card p{font-size:.8rem;color:var(--mute);margin-bottom:26px}
-.f-group{margin-bottom:12px;text-align:left}
-.f-group label{display:block;font-size:.68rem;color:var(--mute);
-  text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-.f-group input{width:100%;background:var(--input);border:1px solid var(--border);
-  border-radius:6px;color:var(--text);padding:8px 11px;font-size:.85rem;
-  font-family:inherit;outline:none;transition:border .12s}
-.f-group input:focus{border-color:var(--link)}
-.login-btn{width:100%;padding:9px;border-radius:6px;border:none;
+.login-btn{width:100%;padding:11px;border-radius:6px;border:none;
   background:var(--link);color:#fff;font-size:.88rem;font-weight:600;
   cursor:pointer;transition:opacity .12s;margin-top:4px}
 .login-btn:hover{opacity:.88}
@@ -131,18 +124,12 @@ td{padding:7px 10px;vertical-align:middle}
 <body>
 
 <!-- LOGIN -->
-<div class="login-wrap" id="login-page">
+<div class="login-wrap" id="login-page" style="display:none">
   <div class="login-card">
     <div class="login-icon">⚙️</div>
     <h1>Admin Dashboard</h1>
-    <p>Staff access only. Sign in with your admin credentials.</p>
-    <div class="f-group"><label>Username</label>
-      <input id="l-user" autocomplete="username"
-             onkeydown="if(event.key==='Enter')login()"></div>
-    <div class="f-group"><label>Password</label>
-      <input id="l-pass" type="password" autocomplete="current-password"
-             onkeydown="if(event.key==='Enter')login()"></div>
-    <button class="login-btn" id="login-btn" onclick="login()">Sign In</button>
+    <p>Staff access only. Authenticate via Keycloak SSO.</p>
+    <button class="login-btn" id="login-btn" onclick="kcLogin()">Sign in with Keycloak</button>
     <div class="login-err" id="login-err"></div>
   </div>
 </div>
@@ -154,7 +141,7 @@ td{padding:7px 10px;vertical-align:middle}
     <div class="nav-item active" data-view="dashboard"     onclick="nav('dashboard')">    <span>📊</span> Dashboard</div>
     <div class="nav-item"        data-view="services"      onclick="nav('services')">      <span>🔌</span> Services</div>
     <div class="nav-sep"></div>
-    <div class="nav-item"        data-view="users"         onclick="nav('users')">         <span>👥</span> Admin Users</div>
+    <div class="nav-item"        data-view="identity"      onclick="nav('identity')">      <span>👥</span> Identity</div>
     <div class="nav-item"        data-view="config"        onclick="nav('config')">        <span>🔧</span> Config</div>
     <div class="nav-item"        data-view="announcements" onclick="nav('announcements')"> <span>📢</span> Announcements</div>
     <div class="nav-item"        data-view="audit"         onclick="nav('audit')">         <span>📋</span> Audit Log</div>
@@ -192,44 +179,87 @@ async function api(path,opts){
   return r.json();
 }
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
-async function login(){
-  const u=(document.getElementById('l-user').value||'').trim();
-  const p=(document.getElementById('l-pass').value||'').trim();
+// ── Auth (Keycloak PKCE) ─────────────────────────────────────────────────────
+function _b64url(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+async function _pkce(){
+  const v=_b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));
+  return{verifier:v,challenge:_b64url(h)};
+}
+async function kcLogin(){
   const btn=document.getElementById('login-btn');
   const err=document.getElementById('login-err');
-  err.textContent='';
-  if(!u||!p){err.textContent='Username and password required.';return;}
-  btn.disabled=true;btn.textContent='Signing in…';
+  btn.disabled=true;btn.textContent='Redirecting…';err.textContent='';
   try{
-    const r=await api('api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
-    _token=r.token;_username=r.username;
-    try{localStorage.setItem('adm_tok',_token);localStorage.setItem('adm_usr',_username);}catch(_){}
-    showShell(r.username,r.role);
-  }catch(e){err.textContent=e.message.includes('401')||e.message.includes('Invalid')?'Invalid credentials.':'Login failed.';}
-  finally{btn.disabled=false;btn.textContent='Sign In';}
+    const cfg=await fetch(BASE+'api/auth/config').then(r=>r.json());
+    const{verifier,challenge}=await _pkce();
+    const state=_b64url(crypto.getRandomValues(new Uint8Array(16)));
+    sessionStorage.setItem('pkce_v',verifier);
+    sessionStorage.setItem('pkce_s',state);
+    sessionStorage.setItem('kc_cfg',JSON.stringify(cfg));
+    const redir=location.origin+location.pathname;
+    location.href=`${cfg.keycloak_url}/realms/${cfg.realm}/protocol/openid-connect/auth`
+      +`?response_type=code&client_id=${encodeURIComponent(cfg.client_id)}`
+      +`&redirect_uri=${encodeURIComponent(redir)}`
+      +`&code_challenge=${challenge}&code_challenge_method=S256`
+      +`&state=${state}&scope=openid`;
+  }catch(e){err.textContent='Could not reach Keycloak.';btn.disabled=false;btn.textContent='Sign in with Keycloak';}
 }
 async function logout(){
-  try{await api('api/auth/logout',{method:'POST',body:JSON.stringify({})});}catch(_){}
+  const cfg=JSON.parse(sessionStorage.getItem('kc_cfg')||'null');
   _token=null;_username=null;
   try{localStorage.removeItem('adm_tok');localStorage.removeItem('adm_usr');}catch(_){}
-  document.getElementById('shell').style.display='none';
-  document.getElementById('login-page').style.display='flex';
-  document.getElementById('l-pass').value='';
+  if(cfg){
+    const redir=encodeURIComponent(location.origin+location.pathname);
+    location.href=`${cfg.keycloak_url}/realms/${cfg.realm}/protocol/openid-connect/logout?post_logout_redirect_uri=${redir}`;
+  }else{showLoginPage();}
 }
 function handleExpiry(){
-  toast('Session expired. Please sign in again.','err');
+  toast('Session expired — please sign in again','err');
   _token=null;
-  setTimeout(()=>{document.getElementById('shell').style.display='none';
-    document.getElementById('login-page').style.display='flex';},1200);
+  setTimeout(showLoginPage,1200);
+}
+function showLoginPage(){
+  document.getElementById('shell').style.display='none';
+  document.getElementById('login-page').style.display='flex';
 }
 async function tryRestore(){
+  // Handle OIDC callback
+  const params=new URLSearchParams(location.search);
+  const code=params.get('code'),state=params.get('state');
+  if(code){
+    history.replaceState({},'',location.pathname);
+    const savedState=sessionStorage.getItem('pkce_s');
+    const verifier=sessionStorage.getItem('pkce_v');
+    const cfg=JSON.parse(sessionStorage.getItem('kc_cfg')||'{}');
+    sessionStorage.removeItem('pkce_v');sessionStorage.removeItem('pkce_s');
+    if(state!==savedState){showLoginPage();return;}
+    try{
+      const redir=location.origin+location.pathname;
+      const r=await fetch(`${cfg.keycloak_url}/realms/${cfg.realm}/protocol/openid-connect/token`,{
+        method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({grant_type:'authorization_code',client_id:cfg.client_id,
+          code,redirect_uri:redir,code_verifier:verifier})
+      });
+      const data=await r.json();
+      if(data.access_token){
+        _token=data.access_token;
+        const payload=JSON.parse(atob(_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        _username=payload.preferred_username||'admin';
+        const role=(payload.roles||payload.realm_access?.roles||[])[0]||'admin';
+        try{localStorage.setItem('adm_tok',_token);localStorage.setItem('adm_usr',_username);}catch(_){}
+        showShell(_username,role);return;
+      }
+    }catch(e){/* fall through */}
+    showLoginPage();return;
+  }
+  // Try stored token
   let tok=null,usr=null;
   try{tok=localStorage.getItem('adm_tok');usr=localStorage.getItem('adm_usr');}catch(_){}
-  if(!tok)return;
+  if(!tok){showLoginPage();return;}
   _token=tok;_username=usr;
-  try{await api('api/auth/validate');showShell(usr,'admin');}
-  catch(_){_token=null;}
+  try{await api('api/health');showShell(usr,'admin');}
+  catch(_){_token=null;showLoginPage();}
 }
 function showShell(username,role){
   document.getElementById('login-page').style.display='none';
@@ -243,7 +273,7 @@ function showShell(username,role){
 function nav(view){
   _view=view;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
-  const titles={dashboard:'Dashboard',services:'Service Health',users:'Admin Users',
+  const titles={dashboard:'Dashboard',services:'Service Health',identity:'Identity',
     config:'System Config',announcements:'Announcements',audit:'Audit Log'};
   document.getElementById('page-title').textContent=titles[view]||view;
   renderCurrent();
@@ -251,7 +281,7 @@ function nav(view){
 function renderCurrent(){
   if(_view==='dashboard')     renderDashboard();
   else if(_view==='services') renderServices();
-  else if(_view==='users')    renderUsers();
+  else if(_view==='identity') renderIdentity();
   else if(_view==='config')   renderConfig();
   else if(_view==='announcements') renderAnnouncements();
   else if(_view==='audit')    renderAudit();
@@ -286,8 +316,7 @@ async function renderDashboard(){
         <div class="kpi"><div class="kpi-val" style="color:var(--green)">${svcs.online}</div><div class="kpi-lbl">Services Online</div></div>
         <div class="kpi"><div class="kpi-val" style="color:${svcs.offline?'var(--red)':'var(--green)'}">${svcs.offline}</div><div class="kpi-lbl">Offline</div></div>
         <div class="kpi"><div class="kpi-val" style="color:var(--orange)">${svcs.degraded}</div><div class="kpi-lbl">Degraded</div></div>
-        <div class="kpi"><div class="kpi-val">${health.admin_users}</div><div class="kpi-lbl">Admin Users</div></div>
-        <div class="kpi"><div class="kpi-val" style="color:var(--link)">${health.active_sessions}</div><div class="kpi-lbl">Active Sessions</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:var(--link)">${health.active_sessions ?? '—'}</div><div class="kpi-lbl">Active Sessions</div></div>
         <div class="kpi"><div class="kpi-val" style="color:var(--yellow)">${health.active_announcements}</div><div class="kpi-lbl">Announcements</div></div>
       </div>
       <div style="font-size:.68rem;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
@@ -329,59 +358,90 @@ async function renderServices(){
   }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
 }
 
-// ── Users ─────────────────────────────────────────────────────────────────────
-async function renderUsers(){
+// ── Identity ──────────────────────────────────────────────────────────────────
+function renderIdentity(){
   const el=document.getElementById('content');
-  el.innerHTML='<div class="empty">Loading…</div>';
-  try{
-    const users=await api('api/users');
-    el.innerHTML=`
-      <div class="section" style="margin-bottom:14px">
-        <div class="section-hdr"><span class="section-title">Create Admin User</span></div>
-        <div style="padding:14px 16px">
-          <div class="form-row">
-            <div class="form-group"><label>Username</label><input id="nu-user" placeholder="johndoe"></div>
-            <div class="form-group"><label>Password</label><input id="nu-pass" type="password" placeholder="min. 6 chars"></div>
-            <div class="form-group" style="max-width:120px"><label>Role</label>
-              <select id="nu-role"><option value="admin">admin</option><option value="superadmin">superadmin</option></select></div>
-            <div class="form-group" style="max-width:80px;justify-content:flex-end">
-              <label>&nbsp;</label><button class="btn pri" onclick="createUser()">+ Add</button></div>
-          </div>
+  el.innerHTML=`
+    <div class="section" style="margin-bottom:14px">
+      <div class="section-hdr"><span class="section-title">Provision New User</span></div>
+      <div style="padding:14px 16px">
+        <div class="form-row">
+          <div class="form-group"><label>Username</label><input id="id-user" placeholder="jsmith"></div>
+          <div class="form-group"><label>Email</label><input id="id-email" type="email" placeholder="j.smith@hospital.org"></div>
+          <div class="form-group"><label>First Name</label><input id="id-fn" placeholder="Jane"></div>
+          <div class="form-group"><label>Last Name</label><input id="id-ln" placeholder="Smith"></div>
+          <div class="form-group" style="max-width:130px"><label>Role</label>
+            <select id="id-role">
+              <option value="clinician">clinician</option>
+              <option value="radiologist">radiologist</option>
+              <option value="lab-tech">lab-tech</option>
+              <option value="pharmacist">pharmacist</option>
+              <option value="admin">admin</option>
+            </select></div>
+          <div class="form-group" style="max-width:80px;justify-content:flex-end">
+            <label>&nbsp;</label><button class="btn pri" onclick="provisionUser()">+ Create</button></div>
         </div>
       </div>
-      <div class="section">
-        <div class="section-hdr"><span class="section-title">Admin Users (${users.length})</span></div>
-        <table><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
-          <tbody>${users.map(u=>`<tr>
-            <td style="color:var(--mute)">${u.id}</td>
-            <td style="font-weight:600">${esc(u.username)}</td>
-            <td><span class="badge ${u.role==='superadmin'?'b-purple':'b-blue'}">${esc(u.role)}</span></td>
-            <td style="color:var(--mute)">${fmtDate(u.created_at)}</td>
-            <td style="color:var(--mute)">${fmtDate(u.last_login)||'Never'}</td>
-            <td><button class="btn danger" onclick="deleteUser(${u.id},'${esc(u.username)}')">✕</button></td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>`;
-  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+    </div>
+    <div class="section" style="margin-bottom:14px">
+      <div class="section-hdr"><span class="section-title">Lookup / Manage User by Keycloak ID</span></div>
+      <div style="padding:14px 16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:2"><label>Keycloak User ID</label>
+            <input id="id-lookup" placeholder="UUID from Keycloak admin console"></div>
+          <div class="form-group" style="max-width:80px;justify-content:flex-end">
+            <label>&nbsp;</label><button class="btn" onclick="lookupUser()">Lookup</button></div>
+        </div>
+        <div id="id-result"></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">Full User Directory</span></div>
+      <div class="empty" style="padding:16px">
+        Manage all users in the
+        <a href="/auth/admin/master/console/#/openhis/users" target="_blank"
+           style="color:var(--link)">Keycloak Admin Console ↗</a>
+      </div>
+    </div>`;
 }
 
-async function createUser(){
-  const u=document.getElementById('nu-user').value.trim();
-  const p=document.getElementById('nu-pass').value.trim();
-  const r=document.getElementById('nu-role').value;
+async function provisionUser(){
+  const username=document.getElementById('id-user').value.trim();
+  const email   =document.getElementById('id-email').value.trim();
+  const firstName=document.getElementById('id-fn').value.trim();
+  const lastName =document.getElementById('id-ln').value.trim();
+  const role    =document.getElementById('id-role').value;
+  if(!username||!email){toast('Username and email required','err');return;}
   try{
-    await api('api/users',{method:'POST',body:JSON.stringify({username:u,password:p,role:r})});
-    toast(`User '${u}' created`);
-    renderUsers();
+    const r=await api('api/identity/users',{method:'POST',
+      body:JSON.stringify({username,email,firstName,lastName,roles:[role]})});
+    toast(`User '${username}' created (${r.keycloak_id})`);
   }catch(e){toast(e.message,'err');}
 }
 
-async function deleteUser(id,name){
-  if(!confirm(`Delete admin user '${name}'?`))return;
+async function lookupUser(){
+  const uid=document.getElementById('id-lookup').value.trim();
+  if(!uid)return;
+  const el=document.getElementById('id-result');
+  el.innerHTML='<div class="empty">Loading…</div>';
   try{
-    await api(`api/users/${id}`,{method:'DELETE'});
-    toast(`User '${name}' deleted`);
-    renderUsers();
+    const u=await api(`api/identity/users/${uid}`);
+    el.innerHTML=`<div style="padding:8px 0;font-size:.8rem">
+      <strong>${esc(u.username)}</strong> &nbsp;
+      <span style="color:var(--mute)">${esc(u.email||'')}</span> &nbsp;
+      <span class="badge b-blue">${(u.roles||[]).join(', ')||'—'}</span> &nbsp;
+      <span class="badge ${u.enabled===false?'b-red':'b-green'}">${u.enabled===false?'disabled':'enabled'}</span>
+      <button class="btn danger" style="margin-left:12px" onclick="disableUser('${esc(uid)}','${esc(u.username)}')">Disable</button>
+    </div>`;
+  }catch(e){el.innerHTML=`<div class="empty" style="color:var(--red)">${esc(e.message)}</div>`;}
+}
+
+async function disableUser(id,name){
+  if(!confirm(`Disable user '${name}' in all systems?`))return;
+  try{
+    await api(`api/identity/users/${id}`,{method:'DELETE'});
+    toast(`User '${name}' disabled`);
+    document.getElementById('id-result').innerHTML='';
   }catch(e){toast(e.message,'err');}
 }
 

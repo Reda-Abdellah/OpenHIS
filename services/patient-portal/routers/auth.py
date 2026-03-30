@@ -2,14 +2,13 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Header
 from auth import create_session, delete_session, validate_session
+from token import get_service_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
-OPENMRS_USER = os.environ.get("OPENMRS_USER")
-OPENMRS_PASS = os.environ.get("OPENMRS_PASS")
-_FHIR        = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
-_AUTH        = (OPENMRS_USER, OPENMRS_PASS)
+OPENMRS_URL = os.environ.get("OPENMRS_URL", "http://openmrs:8080")
+_FHIR       = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_HDR        = {"Accept": "application/fhir+json"}
 
 
 @router.post("/login")
@@ -21,10 +20,12 @@ async def login(body: dict):
 
     # Search OpenMRS FHIR for patient by MRN identifier
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=10) as c:
+        token = await get_service_token()
+        hdrs  = {**_HDR, "Authorization": f"Bearer {token}"}
+        async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"identifier": mrn, "_count": "1"},
-                            headers={"Accept": "application/fhir+json"})
+                            headers=hdrs)
         entries = r.json().get("entry", []) if r.status_code == 200 else []
     except Exception:
         raise HTTPException(503, "Health records temporarily unavailable")

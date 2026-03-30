@@ -4,28 +4,25 @@ from fastapi import APIRouter, HTTPException, Depends
 from auth import require_auth
 import proxy
 from database import get_db, rows_to_list
+from token import get_service_token
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
-OPENMRS_URL   = os.environ.get("OPENMRS_URL",   "http://openmrs:8080")
-OPENMRS_USER  = os.environ.get("OPENMRS_USER")
-OPENMRS_PASS  = os.environ.get("OPENMRS_PASS")
-OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
-OPENELIS_USER = os.environ.get("OPENELIS_USER")
-OPENELIS_PASS = os.environ.get("OPENELIS_PASS")
-RIS_URL       = os.environ.get("RIS_URL",        "http://ris:8002/api")
+OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
+OPENELIS_URL = os.environ.get("OPENELIS_URL", "http://openelis:8080")
+RIS_URL      = os.environ.get("RIS_URL",       "http://ris:8002/api")
 
 _OMRS_FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
-_OMRS_AUTH = (OPENMRS_USER, OPENMRS_PASS)
 _OE_FHIR   = f"{OPENELIS_URL}/fhir/R4"
-_OE_AUTH   = (OPENELIS_USER, OPENELIS_PASS)
 _FHIR_HDR  = {"Accept": "application/fhir+json"}
 
 
-async def _fhir_get(url: str, auth: tuple, params: dict = None) -> dict:
+async def _fhir_get(url: str, params: dict = None) -> dict:
     try:
-        async with httpx.AsyncClient(auth=auth, timeout=10) as c:
-            r = await c.get(url, params=params, headers=_FHIR_HDR)
+        token = await get_service_token()
+        hdrs  = {**_FHIR_HDR, "Authorization": f"Bearer {token}"}
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url, params=params, headers=hdrs)
             r.raise_for_status()
             return r.json()
     except Exception:
@@ -35,7 +32,7 @@ async def _fhir_get(url: str, auth: tuple, params: dict = None) -> dict:
 @router.get("")
 async def get_me(session: dict = Depends(require_auth)):
     patient_uuid = session["patient_id"]
-    data = await _fhir_get(f"{_OMRS_FHIR}/Patient/{patient_uuid}", _OMRS_AUTH)
+    data = await _fhir_get(f"{_OMRS_FHIR}/Patient/{patient_uuid}")
     if not data:
         raise HTTPException(503, "Health records temporarily unavailable")
 
@@ -54,7 +51,7 @@ async def get_me(session: dict = Depends(require_auth)):
 
 @router.get("/appointments")
 async def get_appointments(session: dict = Depends(require_auth)):
-    bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter", _OMRS_AUTH,
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter",
                              {"patient": session["patient_id"], "_count": "50"})
     return [
         {
@@ -101,7 +98,7 @@ async def get_appointment_requests(session: dict = Depends(require_auth)):
 async def get_results(session: dict = Depends(require_auth)):
     """Completed lab results from OpenELIS FHIR."""
     bundle = await _fhir_get(
-        f"{_OE_FHIR}/DiagnosticReport", _OE_AUTH,
+        f"{_OE_FHIR}/DiagnosticReport",
         {"patient": session["patient_id"], "status": "final", "_count": "50"})
     return [
         {
@@ -144,7 +141,7 @@ async def get_imaging(session: dict = Depends(require_auth)):
 
 @router.get("/diagnoses")
 async def get_diagnoses(session: dict = Depends(require_auth)):
-    bundle = await _fhir_get(f"{_OMRS_FHIR}/Condition", _OMRS_AUTH,
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/Condition",
                              {"patient": session["patient_id"], "_count": "50"})
     return [
         {
@@ -160,7 +157,7 @@ async def get_diagnoses(session: dict = Depends(require_auth)):
 
 @router.get("/allergies")
 async def get_allergies(session: dict = Depends(require_auth)):
-    bundle = await _fhir_get(f"{_OMRS_FHIR}/AllergyIntolerance", _OMRS_AUTH,
+    bundle = await _fhir_get(f"{_OMRS_FHIR}/AllergyIntolerance",
                              {"patient": session["patient_id"], "_count": "50"})
     return [
         {
@@ -182,10 +179,10 @@ async def get_billing(session: dict = Depends(require_auth)):
 @router.get("/summary")
 async def get_summary(session: dict = Depends(require_auth)):
     pid = session["patient_id"]
-    enc_bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter", _OMRS_AUTH,
+    enc_bundle = await _fhir_get(f"{_OMRS_FHIR}/Encounter",
                                  {"patient": pid, "status": "planned",
                                   "_count": "10", "_sort": "date"})
-    lab_bundle = await _fhir_get(f"{_OE_FHIR}/DiagnosticReport", _OE_AUTH,
+    lab_bundle = await _fhir_get(f"{_OE_FHIR}/DiagnosticReport",
                                  {"patient": pid, "status": "preliminary",
                                   "_count": "0", "_summary": "count"})
     upcoming       = enc_bundle.get("entry", [])

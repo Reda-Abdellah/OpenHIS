@@ -19,14 +19,10 @@ from database import get_db
 
 log = logging.getLogger("analytics.collector")
 
-OPENMRS_URL   = os.environ.get("OPENMRS_URL",   "http://openmrs:8080")
-OPENMRS_USER  = os.environ.get("OPENMRS_USER")
-OPENMRS_PASS  = os.environ.get("OPENMRS_PASS")
-OPENELIS_URL  = os.environ.get("OPENELIS_URL",  "http://openelis:8080")
-OPENELIS_USER = os.environ.get("OPENELIS_USER")
-OPENELIS_PASS = os.environ.get("OPENELIS_PASS")
-RIS_URL       = os.environ.get("RIS_URL",        "http://ris:8002/api")
-AI_URL        = os.environ.get("AI_CONTROLLER_URL", "http://ai-controller:8000/api")
+OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
+OPENELIS_URL = os.environ.get("OPENELIS_URL", "http://openelis:8080")
+RIS_URL      = os.environ.get("RIS_URL",       "http://ris:8002/api")
+AI_URL       = os.environ.get("AI_CONTROLLER_URL", "http://ai-controller:8000/api")
 
 _OMRS_FHIR = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
 _OE_FHIR   = f"{OPENELIS_URL}/fhir/R4"
@@ -34,9 +30,9 @@ _OE_FHIR   = f"{OPENELIS_URL}/fhir/R4"
 _LAST_REFRESH: dict = {}
 
 
-async def _get(client: httpx.AsyncClient, url: str, auth=None, params: dict = None):
+async def _get(client: httpx.AsyncClient, url: str, headers: dict = None, params: dict = None):
     try:
-        r = await client.get(url, auth=auth, params=params, timeout=10.0)
+        r = await client.get(url, headers=headers, params=params, timeout=10.0)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -44,27 +40,28 @@ async def _get(client: httpx.AsyncClient, url: str, auth=None, params: dict = No
         return None
 
 
-async def _fhir_count(client: httpx.AsyncClient, url: str, auth: tuple,
+async def _fhir_count(client: httpx.AsyncClient, url: str, headers: dict,
                       params: dict = None) -> int:
     p = dict(params or {})
     p.update({"_count": "0", "_summary": "count"})
-    data = await _get(client, url, auth=auth, params=p)
+    data = await _get(client, url, headers=headers, params=p)
     return (data or {}).get("total", 0)
 
 
 async def collect_all() -> dict:
-    result    = {}
-    omrs_auth = (OPENMRS_USER, OPENMRS_PASS)
-    oe_auth   = (OPENELIS_USER, OPENELIS_PASS)
+    from token import get_service_token
+    result = {}
+    token  = await get_service_token()
+    auth_hdr = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient(timeout=12.0) as c:
 
         # ── EHR domain → OpenMRS ──────────────────────────────────────────────
-        total_patients = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   omrs_auth)
-        active_enc     = await _fhir_count(c, f"{_OMRS_FHIR}/Encounter", omrs_auth,
+        total_patients = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   auth_hdr)
+        active_enc     = await _fhir_count(c, f"{_OMRS_FHIR}/Encounter", auth_hdr,
                                            {"status": "in-progress"})
         today_str      = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-        new_today      = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   omrs_auth,
+        new_today      = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   auth_hdr,
                                            {"_lastUpdated": f"ge{today_str}"})
         result["ehr"] = {
             "total_patients":     total_patients,
@@ -74,9 +71,9 @@ async def collect_all() -> dict:
         }
 
         # ── Orders domain ─────────────────────────────────────────────────────
-        lab_active    = await _fhir_count(c, f"{_OMRS_FHIR}/ServiceRequest", omrs_auth,
+        lab_active    = await _fhir_count(c, f"{_OMRS_FHIR}/ServiceRequest", auth_hdr,
                                           {"status": "active"})
-        lab_final     = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport",  oe_auth,
+        lab_final     = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", auth_hdr,
                                           {"status": "final"})
         ris_orders    = await _get(c, f"{RIS_URL}/orders")
         img_completed = sum(1 for o in (ris_orders or []) if o.get("status") == "COMPLETED")
@@ -91,9 +88,9 @@ async def collect_all() -> dict:
         }
 
         # ── LIS domain → OpenELIS ─────────────────────────────────────────────
-        oe_final       = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", oe_auth,
+        oe_final       = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", auth_hdr,
                                            {"status": "final"})
-        oe_preliminary = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", oe_auth,
+        oe_preliminary = await _fhir_count(c, f"{_OE_FHIR}/DiagnosticReport", auth_hdr,
                                            {"status": "preliminary"})
         result["lis"] = {
             "final_reports":   oe_final,

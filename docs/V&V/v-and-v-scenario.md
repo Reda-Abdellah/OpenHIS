@@ -143,7 +143,7 @@ curl -s http://localhost/mpi/api/crossref/<openmrs_uuid> | python -m json.tool
 3. Filter by **Action:** `patient.synced`
 
 ✅ **PASS:** One audit entry exists with the correct patient UUID, actor `integration-hub`, and outcome `success`.
-❌ **FAIL:** No audit entry — check `AUDIT_LOG_ENABLED` env var in `integration-hub`.
+❌ **FAIL:** No audit entry — check `docker compose logs integration-hub | grep audit` for errors.
 
 ***
 
@@ -530,8 +530,10 @@ curl -s http://localhost/admin/api/platform/topology \
 
 ```bash
 # Disable analytics profile via API
-curl -s -X POST http://localhost/admin/api/profiles/analytics/disable \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
+curl -s -X POST http://localhost/admin/api/profiles/disable \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"profiles": ["analytics"]}' | python -m json.tool
 
 # Wait 10s, then verify analytics service is gone from registry
 sleep 10
@@ -544,8 +546,10 @@ curl -s http://localhost/admin/api/services \
 
 ```bash
 # Re-enable
-curl -s -X POST http://localhost/admin/api/profiles/analytics/enable \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
+curl -s -X POST http://localhost/admin/api/profiles/enable \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"profiles": ["analytics"]}' | python -m json.tool
 sleep 20
 curl -s http://localhost/admin/api/services \
   -H "Authorization: Bearer $ADMIN_TOKEN" | python -c \
@@ -568,7 +572,7 @@ curl -s "http://localhost/admin/api/audit?limit=50" \
 ✅ **PASS:** The last 50 audit entries include at minimum one entry each for:
 
 - `action: patient.synced` from `integration-hub`
-- `action: laborder.routed` from `integration-hub`
+- `action: lab_order.routed` from `integration-hub`
 - `action: dicom.stored` from `integration-hub`
 - `action: profile.changed` from `admin`
 - All entries have non-null `actor`, `resource_id`, `ts`, and `outcome` fields
@@ -616,10 +620,10 @@ docker exec openhis-redis redis-cli CONFIG GET appendonly
 
 ```bash
 # Produce a test event, restart Redis, verify event survived
-docker exec openhis-redis redis-cli XADD openhis.events '*' type test.event data test_payload
+docker exec openhis-redis redis-cli XADD openhis:events '*' type test.event data test_payload
 docker compose restart redis
 sleep 10
-docker exec openhis-redis redis-cli XLEN openhis.events
+docker exec openhis-redis redis-cli XLEN openhis:events
 ```
 
 ✅ **PASS:** Stream length is > 0 after restart (event survived).
@@ -644,7 +648,7 @@ curl -s "http://localhost/mpi/api/patients?national_id=FR-TEST-00003"
 ```
 
 ✅ **PASS:** Patient synced after MPI came back online (retry mechanism worked).
-❌ **FAIL:** Patient never synced — the `withretry` decorator may not be covering MPI calls.
+❌ **FAIL:** Patient never synced — the `with_retry` decorator may not be covering MPI calls.
 
 ***
 
@@ -699,10 +703,10 @@ EOF
 **Step 7.2 — Verify ADT patient appears in event stream**
 
 ```bash
-docker exec openhis-redis redis-cli XRANGE openhis.events - + COUNT 10 | grep patient
+docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 10 | grep patient
 ```
 
-✅ **PASS:** A `patient.synced` or `patient.admitted` event is present referencing `FR-TEST-HL7-001`.
+✅ **PASS:** A `patient.synced` event is present referencing `FR-TEST-HL7-001`.
 
 ***
 
@@ -740,8 +744,10 @@ EOF
 
 **Step 7.4 — Verify FHIR Observation created from ORU**
 
+The HL7 service publishes `lab_result.ready` to the bus; the integration hub translates this and pushes Observations to OpenMRS. Verify via the OpenMRS FHIR endpoint:
+
 ```bash
-curl -s "http://localhost/hub/fhir/Observation?patient.identifier=FR-TEST-HL7-001" \
+curl -s "http://localhost/openmrs/ws/fhir2/R4/Observation?patient.identifier=FR-TEST-HL7-001" \
   -H "Accept: application/fhir+json" | python -m json.tool
 ```
 
@@ -778,8 +784,8 @@ Based on the codebase analysis, the following will fail until the corresponding 
 | 1.4 — `openelis_id` in MPI crossref | `null` — write-back not implemented | OBJ 4.4 |
 | 4.3 — 403 for no-role user | May return 200 (fail-open) | OBJ 1.2 |
 | 6.2 — Redis AOF durability | `appendonly no` | OBJ 3.3 |
-| 6.3 — MPI-down queuing | May not retry | OBJ 3.1 |
-| 3.6 — AI pipeline trigger | Consumer not wired | OBJ 3.1 |
+| 6.3 — MPI-down queuing | May not retry (`with_retry` coverage gap) | OBJ 3.3 |
+| 3.6 — AI pipeline trigger | `dicom.stored` consumer not wired in ai-controller | OBJ 3.1 |
 
 <span style="display:none">[^1][^10][^11][^12][^13][^14][^15][^2][^3][^4][^5][^6][^7][^8][^9]</span>
 

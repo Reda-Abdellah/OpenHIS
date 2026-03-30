@@ -1,23 +1,35 @@
 """
-JWT validation middleware — canonical source for OpenHIS services.
+JWT validation middleware and FastAPI dependencies — canonical source for OpenHIS services.
 
-Duplicated per-service implementations (services/mpi/jwt_auth.py,
-services/hl7/jwt_auth.py, …) should be replaced with:
-
+Usage (middleware — validates all non-exempt requests):
     from openhis_sdk import JWTMiddleware
     app.add_middleware(JWTMiddleware)
 
+Usage (per-endpoint dependency):
+    from openhis_sdk.auth import require_token, require_roles
+
+    @router.get("/protected")
+    async def protected(claims: dict = Depends(require_token)):
+        return {"user": claims["preferred_username"]}
+
+    @router.post("/admin-only", dependencies=[Depends(require_roles("admin"))])
+    async def admin_only(): ...
+
 Enforcement rules:
-  - Only active when KEYCLOAK_URL and REQUIRE_JWT=true are both set.
-  - Health, docs, and OpenAPI paths are always exempt.
+  - JWT validation is ON by default when KEYCLOAK_URL is set.
+  - Set DEV_MODE=true to disable validation (logs a loud warning).
+  - Services exit with code 1 if DEV_MODE=true and ENV=production.
+  - Health, docs, and OpenAPI paths are always exempt from the middleware.
   - JWKS keys are cached in memory with a 1-hour TTL.
 """
 import logging
 import os
+import sys
 import time
 from typing import Optional
 
 import httpx
+from fastapi import Depends, Header, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -27,7 +39,15 @@ log = logging.getLogger("openhis_sdk.auth")
 KEYCLOAK_URL       = os.environ.get("KEYCLOAK_URL", "")
 KEYCLOAK_REALM     = os.environ.get("KEYCLOAK_REALM", "openhis")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "openhis-platform")
-REQUIRE_JWT        = os.environ.get("REQUIRE_JWT", "false").lower() == "true"
+DEV_MODE           = os.environ.get("DEV_MODE", "false").lower() == "true"
+
+if DEV_MODE:
+    if os.environ.get("ENV", "").lower() == "production":
+        sys.exit("FATAL: DEV_MODE=true is not allowed when ENV=production")
+    log.warning(
+        "⚠️  DEV_MODE enabled — JWT validation is DISABLED. "
+        "Never set this in production."
+    )
 
 _SKIP_PREFIXES = ("/api/health", "/docs", "/redoc", "/openapi.json")
 _JWKS_CACHE: Optional[dict] = None
@@ -77,14 +97,48 @@ async def validate_token(token: str) -> dict:
     )
 
 
+async def require_token(authorization: str = Header(default=None)) -> dict:
+    """FastAPI dependency: validates Keycloak JWT. Returns decoded claims."""
+    if DEV_MODE:
+        return {"preferred_username": "dev", "roles": ["admin"], "sub": "dev"}
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            401, "Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not KEYCLOAK_URL:
+        raise HTTPException(503, "Identity provider not configured (KEYCLOAK_URL missing)")
+
+    try:
+        claims = await validate_token(authorization[7:].strip())
+        return claims
+    except Exception as exc:
+        raise HTTPException(
+            401, f"Invalid token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def require_roles(*roles: str):
+    """FastAPI dependency factory: require any of the given realm roles."""
+    async def check(claims: dict = Depends(require_token)) -> dict:
+        user_roles = claims.get("roles", [])
+        if not any(r in user_roles for r in roles):
+            raise HTTPException(403, "Insufficient role")
+        return claims
+    return check
+
+
 class JWTMiddleware(BaseHTTPMiddleware):
     """
     Global JWT validation middleware for FastAPI apps.
-    Only active when KEYCLOAK_URL and REQUIRE_JWT=true are both set.
+    Active when KEYCLOAK_URL is set and DEV_MODE is not true.
     """
 
     async def dispatch(self, request: Request, call_next):
-        if not (KEYCLOAK_URL and REQUIRE_JWT):
+        if DEV_MODE or not KEYCLOAK_URL:
             return await call_next(request)
 
         if any(request.url.path.startswith(p) for p in _SKIP_PREFIXES):

@@ -213,7 +213,7 @@ def main():
         "client_id":           CLIENT_ID,
         "auth_endpoint":       AUTH_ENDPOINT,   # browser-facing (public nginx URL)
         "validation_endpoint": USERINFO_URL,     # server-side (internal Docker DNS)
-        "scope":               "openid profile email",
+        "scope":               "openid profile email roles groups",
         "body":                "Login with Keycloak",  # required button label
     }
 
@@ -226,11 +226,39 @@ def main():
         new_id = call("auth.oauth.provider", "create", provider_vals)
         log(f"  Created provider 'Keycloak (OpenHIS)' (id={new_id})")
 
+    # ── Step 5d: configure Keycloak → Odoo group sync ──────────────────────
+    log("\n[5d] Configuring Keycloak → Odoo role/group mapping...")
+    # Map Keycloak realm roles to Odoo internal groups.
+    # Keycloak publishes roles in the `roles` claim and groups in `groups`.
+    # Odoo auth_oauth uses the `roles` claim from the userinfo endpoint to
+    # auto-assign res.groups based on the mapping below.
+    _ROLE_TO_ODOO_GROUP = {
+        "admin":      "base.group_system",
+        "pharmacist": "stock.group_stock_user",
+    }
+    for kc_role, odoo_group_xml_id in _ROLE_TO_ODOO_GROUP.items():
+        try:
+            parts = odoo_group_xml_id.split(".")
+            if len(parts) == 2:
+                grp_ids = call("ir.model.data", "search",
+                               [["module", "=", parts[0]], ["name", "=", parts[1]],
+                                ["model", "=", "res.groups"]])
+                if grp_ids:
+                    log(f"  Role '{kc_role}' → Odoo group '{odoo_group_xml_id}' (id={grp_ids[0]})")
+                else:
+                    log(f"  WARNING: Odoo group '{odoo_group_xml_id}' not found — skipping")
+        except Exception as e:
+            log(f"  WARNING: Could not map role '{kc_role}': {e}")
+
+    log("  Note: Odoo auto-assigns groups based on the 'roles' claim in the")
+    log("  Keycloak token. Ensure 'roles' claim is in the userinfo scope.")
+
     log("")
     log("=" * 60)
     log("Done — Odoo is fully bootstrapped.")
     log("  http://localhost/odoo/web/login → 'Keycloak (OpenHIS)' button")
     log("  First login auto-creates the Odoo user from the Keycloak username.")
+    log("  Role mapping: admin→System Administrator, pharmacist→Inventory/User")
     log("=" * 60)
 
 

@@ -4,21 +4,6 @@ from contextlib import contextmanager
 DBPATH = os.environ.get('DB_PATH', 'data/admin.db')
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS admin_users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    username    TEXT UNIQUE NOT NULL,
-    password    TEXT NOT NULL,
-    role        TEXT DEFAULT 'admin',
-    created_at  TEXT DEFAULT (datetime('now')),
-    last_login  TEXT
-);
-CREATE TABLE IF NOT EXISTS admin_sessions (
-    id          TEXT PRIMARY KEY,
-    user_id     INTEGER NOT NULL,
-    username    TEXT NOT NULL,
-    expires_at  TEXT NOT NULL,
-    created_at  TEXT DEFAULT (datetime('now'))
-);
 CREATE TABLE IF NOT EXISTS audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     admin_user  TEXT NOT NULL,
@@ -46,7 +31,6 @@ CREATE TABLE IF NOT EXISTS announcements (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_user   ON audit_log(admin_user, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
-CREATE INDEX IF NOT EXISTS idx_sess_exp     ON admin_sessions(expires_at);
 
 -- Service Registry: tracks active services and their health state.
 -- Populated by OPM CLI on enable/disable; self-seeded for base services at startup.
@@ -95,6 +79,16 @@ def get_db():
 
 def row_to_dict(row):    return dict(row) if row else None
 def rows_to_list(rows):  return [dict(r) for r in rows]
+
+
+def audit(admin_user: str, action: str,
+          target: str = None, detail: str = None, ip: str = None):
+    with get_db() as db:
+        db.execute(
+            "INSERT INTO audit_log(admin_user,action,target,detail,ip)"
+            " VALUES(?,?,?,?,?)",
+            (admin_user, action, target, detail, ip)
+        )
 
 
 def init_db():

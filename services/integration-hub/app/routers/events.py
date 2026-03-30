@@ -13,7 +13,8 @@ from the source payload and fall back to a placeholder reference if not found.
 import logging
 import httpx
 from fastapi import APIRouter, BackgroundTasks
-from app.config import OPENMRS_URL, OPENMRS_USER, OPENMRS_PASS
+from app.config import OPENMRS_URL
+from app.token import get_service_token
 from app.translators.diagnostic_report import to_fhir_diagnostic_report_radiology
 from app.translators.imaging_study import to_fhir_imaging_study
 from app.translators.observation import to_fhir_observations_from_ai
@@ -25,10 +26,14 @@ log = logging.getLogger("hub.events")
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
-_FHIR   = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
-_AUTH   = (OPENMRS_USER, OPENMRS_PASS)
-_HDR    = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
+_FHIR    = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_HDR     = {"Content-Type": "application/fhir+json", "Accept": "application/fhir+json"}
 _ORTHANC = "http://orthanc:8042"
+
+
+async def _auth_headers() -> dict:
+    token = await get_service_token()
+    return {**_HDR, "Authorization": f"Bearer {token}"}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -37,8 +42,9 @@ async def _push(resource: dict) -> None:
     """POST a FHIR resource to OpenMRS FHIR R4. Errors are logged, not raised."""
     rtype = resource.get("resourceType", "Resource")
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=15) as c:
-            r = await c.post(f"{_FHIR}/{rtype}", json=resource, headers=_HDR)
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(f"{_FHIR}/{rtype}", json=resource, headers=hdrs)
             if r.status_code in (200, 201):
                 log.info(f"FHIR {rtype} → OpenMRS HTTP {r.status_code}")
             else:
@@ -52,10 +58,11 @@ async def _resolve_patient_uuid(mrn_or_id: str) -> str:
     if not mrn_or_id:
         return "unknown"
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=8) as c:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=8) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"identifier": mrn_or_id},
-                            headers=_HDR)
+                            headers=hdrs)
             entries = r.json().get("entry", []) if r.status_code == 200 else []
             if entries:
                 return entries[0]["resource"]["id"]

@@ -1,12 +1,13 @@
 import csv, io, json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from database import get_db
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
 
-@router.get("/{domain}")
+@router.get("/{domain}", dependencies=[Depends(require_roles("admin"))])
 def export_domain(domain: str, limit: int = 90):
     """Download all snapshots for a domain as CSV (newest first)."""
     with get_db() as db:

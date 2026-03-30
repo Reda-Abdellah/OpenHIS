@@ -20,15 +20,18 @@ from parser import parse as hl7_parse
 log = logging.getLogger("hl7.handlers")
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
-OPENMRS_USER = os.environ.get("OPENMRS_USER")
-OPENMRS_PASS = os.environ.get("OPENMRS_PASS")
 MPI_BASE_URL = os.environ.get("MPI_BASE_URL", "http://mpi:8007")
 REDIS_URL    = os.environ.get("REDIS_URL", "")
 
-_FHIR  = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
-_AUTH  = (OPENMRS_USER, OPENMRS_PASS)
-_HDR   = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"}
+_FHIR   = f"{OPENMRS_URL}/openmrs/ws/fhir2/R4"
+_HDR    = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"}
 TIMEOUT = httpx.Timeout(8.0)
+
+
+async def _auth_headers() -> dict:
+    from token import get_service_token
+    token = await get_service_token()
+    return {**_HDR, "Authorization": f"Bearer {token}"}
 
 _SEX_MAP = {"M": "male", "F": "female", "U": "unknown", "O": "other"}
 
@@ -62,8 +65,9 @@ async def _bus_publish(event_type: str, payload: dict) -> None:
 async def _fhir_post(resource: dict) -> dict | None:
     rtype = resource.get("resourceType", "Resource")
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=TIMEOUT) as c:
-            r = await c.post(f"{_FHIR}/{rtype}", json=resource, headers=_HDR)
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+            r = await c.post(f"{_FHIR}/{rtype}", json=resource, headers=hdrs)
             r.raise_for_status()
             return r.json()
     except Exception as e:
@@ -74,8 +78,9 @@ async def _fhir_post(resource: dict) -> dict | None:
 async def _fhir_post_op(operation: str, params: dict) -> dict | None:
     """POST a FHIR operation (e.g. Patient/$merge) with a Parameters body."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=TIMEOUT) as c:
-            r = await c.post(f"{_FHIR}/{operation}", json=params, headers=_HDR)
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+            r = await c.post(f"{_FHIR}/{operation}", json=params, headers=hdrs)
             if r.status_code not in (200, 201):
                 log.warning("FHIR op %s returned %d: %s", operation, r.status_code, r.text[:200])
                 return None
@@ -88,10 +93,11 @@ async def _fhir_post_op(operation: str, params: dict) -> dict | None:
 async def _find_patient_uuid(mrn: str) -> str | None:
     """Search OpenMRS FHIR for patient by MRN. Returns UUID or None."""
     try:
-        async with httpx.AsyncClient(auth=_AUTH, timeout=TIMEOUT) as c:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"identifier": mrn, "_count": "1"},
-                            headers=_HDR)
+                            headers=hdrs)
             entries = r.json().get("entry", []) if r.status_code == 200 else []
             return entries[0]["resource"]["id"] if entries else None
     except Exception as e:
