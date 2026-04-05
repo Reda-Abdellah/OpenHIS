@@ -109,6 +109,13 @@ http {
 
 {% if 'emr' in active_profiles %}
         # ── EMR: OpenMRS O3 ────────────────────────────────────────────────────
+        # Login-start: clears any stale JSESSIONID before initiating OAuth2 flow.
+        # Prevents redirect loops when a non-oauth2 session cookie is present.
+        location = /openmrs/login-start {
+            add_header Set-Cookie "JSESSIONID=; Path=/openmrs; HttpOnly; Max-Age=0" always;
+            return 302 /openmrs/oauth2login;
+        }
+
         # SPA must come BEFORE the general /openmrs/ block.
         location /openmrs/spa/ {
             proxy_pass         http://openmrs_fe/;
@@ -179,6 +186,7 @@ http {
             proxy_read_timeout 300s;
         }
 
+
         location /odoo/longpolling/ {
             proxy_pass         http://odoo_be/longpolling/;
             proxy_set_header   Host               $host;
@@ -189,6 +197,7 @@ http {
             proxy_set_header   Upgrade            $http_upgrade;
             proxy_set_header   Connection         "upgrade";
         }
+
 
         location /odoo/ {
             proxy_pass         http://odoo_be/;

@@ -61,11 +61,19 @@ services:
       OMRS_DB_NAME: openmrs
       OMRS_DB_USERNAME: openmrs
       OMRS_DB_PASSWORD: openmrs
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
       OMRS_CREATE_TABLES: "true"
       OMRS_AUTO_UPDATE_DATABASE: "true"
       OMRS_ADMIN_USER_PASSWORD: Admin123
     volumes:
       - openmrs-data:/openmrs/data
+      - ../infra/openmrs/modules/oauth2login-1.5.0.omod:/openmrs/data/modules/oauth2login-1.5.0.omod:ro
+      # Mask out the authentication module shipped by the base image — it conflicts
+      # with oauth2login (dual-registration causes DaemonToken null bug).
+      # An empty file prevents the entrypoint from loading the real module.
+      - ../infra/openmrs/modules/authentication-2.2.0.omod.disabled:/openmrs/distribution/openmrs_modules/authentication-2.2.0.omod:ro
+      - ../infra/openmrs/oauth2.properties:/openmrs/data/oauth2.properties:ro
+      - ../infra/openmrs/openmrs-runtime.properties:/openmrs/data/openmrs-runtime.properties:ro
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -77,6 +85,8 @@ services:
 
   openmrs-frontend:
     image: openmrs/openmrs-reference-application-3-frontend:nightly
+    volumes:
+      - ../infra/openmrs/spa-config.json:/usr/share/nginx/html/config.json:ro
     depends_on:
       openmrs:
         condition: service_healthy

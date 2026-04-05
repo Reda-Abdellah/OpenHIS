@@ -1,0 +1,11 @@
+{
+  "@openmrs/esm-primary-navigation-app": {
+    "logo": { "src": "/openmrs/spa/assets/logo.png" }
+  },
+  "@openmrs/esm-login-app": {
+    "provider": {
+      "type": "oauth2",
+      "loginUrl": "/openmrs/login-start"
+    }
+  }
+}

@@ -2,7 +2,7 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Header
 from auth import create_session, delete_session, validate_session
-from token import get_service_token
+from svc_token import get_service_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

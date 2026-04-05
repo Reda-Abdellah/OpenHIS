@@ -47,10 +47,13 @@ async def index():
 
 @app.get("/api/health")
 def health():
-    with get_db() as db:
-        counts = dict(
-            master_patients = db.execute("SELECT COUNT(*) FROM master_patients WHERE status='active'").fetchone()[0],
-            cross_references= db.execute("SELECT COUNT(*) FROM cross_references").fetchone()[0],
-            pending_matches = db.execute("SELECT COUNT(*) FROM match_candidates WHERE status='pending'").fetchone()[0],
-        )
-    return {"status": "ok", "service": "mpi", "version": "1.0.0", **counts}
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM master_patients WHERE status='active'")
+        mp = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM cross_references")
+        xr = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM match_candidates WHERE status='pending'")
+        pm = cur.fetchone()["n"]
+    return {"status": "ok", "service": "mpi", "version": "1.0.0",
+            "master_patients": mp, "cross_references": xr, "pending_matches": pm}

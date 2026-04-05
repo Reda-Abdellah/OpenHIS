@@ -62,6 +62,8 @@ services:
     volumes:
       - odoo-data:/var/lib/odoo
       - ../infra/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ../infra/odoo/auth_oauth_res_users.py:/usr/lib/python3/dist-packages/odoo/addons/auth_oauth/models/res_users.py:ro
+      - ../infra/odoo/auth_oauth_main.py:/usr/lib/python3/dist-packages/odoo/addons/auth_oauth/controllers/main.py:ro
     ports:
       - "8069:8069"
     networks: [openhis-net]
@@ -79,7 +81,7 @@ services:
   #   docker compose -f compose/base.yml -f compose/profiles/erp.yml run --rm odoo-init
   odoo-init:
     build:
-      context: ../infra/odoo
+      context: ${PWD}/infra/odoo
       dockerfile: Dockerfile.init
     depends_on:
       odoo:
@@ -92,7 +94,8 @@ services:
       ODOO_LANG: ${ODOO_LANG:-en_US}
       ODOO_OIDC_CLIENT_ID: odoo-oidc
       ODOO_OIDC_CLIENT_SECRET: ${ODOO_OIDC_SECRET:-odoo-oidc-secret}
-      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      KEYCLOAK_PUBLIC_URL: http://localhost
       KEYCLOAK_REALM: openhis
     networks: [openhis-net]
     restart: "no"

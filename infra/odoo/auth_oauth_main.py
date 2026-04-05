@@ -1,0 +1,232 @@
+# -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+# OpenHIS patch: added authorization code exchange (response_type=code support)
+import base64
+import functools
+import json
+import logging
+import os
+import urllib.parse
+import urllib.request
+
+import werkzeug.urls
+import werkzeug.utils
+from werkzeug.exceptions import BadRequest
+
+from odoo import api, http, SUPERUSER_ID, _
+from odoo.exceptions import AccessDenied
+from odoo.http import request, Response
+from odoo import registry as registry_get
+from odoo.tools.misc import clean_context
+
+from odoo.addons.auth_signup.controllers.main import AuthSignupHome as Home
+from odoo.addons.web.controllers.utils import ensure_db, _get_login_redirect_url
+
+
+_logger = logging.getLogger(__name__)
+
+
+#----------------------------------------------------------
+# helpers
+#----------------------------------------------------------
+def fragment_to_query_string(func):
+    @functools.wraps(func)
+    def wrapper(self, *a, **kw):
+        kw.pop('debug', False)
+        if not kw:
+            return Response("""<html><head><script>
+                var l = window.location;
+                var q = l.hash.substring(1);
+                var r = l.pathname + l.search;
+                if(q.length !== 0) {
+                    var s = l.search ? (l.search === '?' ? '' : '&') : '?';
+                    r = l.pathname + l.search + s + q;
+                }
+                if (r == l.pathname) {
+                    r = '/';
+                }
+                window.location = r;
+            </script></head><body></body></html>""")
+        return func(self, *a, **kw)
+    return wrapper
+
+
+#----------------------------------------------------------
+# Controller
+#----------------------------------------------------------
+class OAuthLogin(Home):
+    def list_providers(self):
+        try:
+            providers = request.env['auth.oauth.provider'].sudo().search_read([('enabled', '=', True)])
+        except Exception:
+            providers = []
+        for provider in providers:
+            return_url = request.httprequest.url_root + 'auth_oauth/signin'
+            state = self.get_state(provider)
+            params = dict(
+                response_type='code',
+                client_id=provider['client_id'],
+                redirect_uri=return_url,
+                scope=provider['scope'],
+                state=json.dumps(state),
+            )
+            provider['auth_link'] = "%s?%s" % (provider['auth_endpoint'], werkzeug.urls.url_encode(params))
+        return providers
+
+    def get_state(self, provider):
+        redirect = request.params.get('redirect') or 'web'
+        if not redirect.startswith(('//', 'http://', 'https://')):
+            redirect = '%s%s' % (request.httprequest.url_root, redirect[1:] if redirect[0] == '/' else redirect)
+        state = dict(
+            d=request.session.db,
+            p=provider['id'],
+            r=werkzeug.urls.url_quote_plus(redirect),
+        )
+        token = request.params.get('token')
+        if token:
+            state['t'] = token
+        return state
+
+    @http.route()
+    def web_login(self, *args, **kw):
+        ensure_db()
+        if request.httprequest.method == 'GET' and request.session.uid and request.params.get('redirect'):
+            return request.redirect(request.params.get('redirect'))
+        providers = self.list_providers()
+
+        response = super(OAuthLogin, self).web_login(*args, **kw)
+        if response.is_qweb:
+            error = request.params.get('oauth_error')
+            if error == '1':
+                error = _("Sign up is not allowed on this database.")
+            elif error == '2':
+                error = _("Access Denied")
+            elif error == '3':
+                error = _("You do not have access to this database or your invitation has expired. Please ask for an invitation and be sure to follow the link in your invitation email.")
+            else:
+                error = None
+
+            response.qcontext['providers'] = providers
+            if error:
+                response.qcontext['error'] = error
+
+        return response
+
+    def get_auth_signup_qcontext(self):
+        result = super(OAuthLogin, self).get_auth_signup_qcontext()
+        result["providers"] = self.list_providers()
+        return result
+
+
+class OAuthController(http.Controller):
+
+    @http.route('/auth_oauth/signin', type='http', auth='none')
+    @fragment_to_query_string
+    def signin(self, **kw):
+        state = json.loads(kw['state'])
+
+        dbname = state['d']
+        if not http.db_filter([dbname]):
+            return BadRequest()
+        ensure_db(db=dbname)
+
+        provider = state['p']
+        request.update_context(**clean_context(state.get('c', {})))
+
+        # --- OpenHIS patch: exchange authorization code for access_token ---
+        if 'code' in kw and 'access_token' not in kw:
+            try:
+                provider_rec = request.env['auth.oauth.provider'].sudo().browse(provider)
+                token_endpoint = provider_rec.validation_endpoint.replace('/userinfo', '/token')
+                redirect_uri = 'http://localhost/auth_oauth/signin'
+                _logger.info("OpenHIS code exchange: endpoint=%s redirect_uri=%s",
+                             token_endpoint, redirect_uri)
+                data = urllib.parse.urlencode({
+                    'grant_type': 'authorization_code',
+                    'code': kw['code'],
+                    'client_id': provider_rec.client_id,
+                    'redirect_uri': redirect_uri,
+                }).encode()
+                req = urllib.request.Request(
+                    token_endpoint, data=data,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    token_data = json.loads(resp.read())
+                _logger.info("OpenHIS code exchange success: keys=%s", list(token_data.keys()))
+                kw['access_token'] = token_data.get('access_token', '')
+            except urllib.error.HTTPError as ex:
+                body = ex.read()
+                _logger.error("OpenHIS code exchange HTTP %s: %s", ex.code, body)
+                raise Exception("token_exchange_failed: %s %s" % (ex.code, body)) from ex
+            except Exception as ex:
+                _logger.error("OpenHIS code exchange error: %s", ex)
+                raise
+        # --- end OpenHIS patch ---
+
+        try:
+            _, login, key = request.env['res.users'].with_user(SUPERUSER_ID).auth_oauth(provider, kw)
+            request.env.cr.commit()
+
+            action = state.get('a')
+            menu = state.get('m')
+            redirect = werkzeug.urls.url_unquote_plus(state['r']) if state.get('r') else False
+            url = '/web'
+            if redirect:
+                url = redirect
+            elif action:
+                url = '/web#action=%s' % action
+            elif menu:
+                url = '/web#menu_id=%s' % menu
+
+            pre_uid = request.session.authenticate(dbname, login, key)
+            resp = request.redirect(_get_login_redirect_url(pre_uid, url), 303)
+            resp.autocorrect_location_header = False
+
+            if werkzeug.urls.url_parse(resp.location).path == '/web' and not request.env.user._is_internal():
+                resp.location = '/'
+            return resp
+        except AttributeError:
+            _logger.error("auth_signup not installed on database %s: oauth sign up cancelled.", dbname)
+            url = "/web/login?oauth_error=1"
+        except AccessDenied:
+            _logger.info('OAuth2: access denied, redirect to main page in case a valid session exists, without setting cookies')
+            url = "/web/login?oauth_error=3"
+        except Exception:
+            _logger.exception("Exception during request handling")
+            url = "/web/login?oauth_error=2"
+
+        redirect = request.redirect(url, 303)
+        redirect.autocorrect_location_header = False
+        return redirect
+
+    @http.route('/auth_oauth/oea', type='http', auth='none')
+    def oea(self, **kw):
+        """login user via Odoo Account provider"""
+        dbname = kw.pop('db', None)
+        if not dbname:
+            dbname = request.db
+        if not dbname:
+            raise BadRequest()
+        if not http.db_filter([dbname]):
+            raise BadRequest()
+
+        registry = registry_get(dbname)
+        with registry.cursor() as cr:
+            try:
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                provider = env.ref('auth_oauth.provider_openerp')
+            except ValueError:
+                redirect = request.redirect(f'/web?db={dbname}', 303)
+                redirect.autocorrect_location_header = False
+                return redirect
+            assert provider._name == 'auth.oauth.provider'
+
+        state = {
+            'd': dbname,
+            'p': provider.id,
+            'c': {'no_user_creation': True},
+        }
+
+        kw['state'] = json.dumps(state)
+        return self.signin(**kw)

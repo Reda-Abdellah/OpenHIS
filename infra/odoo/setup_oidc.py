@@ -43,7 +43,8 @@ CLIENT_ID     = os.environ.get("ODOO_OIDC_CLIENT_ID",    "odoo-oidc")
 CLIENT_SEC    = os.environ.get("ODOO_OIDC_CLIENT_SECRET", "odoo-oidc-secret")
 
 KC_BASE       = f"{KC_URL}/realms/{KC_REALM}/protocol/openid-connect"
-AUTH_ENDPOINT = f"http://localhost/keycloak/realms/{KC_REALM}/protocol/openid-connect/auth"
+KC_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "http://localhost")
+AUTH_ENDPOINT  = f"{KC_PUBLIC_URL}/keycloak/realms/{KC_REALM}/protocol/openid-connect/auth"
 USERINFO_URL  = f"{KC_BASE}/userinfo"
 
 STARTUP_RETRIES = 30   # wait up to 150s for Odoo HTTP
@@ -213,6 +214,8 @@ def main():
         "client_id":           CLIENT_ID,
         "auth_endpoint":       AUTH_ENDPOINT,   # browser-facing (public nginx URL)
         "validation_endpoint": USERINFO_URL,     # server-side (internal Docker DNS)
+    "response_type": "code",
+    "token_endpoint": f"{KC_BASE}/token",
         "scope":               "openid profile email roles groups",
         "body":                "Login with Keycloak",  # required button label
     }

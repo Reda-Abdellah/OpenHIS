@@ -26,7 +26,7 @@ services:
 
   # Legacy EHR — replaced by OpenMRS O3 (emr profile)
   ehr:
-    build: ../services-legacy/ehr
+    build: ../services/_legacy/ehr
     environment:
       ROOT_PATH: /ehr
     networks: [openhis-net]
@@ -35,7 +35,7 @@ services:
 
   # Legacy LIS — replaced by OpenELIS (laboratory profile)
   lis:
-    build: ../services-legacy/lis
+    build: ../services/_legacy/lis
     environment:
       ROOT_PATH: /lis
     networks: [openhis-net]
@@ -44,7 +44,7 @@ services:
 
   # Legacy Pharmacy — replaced by Odoo (erp profile)
   pharmacy:
-    build: ../services-legacy/pharmacy
+    build: ../services/_legacy/pharmacy
     environment:
       ROOT_PATH: /pharmacy
     networks: [openhis-net]

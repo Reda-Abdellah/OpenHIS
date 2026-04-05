@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from auth import require_auth
 import proxy
 from database import get_db, rows_to_list
-from token import get_service_token
+from svc_token import get_service_token
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

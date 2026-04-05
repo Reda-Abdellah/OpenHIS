@@ -27,19 +27,18 @@ services:
   # Analytics — collects metrics from all active services, stores snapshots.
   analytics:
     build:
-      context: ../..
+      context: ${PWD}
       dockerfile: services/analytics/Dockerfile
     environment:
       DB_PATH: /data/analytics.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: ${OPENMRS_USER:-admin}
-      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: ${OPENELIS_USER:-admin}
-      OPENELIS_PASS: ${OPENELIS_PASS}
       RIS_URL: http://ris:8002/api
       AI_CONTROLLER_URL: http://ai-controller:8000/api
       ROOT_PATH: /analytics
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: analytics-sa
+      KEYCLOAK_CLIENT_SECRET: ${ANALYTICS_KC_CLIENT_SECRET:-analytics-sa-secret}
       COLLECT_INTERVAL_MIN: ${COLLECT_INTERVAL_MIN:-5}
     volumes:
       - analytics-data:/data
@@ -55,19 +54,17 @@ services:
   # Patient Portal — patient-facing self-service for records and results.
   patient-portal:
     build:
-      context: ../..
+      context: ${PWD}
       dockerfile: services/patient-portal/Dockerfile
     environment:
       DB_PATH: /data/portal.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: ${OPENMRS_USER:-admin}
-      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: ${OPENELIS_USER:-admin}
-      OPENELIS_PASS: ${OPENELIS_PASS}
       RIS_URL: http://ris:8002/api
       ROOT_PATH: /patient-portal
-      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_PORTAL:-24}
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: patient-portal-sa
+      KEYCLOAK_CLIENT_SECRET: ${PATIENT_PORTAL_KC_CLIENT_SECRET:-patient-portal-sa-secret}
     volumes:
       - portal-sessions:/data
     networks: [openhis-net]

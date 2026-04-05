@@ -72,7 +72,7 @@ services:
   # Radiology Information System — worklist and report management.
   ris:
     build:
-      context: ../..
+      context: ${PWD}
       dockerfile: services/ris/Dockerfile
     environment:
       DB_PATH: /data/ris.db
@@ -80,8 +80,9 @@ services:
       FHIR_BRIDGE_URL: http://integration-hub:8012
       ROOT_PATH: /ris
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: ${OPENMRS_USER:-admin}
-      OPENMRS_PASS: ${OPENMRS_PASS}
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: ris-sa
+      KEYCLOAK_CLIENT_SECRET: ${RIS_KC_CLIENT_SECRET:-ris-sa-secret}
       POLL_INTERVAL_S: "60"
     volumes:
       - ris-data:/data
@@ -98,7 +99,7 @@ services:
   # Spawns pipeline containers (poc-xray, poc-ct) via Docker socket.
   ai-controller:
     build:
-      context: ../..
+      context: ${PWD}
       dockerfile: services/ai-controller/Dockerfile
     environment:
       ORTHANC_URL: http://orthanc:8042

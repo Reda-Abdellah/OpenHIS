@@ -62,15 +62,14 @@ services:
   # Default credentials: admin / admin123 (override with ADMIN_USER / ADMIN_PASS)
   admin:
     build:
-      context: ..
+      context: ${PWD}
       dockerfile: services/admin/Dockerfile
     environment:
       ROOT_PATH: /admin
       DB_PATH: /data/admin.db
-      ADMIN_USER: ${ADMIN_USER:-admin}
-      ADMIN_PASS: ${ADMIN_PASS}
-      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS_ADMIN:-12}
-      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost/keycloak}
+      KEYCLOAK_SPA_CLIENT_ID: ${KEYCLOAK_SPA_CLIENT_ID:-openhis-admin-spa}
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
       KEYCLOAK_REALM: openhis
       KEYCLOAK_CLIENT_ID: openhis-platform
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-openhis-platform-secret}
@@ -92,7 +91,7 @@ services:
   # Health:  http://localhost/mpi/api/health
   mpi:
     build:
-      context: ..
+      context: ${PWD}
       dockerfile: services/mpi/Dockerfile
     environment:
       ROOT_PATH: /mpi
@@ -116,20 +115,18 @@ services:
   # Health:  http://localhost/integration-hub/api/health
   integration-hub:
     build:
-      context: ..
+      context: ${PWD}
       dockerfile: services/integration-hub/Dockerfile
     environment:
       ROOT_PATH: /integration-hub
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: ${OPENMRS_USER:-admin}
-      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: ${OPENELIS_USER:-admin}
-      OPENELIS_PASS: ${OPENELIS_PASS}
       ODOO_URL: http://odoo:8069
       ODOO_DB: odoo
-      ODOO_USER: ${ODOO_USER:-admin}
-      ODOO_PASS: ${ODOO_PASS}
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: integration-hub-sa
+      KEYCLOAK_CLIENT_SECRET: ${INTEGRATION_HUB_KC_CLIENT_SECRET:-integration-hub-sa-secret}
+      ODOO_ADMIN_PASS: ${ODOO_ADMIN_PASS:-admin}
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
       REDIS_URL: redis://redis:6379
@@ -156,19 +153,18 @@ services:
   # Health:  http://localhost/hl7/api/health
   hl7:
     build:
-      context: ..
+      context: ${PWD}
       dockerfile: services/hl7/Dockerfile
     environment:
       DB_PATH: /data/hl7.db
       OPENMRS_URL: http://openmrs:8080
-      OPENMRS_USER: ${OPENMRS_USER:-admin}
-      OPENMRS_PASS: ${OPENMRS_PASS}
       OPENELIS_URL: http://openelis:8080
-      OPENELIS_USER: ${OPENELIS_USER:-admin}
-      OPENELIS_PASS: ${OPENELIS_PASS}
       MPI_BASE_URL: http://mpi:8007
       REDIS_URL: redis://redis:6379
       ROOT_PATH: /hl7
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: hl7-sa
+      KEYCLOAK_CLIENT_SECRET: ${HL7_KC_CLIENT_SECRET:-hl7-sa-secret}
       MLLP_ENABLED: "true"
       MLLP_HOST: "0.0.0.0"
       MLLP_PORT: "2575"
@@ -197,9 +193,10 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_RELATIVE_PATH: /keycloak
-      KC_PROXY: edge
+      KC_HOSTNAME_URL: http://localhost/keycloak
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      KC_PROXY: edge
     volumes:
       - ../infra/keycloak/openhis-realm.json:/opt/keycloak/data/import/openhis-realm.json:ro
     networks: [openhis-net]
@@ -216,7 +213,7 @@ services:
   # Services not in the active profile return 502 — this is expected.
   nginx:
     build:
-      context: ../infra/nginx
+      context: ${PWD}/infra/nginx
       dockerfile: Dockerfile
     ports:
       - "80:80"
