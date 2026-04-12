@@ -24,6 +24,7 @@ from app.config import POLL_INTERVAL_S, REDIS_URL, MPI_URL
 from app.services import openmrs, openelis, odoo
 from app.db import audit
 from app import bus
+from app.token import get_service_token
 import app.state as state
 
 log = logging.getLogger("hub.worker")
@@ -88,9 +89,11 @@ async def _sync_to_mpi(fhir_patient: dict, omrs_id: str, oe_id: str | None) -> N
     }
 
     try:
+        token = await get_service_token()
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=5.0) as c:
             # Upsert master patient + register OpenMRS crossref
-            r = await c.post(f"{MPI_URL}/api/sync/from-ehr", json=payload)
+            r = await c.post(f"{MPI_URL}/api/sync/from-ehr", json=payload, headers=headers)
             if r.status_code not in (200, 201, 202):
                 log.warning("MPI sync failed for %s: HTTP %s", omrs_id, r.status_code)
                 return
@@ -103,7 +106,7 @@ async def _sync_to_mpi(fhir_patient: dict, omrs_id: str, oe_id: str | None) -> N
                     "system":    "openelis",
                     "system_id": oe_id,
                     "mrn":       mrn,
-                })
+                }, headers=headers)
     except Exception as exc:
         log.warning("MPI sync error for %s: %s", omrs_id, exc)
 

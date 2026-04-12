@@ -527,7 +527,7 @@
     "credentials" : [ ],
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
-    "realmRoles" : [ "default-roles-openhis" ],
+    "realmRoles" : [ "default-roles-openhis", "internal-sync" ],
     "notBefore" : 0,
     "groups" : [ ]
   }, {

@@ -1,14 +1,15 @@
 import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from database import get_db, rows_to_list, row_to_dict
 from matcher import find_candidates
+from openhis_sdk.auth import require_token
 
 router = APIRouter(prefix="/api/matching", tags=["matching"])
 
 _THRESHOLD = 0.70
 
 
-@router.get("/candidates")
+@router.get("/candidates", dependencies=[Depends(require_token)])
 def list_candidates(status: str = "pending"):
     with get_db() as db:
         rows = db.execute(
@@ -25,7 +26,7 @@ def list_candidates(status: str = "pending"):
     return rows_to_list(rows)
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(require_token)])
 def run_matching():
     """Scan all active patients and create match_candidates above threshold."""
     now = datetime.datetime.utcnow().isoformat(timespec="seconds")
@@ -39,18 +40,16 @@ def run_matching():
             for (candidate, score) in hits:
                 a_id = min(p["id"], candidate["id"])
                 b_id = max(p["id"], candidate["id"])
-                try:
-                    db.execute(
-                        "INSERT INTO match_candidates(master_id_a,master_id_b,score) VALUES(?,?,?)",
-                        (a_id, b_id, score)
-                    )
-                    created += 1
-                except Exception:
-                    pass   # UNIQUE constraint — already exists
+                cur = db.execute(
+                    "INSERT INTO match_candidates(master_id_a,master_id_b,score) VALUES(?,?,?)"
+                    " ON CONFLICT DO NOTHING",
+                    (a_id, b_id, score)
+                )
+                created += cur.rowcount
     return {"candidates_created": created, "patients_scanned": len(patients)}
 
 
-@router.post("/candidates/{cid}/resolve")
+@router.post("/candidates/{cid}/resolve", dependencies=[Depends(require_token)])
 def resolve_candidate(cid: int, body: dict):
     """
     Resolve a match candidate.

@@ -97,6 +97,11 @@ services:
       ROOT_PATH: /mpi
       MPI_DATABASE_URL: postgresql://mpi:${MPI_DB_PASS:-mpi}@postgres:5432/mpi
       REDIS_URL: redis://redis:6379
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      KEYCLOAK_REALM: openhis
+      KEYCLOAK_CLIENT_ID: openhis-platform
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost/keycloak}
+      KEYCLOAK_SPA_CLIENT_ID: ${KEYCLOAK_SPA_CLIENT_ID:-openhis-admin-spa}
     depends_on:
       postgres:
         condition: service_healthy

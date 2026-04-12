@@ -5,6 +5,30 @@ from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras
 
+
+class _Conn:
+    """
+    Thin shim that gives psycopg2 connections a SQLite-style execute() API:
+    - db.execute(sql, params) works directly (no explicit cursor needed)
+    - execute() returns the cursor so .fetchone()/.fetchall() chain works
+    - SQLite '?' placeholders are transparently translated to psycopg2 '%s'
+    """
+
+    def __init__(self, conn: psycopg2.extensions.connection) -> None:
+        self._conn = conn
+        self._cur = conn.cursor()
+
+    def execute(self, sql: str, params=None) -> psycopg2.extensions.cursor:
+        pg_sql = sql.replace("?", "%s")
+        if params is not None:
+            self._cur.execute(pg_sql, params)
+        else:
+            self._cur.execute(pg_sql)
+        return self._cur
+
+    def cursor(self) -> psycopg2.extensions.cursor:
+        return self._cur
+
 DATABASE_URL = os.environ.get(
     "MPI_DATABASE_URL",
     "postgresql://mpi:mpi@postgres:5432/mpi",
@@ -77,8 +101,9 @@ _SCHEMA_STMTS = [
 @contextmanager
 def get_db():
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    db = _Conn(conn)
     try:
-        yield conn
+        yield db
         conn.commit()
     except Exception:
         conn.rollback()
@@ -88,10 +113,9 @@ def get_db():
 
 
 def init_db():
-    with get_db() as conn:
-        cur = conn.cursor()
+    with get_db() as db:
         for stmt in _SCHEMA_STMTS:
-            cur.execute(stmt)
+            db.execute(stmt)
 
 
 def new_id():

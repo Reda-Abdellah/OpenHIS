@@ -37,12 +37,14 @@ def create_xref(body: XRefCreate):
         try:
             cur = db.execute(
                 "INSERT INTO cross_references"
-                "(master_id,system,system_id,mrn,assigning_authority) VALUES(?,?,?,?,?)",
+                "(master_id,system,system_id,mrn,assigning_authority) VALUES(?,?,?,?,?)"
+                " RETURNING id",
                 (body.master_id, body.system, body.system_id,
                  body.mrn, body.assigning_authority)
             )
+            xref_id = cur.fetchone()["id"]
             return row_to_dict(db.execute(
-                "SELECT * FROM cross_references WHERE id=?", (cur.lastrowid,)
+                "SELECT * FROM cross_references WHERE id=?", (xref_id,)
             ).fetchone())
         except Exception:
             raise HTTPException(409,

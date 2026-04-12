@@ -45,6 +45,16 @@ async def index():
         return f.read()
 
 
+@app.get("/api/auth/config")
+def auth_config():
+    """Public endpoint: returns OIDC config needed by the browser SPA for PKCE login."""
+    return {
+        "keycloak_url": os.environ.get("KEYCLOAK_PUBLIC_URL", ""),
+        "realm":        os.environ.get("KEYCLOAK_REALM", "openhis"),
+        "client_id":    os.environ.get("KEYCLOAK_SPA_CLIENT_ID", "openhis-admin-spa"),
+    }
+
+
 @app.get("/api/health")
 def health():
     with get_db() as conn:

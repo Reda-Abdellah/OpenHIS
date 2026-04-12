@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/patients", tags=["patients"])
 
 _MP_SQL = """
     SELECT m.*,
-           (SELECT GROUP_CONCAT(cr.system || ':' || cr.system_id)
+           (SELECT string_agg(cr.system || ':' || cr.system_id, ',')
             FROM cross_references cr WHERE cr.master_id = m.id) AS xrefs,
            (SELECT COUNT(*) FROM match_candidates mc
             WHERE (mc.master_id_a = m.id OR mc.master_id_b = m.id)

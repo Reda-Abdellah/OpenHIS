@@ -3,9 +3,10 @@ Inbound sync endpoints — receive patient demographics from each service,
 upsert master record, register cross-reference, run matching.
 """
 import datetime
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from database import get_db, rows_to_list, row_to_dict, new_id
 from matcher import find_candidates
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 THRESHOLD = 0.70
@@ -83,14 +84,12 @@ def _upsert_and_xref(payload: dict, system: str, system_id_key: str = "id"):
 
         # ── 5. Upsert cross-reference ─────────────────────────────────────────
         if s_id:
-            try:
-                db.execute(
-                    "INSERT INTO cross_references"
-                    "(master_id,system,system_id,mrn) VALUES(?,?,?,?)",
-                    (master["id"], system, s_id, mrn)
-                )
-            except Exception:
-                pass   # already exists
+            db.execute(
+                "INSERT INTO cross_references"
+                "(master_id,system,system_id,mrn) VALUES(?,?,?,?)"
+                " ON CONFLICT DO NOTHING",
+                (master["id"], system, s_id, mrn)
+            )
 
         # ── 6. Run matching against existing actives ─────────────────────────
         all_patients = rows_to_list(db.execute(
@@ -103,30 +102,28 @@ def _upsert_and_xref(payload: dict, system: str, system_id_key: str = "id"):
         for (candidate, score) in hits:
             a_id = min(master["id"], candidate["id"])
             b_id = max(master["id"], candidate["id"])
-            try:
-                db.execute(
-                    "INSERT INTO match_candidates(master_id_a,master_id_b,score) VALUES(?,?,?)",
-                    (a_id, b_id, score)
-                )
-            except Exception:
-                pass
+            db.execute(
+                "INSERT INTO match_candidates(master_id_a,master_id_b,score) VALUES(?,?,?)"
+                " ON CONFLICT DO NOTHING",
+                (a_id, b_id, score)
+            )
 
     return {"status": "ok", "master_id": master["id"], "mrn": mrn}
 
 
-@router.post("/from-ehr")
+@router.post("/from-ehr", dependencies=[Depends(require_roles("internal-sync"))])
 async def sync_from_ehr(payload: dict, bg: BackgroundTasks):
     bg.add_task(_upsert_and_xref, payload, "ehr")
     return {"status": "queued", "system": "ehr"}
 
 
-@router.post("/from-lis")
+@router.post("/from-lis", dependencies=[Depends(require_roles("internal-sync"))])
 async def sync_from_lis(payload: dict, bg: BackgroundTasks):
     bg.add_task(_upsert_and_xref, payload, "lis", "ehrpatientid")
     return {"status": "queued", "system": "lis"}
 
 
-@router.post("/from-ris")
+@router.post("/from-ris", dependencies=[Depends(require_roles("internal-sync"))])
 async def sync_from_ris(payload: dict, bg: BackgroundTasks):
     bg.add_task(_upsert_and_xref, payload, "ris", "ehrid")
     return {"status": "queued", "system": "ris"}
