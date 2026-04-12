@@ -34,6 +34,12 @@ def fresh_db():
     os.environ['OPENMRS_USER'] = 'admin'
     os.environ['OPENMRS_PASS'] = 'admin'
     os.environ['POLL_INTERVAL_S'] = '99999'
+    # Satisfy startup env guard; DEV_MODE bypasses JWT validation
+    os.environ['DEV_MODE'] = 'true'
+    os.environ['KEYCLOAK_URL'] = ''
+    os.environ['KEYCLOAK_TOKEN_URL'] = 'http://localhost:19999/token'
+    os.environ['KEYCLOAK_CLIENT_ID'] = 'test-client'
+    os.environ['KEYCLOAK_CLIENT_SECRET'] = 'test-secret'
 
     from database import init_db
     init_db()

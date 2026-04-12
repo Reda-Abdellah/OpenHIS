@@ -13,7 +13,7 @@ log = logging.getLogger("ris")
 
 ROOT_PATH = os.environ.get("ROOT_PATH", "")
 
-_REQUIRED_ENV = ["KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+_REQUIRED_ENV = ["KEYCLOAK_URL", "KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
 
 
 def _check_env() -> None:
@@ -39,7 +39,18 @@ async def lifespan(app: FastAPI):
 from jwt_auth import JWTMiddleware
 
 app = FastAPI(title="RIS — Radiology Information System", version="3.3.0", root_path=ROOT_PATH, lifespan=lifespan)
-app.add_middleware(JWTMiddleware)
+app.add_middleware(JWTMiddleware, extra_public_prefixes=("/static/",))
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """Public endpoint: returns OIDC config needed by the browser SPA for PKCE login."""
+    from openhis_sdk.auth import KEYCLOAK_URL, KEYCLOAK_REALM
+    return {
+        "keycloak_url": os.environ.get("KEYCLOAK_PUBLIC_URL", KEYCLOAK_URL),
+        "realm":        KEYCLOAK_REALM,
+        "client_id":    os.environ.get("KEYCLOAK_SPA_CLIENT_ID", "openhis-spa"),
+    }
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

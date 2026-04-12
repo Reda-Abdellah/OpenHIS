@@ -80,6 +80,11 @@ services:
       FHIR_BRIDGE_URL: http://integration-hub:8012
       ROOT_PATH: /ris
       OPENMRS_URL: http://openmrs:8080
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost/keycloak}
+      KEYCLOAK_REALM: openhis
+      KEYCLOAK_AUDIENCE: openhis-platform
+      KEYCLOAK_SPA_CLIENT_ID: ${KEYCLOAK_SPA_CLIENT_ID:-openhis-spa}
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: ris-sa
       KEYCLOAK_CLIENT_SECRET: ${RIS_KC_CLIENT_SECRET:-ris-sa-secret}

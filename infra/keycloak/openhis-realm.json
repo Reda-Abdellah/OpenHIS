@@ -1280,6 +1280,18 @@
         "claim.name" : "roles",
         "jsonType.label" : "String"
       }
+    }, {
+      "id" : "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name" : "openhis-platform-audience",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-audience-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "included.client.audience" : "openhis-platform",
+        "id.token.claim" : "false",
+        "access.token.claim" : "true",
+        "userinfo.token.claim" : "false"
+      }
     } ],
     "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]

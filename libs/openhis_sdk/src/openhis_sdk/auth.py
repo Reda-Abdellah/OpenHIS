@@ -39,6 +39,10 @@ log = logging.getLogger("openhis_sdk.auth")
 KEYCLOAK_URL       = os.environ.get("KEYCLOAK_URL", "")
 KEYCLOAK_REALM     = os.environ.get("KEYCLOAK_REALM", "openhis")
 KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "openhis-platform")
+# KEYCLOAK_AUDIENCE: expected JWT audience. Defaults to KEYCLOAK_CLIENT_ID.
+# Set explicitly when the service account client ID differs from the JWT audience
+# (e.g. RIS uses client_id=ris-sa but tokens carry audience=openhis-platform).
+KEYCLOAK_AUDIENCE  = os.environ.get("KEYCLOAK_AUDIENCE", KEYCLOAK_CLIENT_ID)
 DEV_MODE           = os.environ.get("DEV_MODE", "false").lower() == "true"
 
 if DEV_MODE:
@@ -49,7 +53,7 @@ if DEV_MODE:
         "Never set this in production."
     )
 
-_SKIP_PREFIXES = ("/api/health", "/docs", "/redoc", "/openapi.json")
+_SKIP_PREFIXES = ("/api/health", "/api/auth", "/docs", "/redoc", "/openapi.json")
 _JWKS_CACHE: Optional[dict] = None
 _JWKS_FETCHED_AT: float = 0.0
 _JWKS_TTL = 3600
@@ -92,7 +96,7 @@ async def validate_token(token: str) -> dict:
         token,
         jwks,
         algorithms=["RS256"],
-        audience=KEYCLOAK_CLIENT_ID,
+        audience=KEYCLOAK_AUDIENCE,
         options={"verify_exp": True},
     )
 
@@ -135,13 +139,20 @@ class JWTMiddleware(BaseHTTPMiddleware):
     """
     Global JWT validation middleware for FastAPI apps.
     Active when KEYCLOAK_URL is set and DEV_MODE is not true.
+
+    Pass extra_public_prefixes to exempt additional paths (e.g. SPA HTML root).
     """
+
+    def __init__(self, app, extra_public_prefixes: tuple = ()):
+        super().__init__(app)
+        self._skip = _SKIP_PREFIXES + extra_public_prefixes
 
     async def dispatch(self, request: Request, call_next):
         if DEV_MODE or not KEYCLOAK_URL:
             return await call_next(request)
 
-        if any(request.url.path.startswith(p) for p in _SKIP_PREFIXES):
+        path = request.url.path
+        if path == "/" or any(path.startswith(p) for p in self._skip):
             return await call_next(request)
 
         auth = request.headers.get("Authorization", "")
