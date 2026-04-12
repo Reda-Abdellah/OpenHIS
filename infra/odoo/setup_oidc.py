@@ -214,10 +214,11 @@ def main():
         "client_id":           CLIENT_ID,
         "auth_endpoint":       AUTH_ENDPOINT,   # browser-facing (public nginx URL)
         "validation_endpoint": USERINFO_URL,     # server-side (internal Docker DNS)
-    "response_type": "code",
-    "token_endpoint": f"{KC_BASE}/token",
-        "scope":               "openid profile email roles groups",
+        "scope":               "openid profile email",
         "body":                "Login with Keycloak",  # required button label
+        # NOTE: response_type and token_endpoint are NOT standard Odoo fields.
+        # auth_oauth_main.py hardcodes response_type='code' and derives the
+        # token endpoint from validation_endpoint (/userinfo → /token).
     }
 
     existing = call("auth.oauth.provider", "search",

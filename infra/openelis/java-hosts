@@ -1,0 +1,12 @@
+# Custom Java hosts file for OpenELIS OIDC
+# JVM reads this via -Djdk.net.hosts.file to resolve "localhost" to the
+# nginx proxy (Docker host gateway) instead of 127.0.0.1.
+# This allows Spring Security's OIDC discovery to reach Keycloak at
+# http://localhost/keycloak/realms/openhis/.well-known/openid-configuration
+#
+# NOTE: This file is ONLY used by the JVM. System tools (curl, etc.)
+# still use the OS resolver. Tomcat binds to 0.0.0.0 so this is safe.
+
+# Docker host gateway — nginx listens here on port 80
+# host-gateway is resolved at container start by the entrypoint wrapper
+GATEWAY_IP localhost

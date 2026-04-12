@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Alternate deployment descriptor for OpenELIS-Global.
+  altDDName points Tomcat to our patched web.xml (mounted at /opt/patches/web.xml)
+  which has CONFIDENTIAL transport-guarantee changed to NONE.
+  This lets nginx terminate SSL and forward plain HTTP to Tomcat, with
+  X-Forwarded-Proto: http so Spring Security generates correct http:// redirect_uris.
+
+  IMPORTANT: This descriptor replaces META-INF/context.xml from the WAR, so the
+  JNDI Resource for jdbc/LimsDS must be redefined here (copied from META-INF/context.xml).
+  ${datasource.*} are resolved from CATALINA_OPTS system properties.
+-->
+<Context altDDName="/opt/patches/web.xml" logEffectiveWebXml="false">
+    <Resources cacheMaxSize="102400" />
+    <Resource auth="Container"
+        driverClassName="org.postgresql.Driver"
+        maxTotal="20" maxIdle="10" maxWaitMillis="-1"
+        name="jdbc/LimsDS"
+        type="javax.sql.DataSource"
+        url="${datasource.url}"
+        username="${datasource.username}"
+        password="${datasource.password}" />
+
+    <CookieProcessor
+        className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+        sameSiteCookies="strict" />
+</Context>

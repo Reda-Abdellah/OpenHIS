@@ -611,7 +611,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "32fbe6c1-bd39-4b3c-8fab-2bf49b786285",
@@ -650,7 +650,7 @@
       "consentRequired" : false,
       "config" : { }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "6756d78d-3bef-49b1-a2a6-ce6a3ea35d8b",
@@ -676,7 +676,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "90595f40-5c54-45b7-bc1d-c3d1c0b9e7b7",
@@ -763,7 +763,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "c5d7b87c-9797-48a8-afea-1156328ab9c0",
@@ -789,7 +789,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "abdb71ba-735f-48bc-ba94-487041d03c98",
@@ -876,7 +876,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "feaf8e08-7087-42a4-8de3-7b89f8157b04",
@@ -963,7 +963,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "3037a821-dab9-43d8-a49c-07b274fefd2e",
@@ -1021,7 +1021,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "5eeacc24-5194-407e-a73e-079e78e44b62",
@@ -1033,7 +1033,7 @@
     "alwaysDisplayInConsole" : false,
     "clientAuthenticatorType" : "client-secret",
     "secret" : "openelis-oidc-secret",
-    "redirectUris" : [ "http://localhost/openelis/*" ],
+    "redirectUris" : [ "http://localhost/OpenELIS-Global/*", "https://localhost/OpenELIS-Global/*" ],
     "webOrigins" : [ "http://localhost" ],
     "notBefore" : 0,
     "bearerOnly" : false,
@@ -1078,8 +1078,21 @@
         "claim.name" : "roles",
         "jsonType.label" : "String"
       }
+    }, {
+      "name" : "username-as-sub",
+      "protocol" : "openid-connect",
+      "protocolMapper" : "oidc-usermodel-property-mapper",
+      "consentRequired" : false,
+      "config" : {
+        "user.attribute" : "username",
+        "claim.name" : "sub",
+        "id.token.claim" : "true",
+        "access.token.claim" : "true",
+        "userinfo.token.claim" : "true",
+        "jsonType.label" : "String"
+      }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "002d5c78-5a38-41d3-be09-88ba10e6af8b",
@@ -1136,7 +1149,7 @@
         "userinfo.token.claim" : "false"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "fc152819-e94a-4d57-8c23-51c5808d9ad9",
@@ -1223,7 +1236,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "0ba53a06-2360-48ad-a6ae-9d9bc2b54f65",
@@ -1268,7 +1281,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "83131522-0bcf-4ff3-b870-8e7cb5588420",
@@ -1297,7 +1310,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : true,
     "nodeReRegistrationTimeout" : -1,
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "00bcaf44-b944-4185-b440-e5ba03a790b8",
@@ -1384,7 +1397,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "8ad48b43-3ac9-4451-bdf2-11a9dacadb81",
@@ -1410,7 +1423,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "0a6d59d1-8df1-41f6-b2d2-f83521d9cfce",
@@ -1497,7 +1510,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "profile", "roles", "email" ],
     "optionalClientScopes" : [ ]
   }, {
     "id" : "874a6b39-9f46-4104-8795-2087e26ebd0d",
@@ -1544,10 +1557,19 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "profile", "roles", "email" ],
+    "defaultClientScopes" : [ "openid", "web-origins", "acr", "profile", "roles", "email" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   } ],
   "clientScopes" : [ {
+    "id" : "fc4ab8e5-8a6b-44a0-b0be-6ab1c30a8770",
+    "name" : "openid",
+    "description" : "OpenID Connect scope",
+    "protocol" : "openid-connect",
+    "attributes" : {
+      "include.in.token.scope" : "true",
+      "display.on.consent.screen" : "true"
+    }
+  }, {
     "id" : "0f4d406c-0bd5-4d22-9ff3-8b4589e9d5f8",
     "name" : "role_list",
     "description" : "SAML role list",
