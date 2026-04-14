@@ -7,7 +7,7 @@ and import via `from app.main import app`.
 import os, sys, pytest
 from pathlib import Path
 
-HUB_PATH = str(Path(__file__).parent.parent.parent / "services" / "integration-hub")
+HUB_PATH = str(Path(__file__).parent.parent.parent.parent / "services" / "integration-hub")
 
 
 def _clear_hub_modules():

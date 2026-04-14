@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-MPI_PATH = str(Path(__file__).parent.parent.parent / "services" / "mpi")
+MPI_PATH = str(Path(__file__).parent.parent.parent.parent / "services" / "mpi")
 
 # Default test database URL — overridden by CI via MPI_DATABASE_URL env var
 _DEFAULT_TEST_DB = "postgresql://mpi:mpi@localhost:5432/mpi_test"

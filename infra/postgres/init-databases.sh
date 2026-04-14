@@ -16,3 +16,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
   \$\$;
   GRANT ALL PRIVILEGES ON DATABASE mpi TO mpi;
 EOSQL
+
+# Grant mpi user CREATE on the public schema inside the mpi database.
+# PostgreSQL 15 revoked CREATE on public from PUBLIC by default, so this
+# must be done with a connection scoped to the mpi database.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname mpi <<-EOSQL
+  GRANT ALL ON SCHEMA public TO mpi;
+EOSQL

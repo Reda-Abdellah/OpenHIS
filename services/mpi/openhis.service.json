@@ -6,9 +6,16 @@
   "nginx_path": "/mpi/",
   "health_path": "/api/health",
   "bus": {
-    "publishes": [],
-    "subscribes": ["patient.synced"]
+    "publishes": ["patient.synced"],
+    "subscribes": ["patient.registered"]
   },
-  "depends_on": ["redis"],
+  "depends_on": ["redis", "postgres"],
+  "env": {
+    "required": [
+      "KEYCLOAK_URL",
+      "REDIS_URL",
+      "MPI_DATABASE_URL"
+    ]
+  },
   "description": "Cross-reference registry linking patient identities across all connected systems."
 }

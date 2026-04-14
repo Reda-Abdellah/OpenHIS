@@ -4,7 +4,7 @@ from pathlib import Path
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh hl7 database for each test"""
-    hl7_path = str(Path(__file__).parent.parent.parent / "services" / "hl7")
+    hl7_path = str(Path(__file__).parent.parent.parent.parent / "services" / "hl7")
     test_db = "/tmp/test_hl7.db"
 
     mods_to_remove = [m for m in sys.modules.keys()

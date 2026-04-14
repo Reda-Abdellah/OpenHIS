@@ -6,9 +6,9 @@ from fastapi.responses import HTMLResponse
 from database import init_db, get_db
 from routers import patients, crossref, matching, sync, audit
 import bus_consumer
-import log_config
+from openhis_sdk.logging import configure
 
-log_config.configure("mpi")
+configure("mpi")
 log = logging.getLogger("mpi")
 
 ROOT_PATH = os.environ.get('ROOT_PATH', '')
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-from jwt_auth import JWTMiddleware
+from openhis_sdk.auth import JWTMiddleware
 
 app = FastAPI(title="MPI", version="1.0.0", root_path=ROOT_PATH, lifespan=lifespan)
 app.add_middleware(JWTMiddleware)
@@ -57,13 +57,9 @@ def auth_config():
 
 @app.get("/api/health")
 def health():
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) AS n FROM master_patients WHERE status='active'")
-        mp = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) AS n FROM cross_references")
-        xr = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) AS n FROM match_candidates WHERE status='pending'")
-        pm = cur.fetchone()["n"]
+    with get_db() as db:
+        mp = db.execute("SELECT COUNT(*) AS n FROM master_patients WHERE status='active'").fetchone()["n"]
+        xr = db.execute("SELECT COUNT(*) AS n FROM cross_references").fetchone()["n"]
+        pm = db.execute("SELECT COUNT(*) AS n FROM match_candidates WHERE status='pending'").fetchone()["n"]
     return {"status": "ok", "service": "mpi", "version": "1.0.0",
             "master_patients": mp, "cross_references": xr, "pending_matches": pm}

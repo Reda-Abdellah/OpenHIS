@@ -56,12 +56,14 @@ All inter-service communication uses Redis Streams with consumer groups.
 
 | Stream key | Published by | Consumed by |
 |---|---|---|
-| `patient.synced` | Integration Hub | MPI, Analytics |
-| `laborder.routed` | Integration Hub | HL7, Analytics |
-| `labresult.ready` | Integration Hub | HL7, Patient Portal |
+| `patient.registered` | Integration Hub | MPI |
+| `patient.synced` | MPI | Analytics, HL7 |
+| `lab_order.routed` | Integration Hub | HL7, Analytics |
+| `lab_result.ready` | Integration Hub | HL7, Patient Portal |
 | `dicom.stored` | Integration Hub | AI Controller, Analytics |
 | `radiology.report.ready` | RIS | HL7, Patient Portal |
 | `ai.result.ready` | AI Controller | RIS, Integration Hub |
+| `odoo.patient.synced` | Integration Hub | Analytics |
 | `openhis.audit` | All services | Admin |
 
 ## Data Flow: Patient Registration

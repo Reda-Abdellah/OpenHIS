@@ -1,4 +1,4 @@
-venv
+venv*
 scripts
 #tests
 repomix*

@@ -139,7 +139,7 @@ OpenHIS/
 |---|---|
 | Docker Engine | 24.x |
 | Docker Compose plugin | 2.20 |
-| Python (for OPM CLI) | 3.11 |
+| Python (for OPM CLI) | 3.11+ (`python3.11-venv` package required on Ubuntu/Debian) |
 | Available RAM | 4 GB (base only) / 8 GB (emr + lab) / 16 GB (full stack) |
 | Available disk | 15 GB |
 
@@ -152,14 +152,24 @@ OpenHIS/
 git clone <repo-url>
 cd OpenHIS
 
-# 2. Run the first-time wizard (sets passwords, chooses profiles, writes .env)
+# 2. Create a Python 3.11 virtual environment and activate it
+#    Ubuntu/Debian: sudo apt install python3.11 python3.11-venv
+python3.11 -m venv venv_openhis
+source venv_openhis/bin/activate
+
+# 3. Install OPM and SDK dependencies
+pip install -r platform/requirements.txt
+pip install -e libs/openhis_sdk
+pip install -e platform
+
+# 4. Run the first-time wizard (sets passwords, chooses profiles, writes .env)
 python platform/opm.py init
 
-# 3. Start the base stack + chosen profiles
+# 5. Start the base stack + chosen profiles
 make up
 # or: python platform/opm.py up
 
-# 4. Open the portal
+# 6. Open the portal
 open http://localhost
 ```
 

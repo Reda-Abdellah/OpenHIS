@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-ADMIN_PATH = str(Path(__file__).parent.parent.parent / "services" / "admin")
+ADMIN_PATH = str(Path(__file__).parent.parent.parent.parent / "services" / "admin")
 
 
 @pytest.fixture(autouse=True)

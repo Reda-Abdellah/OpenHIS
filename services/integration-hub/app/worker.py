@@ -17,14 +17,12 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Callable
 
-import httpx
 import redis.asyncio as aioredis
 
-from app.config import POLL_INTERVAL_S, REDIS_URL, MPI_URL
+from app.config import POLL_INTERVAL_S, REDIS_URL
 from app.services import openmrs, openelis, odoo
 from app.db import audit
 from app import bus
-from app.token import get_service_token
 import app.state as state
 
 log = logging.getLogger("hub.worker")
@@ -66,49 +64,15 @@ def _extract_mrn(fhir_patient: dict) -> str:
     return ""
 
 
-async def _sync_to_mpi(fhir_patient: dict, omrs_id: str, oe_id: str | None) -> None:
-    """
-    Register the patient in MPI and record OpenMRS + OpenELIS crossrefs.
-    Best-effort: errors are logged but do not fail the main sync loop.
-    """
-    mrn = _extract_mrn(fhir_patient)
-    if not mrn:
-        log.debug("MPI sync skipped for %s — no MRN in FHIR patient", omrs_id)
-        return
-
+def _patient_demographics(fhir_patient: dict) -> dict:
+    """Extract demographics from a FHIR Patient resource."""
     name = (fhir_patient.get("name") or [{}])[0]
-    given = (name.get("given") or [""])[0]
-    family = name.get("family", "")
-    payload = {
-        "id":        omrs_id,
-        "mrn":       mrn,
-        "firstname": given,
-        "lastname":  family,
+    return {
+        "firstname": (name.get("given") or [""])[0],
+        "lastname":  name.get("family", ""),
         "birthdate": fhir_patient.get("birthDate"),
         "sex":       fhir_patient.get("gender"),
     }
-
-    try:
-        token = await get_service_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        async with httpx.AsyncClient(timeout=5.0) as c:
-            # Upsert master patient + register OpenMRS crossref
-            r = await c.post(f"{MPI_URL}/api/sync/from-ehr", json=payload, headers=headers)
-            if r.status_code not in (200, 201, 202):
-                log.warning("MPI sync failed for %s: HTTP %s", omrs_id, r.status_code)
-                return
-            master_id = r.json().get("master_id")
-
-            # Register OpenELIS crossref if we have it
-            if oe_id and master_id:
-                await c.post(f"{MPI_URL}/api/crossref", json={
-                    "master_id": master_id,
-                    "system":    "openelis",
-                    "system_id": oe_id,
-                    "mrn":       mrn,
-                }, headers=headers)
-    except Exception as exc:
-        log.warning("MPI sync error for %s: %s", omrs_id, exc)
 
 # Retry queue: (next_retry_at, coro_factory, resource_type, resource_id, direction, attempts)
 _retry_queue: deque = deque()
@@ -142,7 +106,10 @@ async def _sync_patients() -> int:
         if await _dedup_check("patients", pid):
             continue
 
-        # OpenELIS sync — primary; failure triggers retry
+        mrn  = _extract_mrn(p)
+        demo = _patient_demographics(p)
+
+        # ── 1. OpenELIS sync — primary; failure triggers retry
         oe_id = None
         try:
             oe_id = await openelis.upsert_patient(p)
@@ -151,12 +118,6 @@ async def _sync_patients() -> int:
                 await audit.log_event(
                     "patient_synced", "Patient", pid, "omrs→oe", "ok",
                 )
-                await bus.publish("patient.synced", {
-                    "omrs_id": pid,
-                    "oe_id": oe_id,
-                    "mrn": p.get("identifier", [{}])[0].get("value"),
-                })
-                await _sync_to_mpi(p, pid, oe_id)
         except Exception as exc:
             await audit.log_event(
                 "patient_sync_failed", "Patient", pid, "omrs→oe", "failed",
@@ -167,12 +128,30 @@ async def _sync_patients() -> int:
                 "Patient", pid, "omrs→oe", 1,
             )
 
-        # Odoo sync — independent; failure does not block OpenELIS or bus publish
+        # ── 2. Publish enriched event — MPI bus consumer handles the upsert.
+        #       Full demographics are included so MPI can create or update the
+        #       master record without any direct HTTP call back to this service.
+        await bus.publish("patient.registered", {
+            "omrs_id":   pid,
+            "oe_id":     oe_id,
+            "mrn":       mrn,
+            "firstname": demo["firstname"],
+            "lastname":  demo["lastname"],
+            "birthdate": demo["birthdate"],
+            "sex":       demo["sex"],
+        })
+
+        # ── 3. Odoo sync — independent; failure does not block other systems
         try:
-            await odoo.upsert_patient(p)
+            odoo_id = await odoo.upsert_patient(p)
             await audit.log_event(
                 "patient_synced", "Patient", pid, "omrs→odoo", "ok",
             )
+            await bus.publish("odoo.patient.synced", {
+                "omrs_id":  pid,
+                "odoo_id":  odoo_id,
+                "mrn":      mrn,
+            })
         except Exception as exc:
             await audit.log_event(
                 "patient_sync_failed", "Patient", pid, "omrs→odoo", "failed",

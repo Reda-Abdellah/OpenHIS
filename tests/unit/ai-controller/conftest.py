@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def fresh_db():
     """Setup fresh ai-controller database for each test"""
-    ai_path = str(Path(__file__).parent.parent.parent / "services" / "ai-controller")
+    ai_path = str(Path(__file__).parent.parent.parent.parent / "services" / "ai-controller")
     test_db = "/tmp/test_ai_controller.db"
 
     # Clear cached modules
