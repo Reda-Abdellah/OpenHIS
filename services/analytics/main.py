@@ -41,10 +41,11 @@ async def lifespan(app: FastAPI):
     yield
     bus_task.cancel()
     collect_task.cancel()
-    try:
-        await bus_task
-    except asyncio.CancelledError:
-        pass
+    for task in (bus_task, collect_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     from scheduler import stop_scheduler
     stop_scheduler()
 

@@ -19,7 +19,17 @@ class TestHealth:
         omrs = "http://openmrs-hub-test:9998"
         oe   = "http://openelis-hub-test:9998"
         odoo = "http://odoo-hub-test:9998"
+        # NOTE: health_check() acquires a Keycloak token before probing each
+        # upstream.  The token endpoint must be mocked here because the root
+        # conftest sets KEYCLOAK_TOKEN_URL to a non-resolvable test address.
+        # See defect report: health_check should not require a Keycloak token
+        # (Keycloak outage would mask real upstream availability).
+        import os
+        token_url = os.environ["KEYCLOAK_TOKEN_URL"]
         with respx.mock:
+            respx.post(token_url).mock(
+                return_value=httpx.Response(200, json={"access_token": "test-tok", "expires_in": 3600})
+            )
             respx.get(f"{omrs}/openmrs/ws/fhir2/R4/metadata").mock(
                 return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
             )

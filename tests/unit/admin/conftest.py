@@ -31,17 +31,21 @@ def admin_env(tmp_path):
 
     db_file = str(tmp_path / "admin_test.db")
     os.environ["DB_PATH"]      = db_file
-    os.environ["ADMIN_USER"]   = "admin"
-    os.environ["ADMIN_PASS"]   = "test_password_123"
     os.environ["ROOT_PATH"]    = ""
-    os.environ["REQUIRE_JWT"]  = "false"
-    os.environ["KEYCLOAK_URL"] = ""
+    os.environ["KEYCLOAK_URL"] = ""   # DEV_MODE bypasses Keycloak calls
     os.environ["LOG_FORMAT"]   = "text"
     os.environ["REDIS_URL"]    = ""
+    # NOTE: ADMIN_USER, ADMIN_PASS, REQUIRE_JWT are not read by admin v2.0
+    # (Keycloak-only auth) and have been removed.
 
     import database
     database.DBPATH = db_file
     database.init_db()
+
+    # Replicate the lifespan startup seed so registry tests see base services.
+    # (TestClient without a `with` block does not run the lifespan.)
+    from routers.registry import seed_base_services
+    seed_base_services()
 
     yield
 
@@ -60,8 +64,9 @@ def client(admin_env):
 
 @pytest.fixture
 def auth_headers(client):
-    """Return Authorization header for a valid admin session."""
-    resp = client.post("/api/auth/login", json={"username": "admin", "password": "test_password_123"})
-    assert resp.status_code == 200, f"Login failed: {resp.text}"
-    token = resp.json()["token"]
-    return {"Authorization": f"Bearer {token}"}
+    """Return Authorization header for tests.
+
+    DEV_MODE=true is set in the root conftest so require_token returns dev
+    claims regardless of token content — any Bearer value is accepted.
+    """
+    return {"Authorization": "Bearer dev-test-token"}

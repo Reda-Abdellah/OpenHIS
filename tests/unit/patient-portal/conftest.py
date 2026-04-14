@@ -1,4 +1,4 @@
-import os, sys, datetime, pytest
+import os, sys, time, datetime, pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
@@ -10,7 +10,7 @@ def fresh_db():
 
     mods_to_remove = [m for m in sys.modules.keys()
                       if m.startswith(('portal_', 'routers', 'proxy', 'auth'))
-                      or m in ('main', 'database')]
+                      or m in ('main', 'database', 'svc_token')]
     for mod in mods_to_remove:
         try:
             del sys.modules[mod]
@@ -37,6 +37,11 @@ def fresh_db():
 
     from database import init_db
     init_db()
+
+    # Pre-populate the service-account token cache so tests never hit Keycloak.
+    import svc_token
+    svc_token._cache["token"]      = "test-service-token"
+    svc_token._cache["expires_at"] = time.time() + 3600
 
     yield
 

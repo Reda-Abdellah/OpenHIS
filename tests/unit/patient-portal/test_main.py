@@ -93,9 +93,11 @@ MOCK_RIS_REPORT = {
 }
 
 
-def _fhir_side_effect(url, auth, params=None):
-    """Mock for routers.me._fhir_get based on URL."""
-    if f"/Patient/P-001" in url:
+def _fhir_side_effect(url, params=None):
+    """Mock for routers.me._fhir_get based on URL.
+    Signature matches _fhir_get(url, params=None).
+    """
+    if "/Patient/P-001" in url:
         return FHIR_PATIENT
     if "/Encounter" in url:
         return FHIR_ENCOUNTER_BUNDLE
@@ -108,7 +110,7 @@ def _fhir_side_effect(url, auth, params=None):
     return {}
 
 
-def _fhir_summary_side_effect(url, auth, params=None):
+def _fhir_summary_side_effect(url, params=None):
     """Summary endpoint needs planned encounters and count-only DR bundle."""
     if "/Encounter" in url:
         return FHIR_ENCOUNTER_BUNDLE

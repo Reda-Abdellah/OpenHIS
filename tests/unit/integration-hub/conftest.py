@@ -18,13 +18,14 @@ def _clear_hub_modules():
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUDIT_DB_PATH",   str(tmp_path / "hub-audit.db"))
-    monkeypatch.setenv("ROOT_PATH",       "")
-    monkeypatch.setenv("OPENMRS_URL",     "http://openmrs-hub-test:9998")
-    monkeypatch.setenv("OPENELIS_URL",    "http://openelis-hub-test:9998")
-    monkeypatch.setenv("ODOO_URL",        "http://odoo-hub-test:9998")
-    monkeypatch.setenv("ODOO_DB",         "odoo")
-    monkeypatch.setenv("POLL_INTERVAL_S", "99999")  # never actually poll
+    monkeypatch.setenv("AUDIT_DB_PATH",          str(tmp_path / "hub-audit.db"))
+    monkeypatch.setenv("ROOT_PATH",              "")
+    monkeypatch.setenv("OPENMRS_URL",            "http://openmrs-hub-test:9998")
+    monkeypatch.setenv("OPENELIS_URL",           "http://openelis-hub-test:9998")
+    monkeypatch.setenv("ODOO_URL",               "http://odoo-hub-test:9998")
+    monkeypatch.setenv("ODOO_DB",                "odoo")
+    monkeypatch.setenv("ODOO_ADMIN_PASS",        "test-odoo-pass")
+    monkeypatch.setenv("POLL_INTERVAL_S",        "99999")  # never actually poll
 
     if HUB_PATH not in sys.path:
         sys.path.insert(0, HUB_PATH)

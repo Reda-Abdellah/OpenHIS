@@ -30,8 +30,9 @@ def fresh_db():
     os.environ["MPI_DATABASE_URL"] = test_db_url
     os.environ["ROOT_PATH"] = ""
     os.environ["REDIS_URL"] = ""      # disable bus consumer in tests
-    os.environ["REQUIRE_JWT"] = "false"
     os.environ["LOG_FORMAT"] = "text"
+    # NOTE: REQUIRE_JWT is not read by the MPI service; auth is handled via
+    # DEV_MODE=true set in tests/conftest.py.
 
     import psycopg2
     import psycopg2.extras

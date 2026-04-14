@@ -12,7 +12,7 @@ import io, sys, os, pytest
 from pathlib import Path
 import pydicom
 
-SERVICE = str(Path(__file__).parent.parent.parent / "services" / "simulator")
+SERVICE = str(Path(__file__).parent.parent.parent.parent / "services" / "simulator")
 if SERVICE not in sys.path:
     sys.path.insert(0, SERVICE)
 

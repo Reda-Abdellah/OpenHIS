@@ -104,7 +104,12 @@ async def validate_token(token: str) -> dict:
 async def require_token(authorization: str = Header(default=None)) -> dict:
     """FastAPI dependency: validates Keycloak JWT. Returns decoded claims."""
     if DEV_MODE:
-        return {"preferred_username": "dev", "roles": ["admin"], "sub": "dev"}
+        # Return all common roles so every endpoint is reachable in dev/test.
+        return {
+            "preferred_username": "dev",
+            "roles": ["admin", "radiologist", "clinician", "nurse"],
+            "sub": "dev",
+        }
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(

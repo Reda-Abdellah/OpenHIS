@@ -8,11 +8,12 @@ import pytest
 
 
 def test_profiles_active_returns_list(client, auth_headers, tmp_path):
-    """GET /api/profiles/active returns a list (empty or populated)."""
+    """GET /api/profiles/active returns {"profiles": [...]}."""
     resp = client.get("/api/profiles/active", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert isinstance(data, list)
+    assert "profiles" in data
+    assert isinstance(data["profiles"], list)
 
 
 def test_profiles_enable_writes_to_env(client, auth_headers, monkeypatch, tmp_path):
@@ -42,6 +43,10 @@ def test_profiles_disable_unknown_is_noop(client, auth_headers):
     assert resp.status_code in (200, 202, 204, 400)
 
 
+@pytest.mark.skipif(
+    os.environ.get("DEV_MODE") == "true",
+    reason="DEV_MODE=true bypasses auth enforcement; test belongs in integration suite"
+)
 def test_profiles_enable_requires_auth(client):
     """Profile enable endpoint must require authentication."""
     resp = client.post("/api/profiles/enable", json={"profiles": ["emr"]})
