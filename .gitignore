@@ -18,3 +18,4 @@ repomix*
 **/htmlcov/
 **/.vscode/
 data/
+*.zip
