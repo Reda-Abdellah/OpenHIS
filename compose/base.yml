@@ -126,6 +126,8 @@ services:
       ROOT_PATH: /integration-hub
       OPENMRS_URL: http://openmrs:8080
       OPENELIS_URL: http://openelis:8080
+      OPENELIS_USER: ${OPENELIS_USER:-admin}
+      OPENELIS_PASSWORD: ${OPENELIS_PASSWORD:-adminADMIN!}
       ODOO_URL: http://odoo:8069
       ODOO_DB: odoo
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token

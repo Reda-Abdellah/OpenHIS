@@ -1,30 +1,33 @@
 """
 OpenELIS client — FHIR R4 access.
 
-OpenELIS Global 2 exposes FHIR R4 at /fhir/R4/.
-All patient upserts use a search-then-create/update pattern to stay idempotent.
+OpenELIS Global 2 exposes its HAPI FHIR endpoint at
+/OpenELIS-Global/fhir/ (no `/R4/` segment). It does NOT validate Keycloak
+JWTs — the FHIR resource chain accepts HTTP Basic auth with an OpenELIS
+local admin user. We use that directly; JWT introspection at the OE layer
+is an upstream roadmap item and would belong in a realm-aware resource
+server, not here.
 """
 import logging
 from typing import Optional
 import httpx
-from app.config import OPENELIS_URL
-from app.token import get_service_token
+from app.config import OPENELIS_URL, OPENELIS_USER, OPENELIS_PASSWORD
 
 log = logging.getLogger("hub.openelis")
 
-_FHIR = f"{OPENELIS_URL}/fhir/R4"
+_FHIR = f"{OPENELIS_URL}/OpenELIS-Global/fhir"
 _HDR  = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"}
+_AUTH = httpx.BasicAuth(OPENELIS_USER, OPENELIS_PASSWORD)
 
 
 async def _auth_headers() -> dict:
-    token = await get_service_token()
-    return {**_HDR, "Authorization": f"Bearer {token}"}
+    return dict(_HDR)
 
 
 async def health_check() -> bool:
     try:
         hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=8) as c:
+        async with httpx.AsyncClient(timeout=8, auth=_AUTH) as c:
             r = await c.get(f"{_FHIR}/metadata", headers=hdrs)
             return r.status_code == 200
     except Exception:
@@ -48,7 +51,7 @@ async def upsert_patient(patient: dict) -> Optional[str]:
 
     try:
         hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
             r = await c.get(f"{_FHIR}/Patient",
                             params={"identifier": search_param},
                             headers=hdrs)
@@ -84,7 +87,7 @@ async def create_service_request(sr: dict) -> Optional[str]:
         value = identifiers[0].get("value", "")
         try:
             hdrs = await _auth_headers()
-            async with httpx.AsyncClient(timeout=10) as c:
+            async with httpx.AsyncClient(timeout=10, auth=_AUTH) as c:
                 r = await c.get(f"{_FHIR}/ServiceRequest",
                                 params={"identifier": value},
                                 headers=hdrs)
@@ -98,7 +101,7 @@ async def create_service_request(sr: dict) -> Optional[str]:
 
     try:
         hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
             r = await c.post(f"{_FHIR}/ServiceRequest", json=sr, headers=hdrs)
             r.raise_for_status()
             oe_id = r.json().get("id")
@@ -113,7 +116,7 @@ async def get_completed_reports(count: int = 50) -> list[dict]:
     """Fetch final DiagnosticReports from OpenELIS for back-routing to OpenMRS."""
     try:
         hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=15) as c:
+        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
             r = await c.get(f"{_FHIR}/DiagnosticReport",
                             params={"status": "final", "_count": count},
                             headers=hdrs)

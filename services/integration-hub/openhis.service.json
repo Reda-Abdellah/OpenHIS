@@ -18,6 +18,8 @@
       "REDIS_URL",
       "OPENMRS_URL",
       "OPENELIS_URL",
+      "OPENELIS_USER",
+      "OPENELIS_PASSWORD",
       "ODOO_URL",
       "ODOO_DB",
       "ODOO_ADMIN_PASS"

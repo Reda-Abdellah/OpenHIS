@@ -7,13 +7,24 @@ Flow:
   2. OpenELIS finalises a DiagnosticReport
      → Hub polls OpenELIS → posts it back to OpenMRS
 """
+import os
 import respx
 import httpx
 
 OMRS = "http://openmrs-int-test:9997"
 OE   = "http://openelis-int-test:9997"
 OMRS_FHIR = f"{OMRS}/openmrs/ws/fhir2/R4"
-OE_FHIR   = f"{OE}/fhir/R4"
+OE_FHIR   = f"{OE}/OpenELIS-Global/fhir"
+
+
+def _mock_keycloak_token(mock):
+    # See DEF-001: adapter _auth_headers() fetches a service token before any
+    # FHIR call. Root conftest sets KEYCLOAK_TOKEN_URL to a non-resolvable
+    # test address, so every respx block that exercises an adapter must mock it.
+    token_url = os.environ["KEYCLOAK_TOKEN_URL"]
+    mock.post(token_url).mock(
+        return_value=httpx.Response(200, json={"access_token": "test-tok", "expires_in": 3600})
+    )
 
 FHIR_SR = {
     "resourceType": "ServiceRequest",
@@ -71,6 +82,7 @@ class TestHubLabOrderRouting:
         }
 
         with respx.mock:
+            _mock_keycloak_token(respx)
             respx.get(f"{OE_FHIR}/Patient").mock(
                 return_value=httpx.Response(200, json={
                     "entry": [{"resource": existing_patient}]
@@ -96,6 +108,7 @@ class TestHubLabOrderRouting:
         import asyncio
 
         with respx.mock:
+            _mock_keycloak_token(respx)
             respx.post(f"{OMRS_FHIR}/DiagnosticReport").mock(
                 return_value=httpx.Response(201, json={**FHIR_DR, "id": "created-dr"})
             )
@@ -117,6 +130,7 @@ class TestHubLabResultRouting:
         import asyncio
 
         with respx.mock:
+            _mock_keycloak_token(respx)
             respx.get(f"{OE_FHIR}/DiagnosticReport").mock(
                 return_value=httpx.Response(200, json=FHIR_DR_BUNDLE)
             )
@@ -134,6 +148,7 @@ class TestHubLabResultRouting:
         import asyncio
 
         with respx.mock:
+            _mock_keycloak_token(respx)
             respx.get(f"{OMRS_FHIR}/ServiceRequest").mock(
                 return_value=httpx.Response(200, json=FHIR_SR_BUNDLE)
             )

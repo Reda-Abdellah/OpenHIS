@@ -33,7 +33,7 @@ class TestHealth:
             respx.get(f"{omrs}/openmrs/ws/fhir2/R4/metadata").mock(
                 return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
             )
-            respx.get(f"{oe}/fhir/R4/metadata").mock(
+            respx.get(f"{oe}/OpenELIS-Global/fhir/metadata").mock(
                 return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
             )
             respx.get(f"{odoo}/web/health").mock(

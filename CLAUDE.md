@@ -125,25 +125,46 @@ python platform/opm.py status
 ### Tests (preferred invocations)
 ```bash
 # Unit — no Docker needed
-pytest tests/unit -q --tb=short
+pytest tests/unit -q --tb=short           # or: make test-unit
 
 # Integration — no Docker needed (respx mocks)
-pytest tests/integration -q --tb=short
+pytest tests/integration -q --tb=short    # or: make test-integration
+
+# End-to-end V&V scenarios — require a live stack (make up)
+pytest tests/e2e --e2e -v                 # or: make e2e
 
 # Smoke — requires full Docker stack running
 pytest tests/smoke -q
 
 # Target a single service
-pytest tests/mpi -x -q --tb=short
-pytest tests/ris/test_orders.py::test_create_order -x -s --tb=long
+pytest tests/unit/mpi -x -q --tb=short
+pytest tests/unit/ris/test_orders.py::test_create_order -x -s --tb=long
 
-# All tests
-pytest tests -q --tb=short
+# Everything except e2e (e2e is opt-in via --e2e)
+pytest tests -q --tb=short                # or: make test
 ```
 
 
-**Rule:** run targeted tests during development. Run `tests/unit` + `tests/integration` before any PR.  
+**Rule:** run targeted tests during development. Run `tests/unit` + `tests/integration` before any PR.
+Run `tests/e2e` after any change that could affect cross-service behaviour (see below).
 Never run `tests/smoke` unless the full Docker stack is up.
+
+
+### E2E V&V suite (the cross-service regression net)
+
+Executable mirror of @docs/verification_and_validation/v-and-v-scenario.md.
+Eight scenarios (patient identity, lab, DICOM/AI, RBAC, admin plane,
+resilience, HL7, analytics) walk real workflows against the running stack
+and finish in ~13 s. See [tests/e2e/README.md](tests/e2e/) for fixture
+reference and how to add a scenario.
+
+- Opt-in — `pytest tests/e2e` without `--e2e` is a no-op, so unit runs stay fast.
+- Auto-provisions `e2e-test-sa` + `e2e-noauth-sa` Keycloak clients on first run.
+- Known defects are marked `@pytest.mark.xfail(reason="DEF-NNN", strict=False)`.
+  When an `xfail` starts passing (XPASSED), you just fixed the defect — remove
+  the marker.
+- `tests/e2e/test_s06_resilience.py` needs `docker ps` without sudo; otherwise
+  skipped with a clear message.
 
 
 ---
@@ -296,6 +317,9 @@ if missing:
   ```
 - PR checklist:
   - `pytest tests/unit tests/integration` passes with no failures
+  - `make e2e` run if the change touches cross-service behaviour (auth,
+    bus events, FHIR/HL7 flow, service manifests, nginx routes) — no
+    new FAILED; any new XPASSED has its `xfail` marker removed
   - No new `jwtauth.py` or `logconfig.py` outside `libs/openhissdk/`
   - Required env vars declared in `openhis.service.json` under `env.required`
   - New env vars added to `.env.example` with a comment
@@ -321,7 +345,42 @@ if missing:
 - Work in small, reviewable steps; prefer minimal diffs
 - Modify only files relevant to the current request; keep existing style
 - Check `openhis.service.json` when touching ports, env vars, or bus topics
-- Run `pytest tests/<service> -x -q --tb=short` before declaring work done
+
+
+**After finishing a feature or fixing a bug — run the appropriate tests before declaring the work done:**
+
+The pain this prevents: fixing one service silently breaking another.
+Scale the test sweep to the blast radius of the change.
+
+1. **Targeted unit test first** — fastest feedback on the thing you just touched:
+   ```bash
+   pytest tests/unit/<service> -x -q --tb=short
+   ```
+2. **Unit + integration sweep** — catches regressions in adjacent services:
+   ```bash
+   make test         # runs tests/unit + tests/integration
+   ```
+3. **End-to-end V&V suite** — run whenever the change could affect cross-
+   service behaviour (auth, bus events, FHIR flow, adapter contracts,
+   Keycloak clients, nginx routes, service manifests):
+   ```bash
+   make up && make health   # only if the stack isn't already running
+   make e2e                 # or: pytest tests/e2e --e2e -v
+   ```
+   Read the summary line: `N passed, M xfailed, K skipped`.
+   - **FAILED** = regression — bisect and fix before moving on.
+   - **XPASSED** = a known defect (DEF-NNN) started passing — you fixed
+     it; remove the `@pytest.mark.xfail` marker on that test.
+   - **SKIPPED** in S6 is fine when docker isn't accessible without sudo.
+4. **Add / update a scenario** when you ship a new cross-service flow or
+   a new `/api/*` route that the portal calls — so the next change that
+   breaks it is caught automatically. The narrative spec lives in
+   @docs/verification_and_validation/v-and-v-scenario.md; the
+   executable mirror is in [tests/e2e/](tests/e2e/). Keep them in sync.
+5. **Never skip hooks or bypass the suite** (`--no-verify`, commenting
+   out assertions, deleting failing tests) to "get the commit in". If a
+   test blocks you, diagnose the root cause or mark `xfail` with a
+   DEF-NNN reference in the defect report.
 
 
 **Hard rules:**

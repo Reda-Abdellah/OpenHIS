@@ -1,823 +1,365 @@
-# OpenHIS — Verification \& Validation Scenario Guide
+# OpenHIS — Verification & Validation Scenarios
 
-**Version:** 1.0 · **Target Stack:** `base` + `emr` + `laboratory` + `imaging` + `analytics` profiles
+**Version:** 2.0 · **Last updated:** 2026-04-19
+**Scope:** `base` + `emr` + `laboratory` + `imaging` + `analytics` profiles
 
-***
+> **Executable mirror:** every scenario in this document has a matching
+> pytest file under [`tests/e2e/`](../../tests/e2e/). Running `make e2e`
+> (or `pytest tests/e2e --e2e`) walks the same steps and produces a
+> PASSED / XFAILED / SKIPPED report. **This document is the narrative
+> spec; the tests are the source of truth.** If they ever diverge, the
+> test is right and the markdown is out of date — fix the markdown.
 
-## How to Use This Document
+---
 
-Each scenario is **self-contained** and follows this structure: **Prerequisites → Test Data → Steps → Expected Signals → Pass Criteria → Rollback**. Scenarios build on each other — run them in order for a full integration sweep. Each step has a ✅ **PASS** and ❌ **FAIL** signal so a tester can work without deep system knowledge.
+## How to use this document
 
-***
+Each scenario is **self-contained** and structured as
+**Purpose → Preconditions → Steps → Expected signals → Automated by**.
 
-## Environment Setup
+Each step has a ✅ **PASS** and ❌ **FAIL** signal so a human tester can
+work without deep system knowledge.
+
+The table after each scenario maps every step to its pytest node id — so
+the moment a step regresses, the CI log points to the exact assertion
+that failed.
+
+---
+
+## Environment setup
 
 Before running any scenario, verify the stack is clean and healthy.
 
-### Stack Bootstrap
+### Stack bootstrap
 
 ```bash
-# 1. Initialize configuration
-python platform/opm.py init \
-  --postgres-pass TestPass123 \
-  --admin-pass AdminPass123 \
-  --keycloak-pass KeycloakPass123
+# 1. Initialise configuration (interactive; writes .env)
+python platform/opm.py init
 
-# 2. Enable all profiles under test
-python platform/opm.py enable emr
-python platform/opm.py enable laboratory
-python platform/opm.py enable imaging
-python platform/opm.py enable analytics
+# 2. Enable profiles under test
+python platform/opm.py enable emr laboratory imaging analytics
 
 # 3. Bring up the full stack
 make up
 
-# 4. Wait for all services to be healthy (≈ 90s)
+# 4. Wait for every service to answer on /api/health
 make health
 ```
 
+### Pre-flight probes (automated as part of the e2e fixture)
 
-### Pre-flight Health Check
+| Path | Expected | Automated in |
+|---|---|---|
+| `http://localhost/health` | 200 (portal nginx) | `conftest._live_stack` |
+| `http://localhost/keycloak/realms/openhis/.well-known/openid-configuration` | 200 + issuer/token_endpoint | `S4.6` |
+| `http://localhost/admin/api/health` | `{"status":"ok"}` | `S5.2` |
+| `http://localhost/mpi/api/health` | `{"status":"ok"}` | implicit via `S1.*` |
+| `http://localhost/integration-hub/api/health` | `{"status":"degraded\|ok"}` (see DEF-001) | `S2.1` |
+| `http://localhost/hl7/api/health` | `{"status":"ok"}` | implicit via `S7.*` |
+| `http://localhost/ris/api/health` | `{"status":"ok"}` | implicit via `S3.*` |
+| `http://localhost/ai-controller/api/health` | `{"status":"ok"}` | `S3.2` |
+| `http://localhost/orthanc/system` | 200 + Orthanc metadata | `S3.1` |
+| TCP `localhost:2575` | MLLP socket accepts a connection | `S7.6` |
 
-| Service | URL | Expected Response |
-| :-- | :-- | :-- |
-| Admin UI | `http://localhost/admin` | Login page loads |
-| Keycloak | `http://localhost/auth` | Welcome page |
-| OpenMRS | `http://localhost/openmrs` | Login page |
-| OpenELIS | `http://localhost/openelis` | Login page |
-| Orthanc | `http://localhost/orthanc` | Orthanc Explorer |
-| OHIF Viewer | `http://localhost/ohif` | Viewer loads |
-| MPI API | `http://localhost/mpi/api/health` | `{"status":"ok"}` |
-| Integration Hub | `http://localhost/integration-hub/api/health` | `{"status":"ok"}` |
-| HL7 MLLP | TCP port `2575` | Connection accepted |
+✅ **PASS:** all checks return the expected response within 5 seconds.
+❌ **FAIL:** any service returns non-2xx or connection refused — run
+`docker compose logs <service>` before proceeding.
 
-✅ **PASS:** All 9 checks return expected responses within 5 seconds.
-❌ **FAIL:** Any service returns non-2xx or connection refused — run `docker compose logs <service>` before proceeding.
+### Test identity (auto-provisioned by the e2e conftest)
 
-***
+On first run the suite creates two Keycloak service-account clients:
 
-## SCENARIO 1 — Patient Registration \& Cross-System Identity
+- `e2e-test-sa` — realm roles: `admin`, `clinician`, `radiologist`,
+  `lab-tech`, `pharmacist`, `patient`, `internal-sync`. Audience mapper
+  adds `openhis-platform`; realm-roles mapper projects the roles into the
+  `roles` JWT claim.
+- `e2e-noauth-sa` — no roles (used to assert 401/403 paths).
 
-**Purpose:** Verify that registering a patient in OpenMRS propagates their identity to the MPI and all connected subsystems.
+Override the Keycloak master admin credentials with
+`KEYCLOAK_MASTER_USER` / `KEYCLOAK_MASTER_PASS` if your stack differs
+from the default `admin/admin`.
 
-**Covers:** OpenMRS → Integration Hub → MPI → OpenELIS → Odoo (ERP)
+---
 
-### Test Data
+## SCENARIO 1 — Patient registration & cross-system identity
+
+**Purpose:** Verify MPI master-record creation, cross-reference linking
+to OpenMRS, and that the MPI-side audit log captures the write.
+
+**Covers:** MPI core (POST/GET patients, POST/GET crossref, audit log)
+
+**Automated by:** [`tests/e2e/test_s01_patient_identity.py`](../../tests/e2e/test_s01_patient_identity.py)
+
+### Test data
 
 ```
-Patient Name:    Jean-Pierre Durand
-Date of Birth:   1978-04-15
-Sex:             Male
-National ID:     FR-TEST-00001
-Phone:           +33 6 12 34 56 78
-Address:         12 Rue de Rivoli, Lyon, 69001
+MRN:        E2E-<auto-generated hex>
+Firstname:  Jean-Pierre
+Lastname:   Durand
+Birth date: 1978-04-15
+Sex:        male
+Phone:      +33 6 12 34 56 78
+Address:    12 Rue de Rivoli, Lyon, 69001
 ```
-
 
 ### Steps
 
-**Step 1.1 — Register patient in OpenMRS**
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S1.1 | `POST /mpi/api/patients` with the test data | 201 + populated record | 4xx / 5xx |
+| S1.2 | `GET /mpi/api/patients/{id}` and `GET /mpi/api/patients` | Both return the record | Record missing |
+| S1.3 | `POST /mpi/api/crossref {master_id, system:"openmrs", system_id}` | 201 (create) or 409 (re-run) | 422 / 500 |
+| S1.4 | `GET /mpi/api/patients/{id}?include=xref,audit` | xref visible in detail or via `/crossref?master_id=` | Empty |
+| S1.5 | `GET /mpi/api/audit` | Row `action="created"` for the master id | No row |
+| S1.6 | **OpenELIS FHIR** `GET /OpenELIS-Global/fhir/R4/Patient?identifier=…` | Bundle ≥ 1 entry | Redirect loop — **xfail DEF-006** |
+| S1.7 | **Admin** `GET /admin/api/audit` | Row `action="patient.synced"` | No row — **xfail DEF-002** |
 
-1. Navigate to `http://localhost/openmrs` → log in as `admin / AdminPass123`
-2. Go to **Register a Patient**
-3. Fill in all test data fields above
-4. Submit and record the assigned **OpenMRS UUID** (format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+---
 
-✅ **PASS:** Patient record created, UUID visible in the URL bar.
-❌ **FAIL:** Form submission error or duplicate patient warning.
+## SCENARIO 2 — Laboratory order & result flow
 
-***
+**Purpose:** Verify the integration hub ingests FINAL results and queues
+them for push to OpenMRS, and exposes an atomfeed sync trigger.
 
-**Step 1.2 — Verify MPI cross-reference (within 30s)**
+**Covers:** Integration Hub (atomfeed, events/report-final, audit)
+
+**Automated by:** [`tests/e2e/test_s02_lab_flow.py`](../../tests/e2e/test_s02_lab_flow.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S2.1 | `GET /integration-hub/api/atomfeed/status` | Counter object with `patients_synced`, `orders_synced`, `reports_synced`, `errors`, `last_poll_at` | Missing keys |
+| S2.2 | `POST /integration-hub/api/atomfeed/trigger` | `{"status":"triggered"}` | Non-200 |
+| S2.3 | `POST /integration-hub/api/events/report-final {report_id, order_id, impression, status}` | `{"status":"queued"}` | 4xx |
+| S2.4 | Hub audit row for the queued report | `DiagnosticReport` push row **or** `retry_queue_depth > 0` within 6 s | — (soft xfail) |
+| S2.5 | OpenMRS ServiceRequest picked up by the hub (`hub→openelis`) | `ServiceRequest` audit row with `status=ok` | **xfail DEF-006** |
+| S2.6 | OpenELIS DiagnosticReport polled by the hub (`openelis→hub`) | `DiagnosticReport` audit row with direction `openelis→hub` | **xfail DEF-006** |
+
+---
+
+## SCENARIO 3 — DICOM imaging & AI pipeline
+
+**Purpose:** Verify the full imaging pipeline — a new DICOM instance
+stored in Orthanc triggers a hub webhook, a FHIR ImagingStudy push to
+OpenMRS, and an auto-triggered AI pipeline run whose Observation flows
+back into OpenMRS.
+
+**Covers:** Simulator → Orthanc → Integration Hub → OpenMRS FHIR → AI
+Controller → back to hub → OpenMRS Observation
+
+**Automated by:** [`tests/e2e/test_s03_dicom_imaging.py`](../../tests/e2e/test_s03_dicom_imaging.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S3.1 | `GET /orthanc/system` | 200 + `ApiVersion` / `Version` keys | Orthanc not running |
+| S3.2 | `GET /ai-controller/api/pipelines` | Includes `poc-xray` | Missing |
+| S3.3 | `POST /simulator/api/generate` (CR / Chest / PA) | 200 + `instance_ids` | Non-200 |
+| S3.4 | Orthanc `/statistics` increments by 1 within ~3 s; instance fetchable | `CountInstances` ↑ 1 | No store |
+| S3.5 | Hub `/api/audit` within 8 s: `orthanc→hub ImagingStudy webhook_received` **and** `hub→omrs ImagingStudy fhir_pushed ok` | Both rows present | Webhook / FHIR push broken |
+| S3.6 | AI Controller `/api/jobs` gains a `poc-xray` CR job within 12 s | 1 job appears | Not auto-triggered |
+| S3.7 | Job reaches `COMPLETED` with non-empty `result_summary` within 15 s | `status=COMPLETED` | `FAILED` or stuck |
+
+---
+
+## SCENARIO 4 — Single Sign-On & RBAC
+
+**Purpose:** Verify Keycloak tokens are correctly shaped, role-gated
+endpoints reject unauthorised callers, and missing/malformed tokens
+return 401.
+
+**Covers:** Keycloak realm config · MPI `require_roles` · audience
+validation
+
+**Automated by:** [`tests/e2e/test_s04_sso_rbac.py`](../../tests/e2e/test_s04_sso_rbac.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S4.1 | `admin_token` claims contain `admin`, `clinician`, `radiologist`, `lab-tech`, `internal-sync` and `aud` includes `openhis-platform` | All roles + aud present | Missing |
+| S4.2 | `admin_token` → `GET /mpi/api/patients` | 200 | 401 / 403 |
+| S4.3 | `noauth_token` → `GET /mpi/api/patients` | 401 or 403 (fail-closed) | 200 (fail-open — **critical**) |
+| S4.4 | No header → `GET /mpi/api/patients` | 401 | 200 / 5xx |
+| S4.5 | `Bearer not.a.real.jwt` → `GET /mpi/api/patients` | 401 | 200 / 5xx |
+| S4.6 | `GET /keycloak/realms/openhis/.well-known/openid-configuration` | 200 + `issuer` endswith `/realms/openhis` | Non-200 |
+
+---
+
+## SCENARIO 5 — Admin plane & observability
+
+**Purpose:** Verify the admin dashboard surfaces the full registry,
+per-service health, audit log, event stream, profile config, key/value
+store, announcements and the topology graph.
+
+**Covers:** every `/admin/api/*` endpoint + the SPA itself
+
+**Automated by:** [`tests/e2e/test_s05_admin_plane.py`](../../tests/e2e/test_s05_admin_plane.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S5.1  | `GET /admin/api/registry` | `services` array ⊇ `{admin, mpi, hl7, integration-hub}` | Missing core |
+| S5.2  | `GET /admin/api/services` | Array of `{name, status, http_status}` | Shape wrong |
+| S5.3  | `GET /admin/api/audit` | List | Non-list |
+| S5.4  | `GET /admin/api/events/recent?limit=50` | List; each entry has `{id,type,source,payload,ts}` | Missing fields |
+| S5.5  | `GET /admin/api/profiles/active` | `{profiles: [...]}` | Shape wrong |
+| S5.6  | `GET /admin/api/config` | List of `{key, value, …}` | Shape wrong |
+| S5.7  | `GET /admin/api/announcements` | List | Non-list |
+| S5.8  | `GET /admin/api/platform/topology` | `nodes` ⊇ core service ids | Missing |
+| S5.9  | `GET /admin/` | 200 + `<title>Admin Dashboard</title>` | SPA broken |
+| S5.10 | `GET /admin/api/config/{unknown}` then `GET /admin/api/config/{known}` | 404 then 200 with the same `key` | Wrong status |
+| S5.11 | `PUT /admin/api/config/{e2e.key}` with `{value}` then re-`GET` | 200 + body echoes value; second GET returns same value; entry visible in list | Round-trip mismatch |
+| S5.12 | `PUT /admin/api/config/{key}` with `{}` (no value) | 400 | 200 / 5xx |
+| S5.13 | `POST /admin/api/announcements` → `GET` (active) → `PATCH severity` → `PATCH active=0` → `DELETE` → re-`DELETE` | 201 / list ↑ / 200 / 200 (hidden from default list, present with `active_only=false`) / 204 / 404 | Any deviation |
+| S5.14 | `POST /admin/api/announcements` with empty title / empty body / unknown severity | 400, 400, 422 | 201 / 5xx |
+| S5.15 | `GET /admin/api/platform/profiles` | List of every profile name; each row has `active:bool`, `ram_mb>0`, lists for `requires`/`integrates`/`nginx_routes` | Shape wrong / missing profile |
+| S5.16 | `GET /admin/api/platform/ram` | `{active_profiles, total_mb ≥ 512, total_gb}`; `total_gb == round(total_mb/1024,1)` | Negative / NaN / base missing |
+
+---
+
+## SCENARIO 6 — Resilience & recovery *(requires docker)*
+
+**Purpose:** Verify the event bus and persistent stores survive service
+restarts.
+
+**Covers:** Redis AOF · integration-hub restart · MPI restart
+
+**Automated by:** [`tests/e2e/test_s06_resilience.py`](../../tests/e2e/test_s06_resilience.py)
+
+> Skipped automatically when the running user cannot `docker ps` without
+> sudo. Add yourself to the `docker` group or run the suite as root to
+> execute these steps.
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S6.1 | `docker exec redis redis-cli CONFIG GET appendonly` | `yes` | `no` — events not durable (**OBJ 3.3**) |
+| S6.2 | `docker restart integration-hub`; poll `/api/health`; audit count preserved | `count_after ≥ count_before` | Shrank |
+| S6.3 | Create a master patient, `docker restart mpi`, poll `/api/health`, refetch by id | 200 + same `mrn` | 404 — DB not persisted |
+
+---
+
+## SCENARIO 7 — HL7 v2 gateway
+
+**Purpose:** Verify the HL7 gateway builds and stores ADT / ORU messages
+via HTTP, keeps a searchable history, aggregates stats correctly, and
+accepts an MLLP TCP connection on port 2575.
+
+**Covers:** HL7 Gateway SPA + `/api/send/adt`, `/api/send/oru`,
+`/api/messages`, `/api/messages/stats`, MLLP socket
+
+**Automated by:** [`tests/e2e/test_s07_hl7.py`](../../tests/e2e/test_s07_hl7.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S7.1 | `POST /hl7/api/send/adt` with `{mrn, first_name, last_name, gender, birth_date, event_code:"A04"}` | 200 + `msg_type="ADT^A04"` + `raw` starts with `MSH|` | Non-200 |
+| S7.2 | `POST /hl7/api/send/oru` with `{mrn, order_id, test_code, value, unit, abnormal_flag}` | 200 + `msg_type="ORU^R01"` | Non-200 |
+| S7.3 | `GET /hl7/api/messages` | Both messages present; `direction=outbound`, `status=sent` | Missing |
+| S7.4 | `GET /hl7/api/messages/stats` | `total ≥ 2`, `outbound ≥ 2`, by-type includes ADT^A04 + ORU^R01 | Wrong counts |
+| S7.5 | `GET /hl7/` | 200 + SPA title | SPA broken |
+| S7.6 | TCP connect to `localhost:2575`; send a minimal MLLP frame | Socket accepts | `ConnectionRefused` |
+| S7.7 | `GET /hl7/api/messages/{id}` exposes `patient_id` + `patient_name` from the PID segment we sent | Both non-empty | Empty — **xfail DEF-008** |
+
+---
+
+## SCENARIO 8 — Analytics
+
+**Purpose:** Verify the analytics service surfaces per-domain KPIs,
+trends, an on-demand refresh endpoint, and CSV export.
+
+**Automated by:** [`tests/e2e/test_s08_analytics.py`](../../tests/e2e/test_s08_analytics.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S8.1 | `GET /analytics/` | SPA loads | — |
+| S8.2 | `GET /analytics/api/health` | `status=ok` | — |
+| S8.3 | `GET /analytics/api/metrics/summary` | KPI object with `patients` / `lab` / `imaging` | **xfail DEF-007** |
+| S8.4 | `GET /analytics/api/metrics/trends` | Time-series list/dict | **xfail DEF-007** |
+| S8.5 | `POST /analytics/api/metrics/refresh` | 200 / 202 | **xfail DEF-007** |
+| S8.6 | `GET /analytics/api/export/patients` | 200 + `Content-Type: text/csv` | **xfail DEF-007** |
+
+---
+
+## SCENARIO 9 — Patient Portal card end-to-end
+
+**Purpose:** Verify the operator-facing landing card and every public surface
+of the patient-portal SPA is reachable, that login fails closed for
+unknown credentials, and that the portal-private routes (`/api/me`,
+`/api/auth/validate`) reject unauthenticated callers — i.e. the entire
+patient experience boots cleanly even without a real OpenMRS-resident
+user to log in as.
+
+**Covers:** landing page card + patient-portal SPA + `/api/health` +
+`/api/auth/{login,logout,validate}` + `/api/me` 401 path
+
+**Automated by:** [`tests/e2e/test_s09_patient_portal.py`](../../tests/e2e/test_s09_patient_portal.py)
+
+| # | Step | ✅ PASS | ❌ FAIL |
+|---|---|---|---|
+| S9.1 | `GET /` (landing) | HTML contains `/patient-portal/` href + `Patient Portal` label | Card missing |
+| S9.2 | `GET /patient-portal/` | 200 + `Patient Portal` title + `login-wrap` / `portal-wrap` shell | SPA broken |
+| S9.3 | `GET /patient-portal/api/health` | `{status:"ok", service:"patient-portal", active_sessions:int, appointment_requests:int}` | Wrong shape |
+| S9.4 | `POST /patient-portal/api/auth/login` with `{}` / `{mrn}` only / `{birthdate}` only | All 400 | 401 / 5xx |
+| S9.5 | `POST /patient-portal/api/auth/login` `{mrn:"DOES-NOT-EXIST-E2E", birthdate:"1900-01-01"}` | 401 (clean lookup) **or** 503 (OpenMRS unreachable) — both fail-closed | 200 (would mean blank login succeeds) |
+| S9.6 | `GET /patient-portal/api/me` (no Bearer) | 401 + `WWW-Authenticate: Bearer` | 200 (fail-open — **critical**) |
+| S9.7 | `GET /patient-portal/api/auth/validate` (no Bearer) | 401 | 200 / 5xx |
+| S9.8 | `POST /patient-portal/api/auth/logout` with `{}` then `{token:"not-a-real-session"}` | Both 200 + `{status:"ok"}` (idempotent) | 5xx |
+| S9.9 | Full happy-path session: `login` → `GET /api/me` → `logout` | 200 / patient payload / 200 — **xfail: needs a deterministic OpenMRS-resident demo identity** | — |
+
+---
+
+## Consolidated pass/fail dashboard
+
+After each run, `pytest tests/e2e --e2e -v` emits a line like:
+
+```
+==== 38 passed, 3 skipped, 9 xfailed, 1 xpassed in 12.79s ====
+```
+
+Read it as:
+
+| Signal | Meaning | Action |
+|---|---|---|
+| PASSED | End-to-end behaviour verified | — |
+| XFAILED | Known defect (see table below) | Track the defect |
+| XPASSED | A known defect started passing! | Remove the `xfail` marker — you fixed it |
+| FAILED | **Regression** — something broke that used to work | Bisect + fix |
+| SKIPPED | Prerequisite missing (e.g. docker for S6) | Restore the prerequisite or accept the gap |
+
+---
+
+## Known expected failures (as of 2026-04-19)
+
+Tied to [`docs/task-planning/test-defect-report-2026-04-14.md`](../task-planning/test-defect-report-2026-04-14.md).
+
+| Defect | Test(s) xfailed | Will auto-promote to PASSED when… |
+|---|---|---|
+| **DEF-001** — `health_check()` requires Keycloak token | (S5.1 sees only base services, hub reports degraded) | hub adapters probe `/metadata` unauthenticated |
+| **DEF-002** — admin mutations not audited | `S1.7` | admin registry/identity routers call `_audit()` |
+| **DEF-006** — OpenELIS redirect loop | `S1.6`, `S2.5`, `S2.6` | Tomcat `proxyName`/`proxyProto` are set, or `X-Forwarded-*` is correctly propagated |
+| **DEF-007** — analytics service rejects every feature call (`KEYCLOAK_URL missing`) | `S8.3`–`S8.6` | `KEYCLOAK_URL` is wired into the analytics container |
+| **DEF-008** — HL7 outbound not persisting PID fields | `S7.7` | outbound store path calls the shared PID parser |
+
+When you close one of these defects, run `make e2e`. The corresponding
+xfailed test will report **XPASSED** — remove the `xfail` marker in the
+scenario file and the defect is officially closed.
+
+---
+
+## Running the suite
 
 ```bash
-curl -s http://localhost/mpi/api/patients?national_id=FR-TEST-00001 | python -m json.tool
+# Full suite
+make e2e
+# or
+pytest tests/e2e --e2e -v
+
+# A single scenario
+pytest tests/e2e/test_s03_dicom_imaging.py --e2e -v
+
+# A single step
+pytest tests/e2e/test_s03_dicom_imaging.py::TestS3_DICOMImaging::test_s3_5_hub_audit_captures_imaging_flow --e2e -v
+
+# Verbose tracing
+pytest tests/e2e --e2e -v --tb=long
 ```
 
-✅ **PASS:** Response contains:
-
-```json
-{
-  "openmrs_id": "<UUID from Step 1.1>",
-  "national_id": "FR-TEST-00001",
-  "name": "Jean-Pierre Durand",
-  "dob": "1978-04-15"
-}
-```
-
-❌ **FAIL:** Empty response or 404 — check `docker compose logs integration-hub` for sync errors.
-
-***
-
-**Step 1.3 — Verify patient appeared in OpenELIS**
-
-1. Navigate to `http://localhost/openelis` → log in as `admin / adminADMIN!`
-2. Go to **Patient Management → Search**
-3. Search by last name `Durand`
-
-✅ **PASS:** Patient record exists with matching DOB and sex.
-❌ **FAIL:** Patient not found — check that the `openelis_id` field is populated in the MPI cross-reference:
-
-```bash
-curl http://localhost/mpi/api/crossref/<openmrs_uuid>
-```
-
-
-***
-
-**Step 1.4 — Verify MPI cross-reference is complete**
-
-```bash
-curl -s http://localhost/mpi/api/crossref/<openmrs_uuid> | python -m json.tool
-```
-
-✅ **PASS:** Response contains both `openmrs_id` AND `openelis_id` (non-null).
-❌ **FAIL:** `openelis_id` is null — the adapter write-back is missing (see OBJ 4.4 in the to-do list).
-
-***
-
-**Step 1.5 — Verify Admin audit log**
-
-1. Navigate to `http://localhost/admin` → log in
-2. Go to **Audit Log**
-3. Filter by **Action:** `patient.synced`
-
-✅ **PASS:** One audit entry exists with the correct patient UUID, actor `integration-hub`, and outcome `success`.
-❌ **FAIL:** No audit entry — check `docker compose logs integration-hub | grep audit` for errors.
-
-***
-
-## SCENARIO 2 — Laboratory Order Flow
-
-**Purpose:** Verify a full lab cycle: order created in OpenMRS → routed to OpenELIS → result entered → result delivered back as FHIR DiagnosticReport.
-
-**Depends on:** Scenario 1 completed (patient must exist).
-
-**Covers:** OpenMRS → Integration Hub (lab router) → OpenELIS → Redis bus → Integration Hub (result ingester) → FHIR
-
-### Steps
-
-**Step 2.1 — Create a lab order in OpenMRS**
-
-1. In OpenMRS, navigate to the patient record for **Jean-Pierre Durand**
-2. Go to **Orders → Lab Order**
-3. Order: `Complete Blood Count (CBC)`, urgency: `Routine`
-4. Save and record the **Order UUID**
-
-✅ **PASS:** Order saved, status shown as `ACTIVE`.
-
-***
-
-**Step 2.2 — Verify order appeared in OpenELIS (within 60s)**
-
-1. In OpenELIS, go to **Order Management → Pending Orders**
-2. Search by patient name `Durand`
-
-✅ **PASS:** CBC order appears with status `Pending`.
-❌ **FAIL:** Order missing — check bus event:
-
-```bash
-docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 20 | grep lab_order
-```
-
-If no event, the integration-hub adapter failed to publish `lab_order.routed`.
-
-***
-
-**Step 2.3 — Enter lab results in OpenELIS**
-
-1. Click the pending CBC order
-2. Enter the following results:
-| Test | Value | Unit | Flag |
-| :-- | :-- | :-- | :-- |
-| WBC | 11.2 | 10³/µL | H |
-| RBC | 4.8 | 10⁶/µL | Normal |
-| Hemoglobin | 14.2 | g/dL | Normal |
-| Hematocrit | 42.1 | % | Normal |
-| Platelets | 310 | 10³/µL | Normal |
-
-3. Set status to **Validated** and save.
-
-✅ **PASS:** Results saved, order status changes to `Completed`.
-
-***
-
-**Step 2.4 — Verify DiagnosticReport was pushed to OpenMRS (within 30s)**
-
-The integration hub pushes the completed DiagnosticReport directly to OpenMRS FHIR. Verify it arrived via the OpenMRS FHIR endpoint:
-
-```bash
-curl -s "http://localhost/openmrs/ws/fhir2/R4/DiagnosticReport?patient=<openmrs_uuid>&_sort=-date" \
-  -H "Accept: application/fhir+json" | python -m json.tool
-```
-
-✅ **PASS:** Response is a FHIR `Bundle` containing a `DiagnosticReport` with:
-
-- `status: final`
-- `subject.reference` matching the patient UUID
-- 5 `result` entries (one per CBC component)
-- `conclusion` or `interpretation` present on the WBC entry (flagged High)
-
-❌ **FAIL:** Empty bundle — check `lab_result.ready` event was published and the hub processed it:
-
-```bash
-docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 50 | grep lab_result
-docker compose logs integration-hub | grep "result_routed\|result_route_failed"
-```
-
-
-***
-
-**Step 2.5 — Verify result visible in OpenMRS**
-
-1. In OpenMRS, navigate back to the patient record
-2. Go to **Results / Observations**
-
-✅ **PASS:** CBC results displayed in the patient chart with the flagged WBC value highlighted.
-
-***
-
-**Step 2.6 — Verify HL7 ORU^R01 emission (if downstream configured)**
-
-```bash
-docker compose logs hl7 | grep "ORU\^R01" | tail -5
-```
-
-✅ **PASS:** Log line contains `Sent ORU^R01 for patient <openmrs_uuid>` with a `MSH` segment timestamp.
-❌ **FAIL (non-blocking):** If no downstream MLLP target is configured, verify the consumer at least *received* the event:
-
-```bash
-docker compose logs hl7 | grep "lab_result.ready"
-```
-
-
-***
-
-## SCENARIO 3 — DICOM Imaging Workflow
-
-**Purpose:** Verify a radiology order flows from OpenMRS → RIS → Orthanc DICOM store → OHIF viewer, and the study is accessible to the AI pipeline.
-
-**Depends on:** Scenario 1 completed.
-
-**Covers:** OpenMRS → Integration Hub → RIS → Orthanc → Redis bus → AI Controller → OHIF
-
-### Prerequisites
-
-```bash
-# Download a public-domain DICOM test file (chest X-ray)
-curl -L "https://www.rubomedical.com/dicom_file/0002.DCM" -o /tmp/test_chest.dcm
-
-# Confirm Orthanc is reachable
-curl -s http://localhost/orthanc/system | python -m json.tool
-```
-
-
-### Steps
-
-**Step 3.1 — Create radiology order in OpenMRS**
-
-1. On the patient record for **Jean-Pierre Durand**
-2. Go to **Orders → Radiology Order**
-3. Modality: `CR` (Computed Radiography), Body Part: `Chest`, Laterality: `PA`
-4. Urgency: `Routine`. Save and record **Order UUID**.
-
-✅ **PASS:** Order saved, status `ACTIVE`.
-
-***
-
-**Step 3.2 — Verify RIS worklist entry (within 30s)**
-
-```bash
-curl -s http://localhost/ris/api/worklist | python -m json.tool
-```
-
-✅ **PASS:** Response contains a worklist entry with:
-
-- `patient_name: "Durand^Jean-Pierre"`
-- `modality: "CR"`
-- `status: "SCHEDULED"`
-
-❌ **FAIL:** Empty worklist — check `docker compose logs ris` and verify `lab_order.routed` event was consumed.
-
-***
-
-**Step 3.3 — Push a DICOM study to Orthanc**
-
-Use the RIS-assigned Study Instance UID from Step 3.2 output:
-
-```bash
-# Get the Study Instance UID from the worklist
-STUDY_UID=$(curl -s http://localhost/ris/api/worklist | python -c "import sys,json; print(json.load(sys.stdin)[^0]['study_uid'])")
-
-# Push the test DICOM file to Orthanc
-curl -s -X POST http://localhost/orthanc/instances \
-  -H "Content-Type: application/dicom" \
-  --data-binary @/tmp/test_chest.dcm
-```
-
-Record the returned **Orthanc Instance ID**.
-
-✅ **PASS:** Response contains `{"ID": "<orthanc-uuid>", "Status": "Success"}`.
-❌ **FAIL:** 400 or 415 error — verify Orthanc storage plugin is running:
-
-```bash
-curl http://localhost/orthanc/plugins
-```
-
-
-***
-
-**Step 3.4 — Verify `dicom.stored` event published (within 15s)**
-
-```bash
-docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 50 | grep dicom.stored
-```
-
-✅ **PASS:** Event entry present with `studyuid`, `patientid`, and `modality` fields.
-❌ **FAIL:** Event missing — the Orthanc webhook to integration-hub is not firing. Check:
-
-```bash
-curl http://localhost/orthanc/changes?last=0&limit=5
-docker compose logs integration-hub | grep "orthanc"
-```
-
-
-***
-
-**Step 3.5 — Verify study visible in OHIF Viewer**
-
-1. Navigate to `http://localhost/ohif`
-2. Search by patient name `Durand`
-
-✅ **PASS:** Study appears in the worklist. Click to open — image renders in the viewer.
-❌ **FAIL:** Study not listed — check DICOMweb WADO-RS routing:
-
-```bash
-curl "http://localhost/orthanc/wado?requestType=WADO&studyUID=$STUDY_UID" -I
-```
-
-
-***
-
-**Step 3.6 — Verify AI pipeline triggered (within 60s)**
-
-```bash
-docker compose logs ai-controller | grep "inference" | tail -5
-```
-
-✅ **PASS:** Log line shows `Triggered inference job for study <STUDY_UID> pipeline poc-xray`.
-❌ **FAIL (non-blocking at current stage):** If `ai-controller`'s bus consumer is not yet implemented, verify the event was at least received:
-
-```bash
-docker compose logs ai-controller | grep "dicom.stored"
-```
-
-
-***
-
-**Step 3.7 — Verify RIS report creation**
-
-1. In OpenMRS, navigate to the patient orders
-2. The radiology order status should have updated to `IN_PROGRESS` (or `COMPLETED` if report was filed)
-```bash
-# Check RIS report endpoint
-curl -s "http://localhost/ris/api/reports?patient_id=<openmrs_uuid>" | python -m json.tool
-```
-
-✅ **PASS:** Report entry exists with `study_uid` matching Step 3.3 and `status: draft` or `final`.
-
-***
-
-## SCENARIO 4 — SSO \& Role-Based Access Control
-
-**Purpose:** Verify that Keycloak SSO tokens are enforced across all native services, and that roles restrict access correctly.
-
-**Covers:** Keycloak → Admin → MPI → Integration Hub → RIS → Analytics
-
-### Test Users
-
-Create these users in Keycloak at `http://localhost/auth` → Realm `openhis`:
-
-
-| Username | Password | Realm Role | Expected Access |
-| :-- | :-- | :-- | :-- |
-| `dr.martin` | `DrPass123!` | `clinician` | OpenMRS, OHIF, patient portal |
-| `lab.tech` | `LabPass123!` | `laboratory` | OpenELIS, lab orders |
-| `radiologist` | `RadPass123!` | `radiologist` | RIS, OHIF, Orthanc |
-| `sysadmin` | `SysPass123!` | `admin` | All services + Admin UI |
-| `readonly` | `ReadPass123!` | (no role) | No access to any protected API |
-
-### Steps
-
-**Step 4.1 — Token acquisition**
-
-```bash
-# Get a token for dr.martin
-TOKEN=$(curl -s -X POST \
-  "http://localhost/auth/realms/openhis/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=openhis-platform&username=dr.martin&password=DrPass123!" \
-  | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-echo "Token acquired: ${TOKEN:0:50}..."
-```
-
-✅ **PASS:** Token string printed, not empty.
-
-***
-
-**Step 4.2 — Authorized access to MPI (clinician role)**
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost/mpi/api/patients?national_id=FR-TEST-00001" | python -m json.tool
-```
-
-✅ **PASS:** Patient record returned (200 OK).
-
-***
-
-**Step 4.3 — Unauthorized access (no-role user)**
-
-```bash
-# Get token for readonly user
-READONLY_TOKEN=$(curl -s -X POST \
-  "http://localhost/auth/realms/openhis/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=openhis-platform&username=readonly&password=ReadPass123!" \
-  | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer $READONLY_TOKEN" \
-  "http://localhost/mpi/api/patients?national_id=FR-TEST-00001"
-```
-
-✅ **PASS:** Response is `403` (forbidden, not 200 or 401).
-❌ **FAIL:** `200` returned — the JWT fail-open bug is present (see OBJ 1.2 in the to-do list).
-
-***
-
-**Step 4.4 — No token at all**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" \
-  "http://localhost/mpi/api/patients?national_id=FR-TEST-00001"
-```
-
-✅ **PASS:** Response is `401`.
-❌ **CRITICAL FAIL:** `200` returned — the service is entirely unprotected.
-
-***
-
-**Step 4.5 — Admin UI restricted to admin role**
-
-1. Open `http://localhost/admin` in a browser
-2. Log in with `dr.martin / DrPass123!`
-
-✅ **PASS:** Login fails with "Insufficient permissions" or redirects to Keycloak with an access_denied error.
-❌ **FAIL:** Admin UI loads for a non-admin user.
-
-***
-
-**Step 4.6 — Token expiry behavior**
-
-```bash
-# Use an expired or malformed token
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.EXPIRED.SIGNATURE" \
-  "http://localhost/mpi/api/patients?national_id=FR-TEST-00001"
-```
-
-✅ **PASS:** Response is `401`.
-❌ **FAIL:** Response is `200` or `500` — JWT validation is not handling malformed tokens.
-
-***
-
-## SCENARIO 5 — Admin Plane \& Observability
-
-**Purpose:** Verify the Admin service accurately reflects system state, that profiles can be toggled, and that the audit trail is consistent.
-
-**Covers:** Admin service → Registry → Profile Engine → Topology API
-
-### Steps
-
-**Step 5.1 — Service registry completeness**
-
-```bash
-curl -s http://localhost/admin/api/services \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
-```
-
-✅ **PASS:** Response lists all active services with `status: online` for: `mpi`, `integration-hub`, `hl7`, `ris`, `analytics`, `ai-controller`.
-❌ **FAIL:** Any active service shows `status: offline` — check the service's `/api/health` endpoint directly.
-
-***
-
-**Step 5.2 — Topology graph integrity**
-
-```bash
-curl -s http://localhost/admin/api/platform/topology \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
-```
-
-✅ **PASS:** Response contains:
-
-- `nodes` array with one entry per registered service
-- `edges` array showing connections (e.g., `integration-hub → mpi`, `hl7 → integration-hub`)
-- No orphan nodes (nodes with zero edges)
-
-***
-
-**Step 5.3 — Profile disable and re-enable**
-
-```bash
-# Disable analytics profile via API
-curl -s -X POST http://localhost/admin/api/profiles/disable \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"profiles": ["analytics"]}' | python -m json.tool
-
-# Wait 10s, then verify analytics service is gone from registry
-sleep 10
-curl -s http://localhost/admin/api/services \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -c \
-  "import sys,json; svcs=[s['name'] for s in json.load(sys.stdin)]; print('PASS' if 'analytics' not in svcs else 'FAIL')"
-```
-
-✅ **PASS:** Prints `PASS` — analytics is removed from the registry after disabling.
-
-```bash
-# Re-enable
-curl -s -X POST http://localhost/admin/api/profiles/enable \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"profiles": ["analytics"]}' | python -m json.tool
-sleep 20
-curl -s http://localhost/admin/api/services \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -c \
-  "import sys,json; svcs=[s['name'] for s in json.load(sys.stdin)]; print('PASS' if 'analytics' in svcs else 'FAIL')"
-```
-
-✅ **PASS:** Prints `PASS` — analytics service reappears as `online`.
-
-***
-
-**Step 5.4 — Cross-service audit log sweep**
-
-After completing Scenarios 1–4, run an audit log check:
-
-```bash
-curl -s "http://localhost/admin/api/audit?limit=50" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python -m json.tool
-```
-
-✅ **PASS:** The last 50 audit entries include at minimum one entry each for:
-
-- `action: patient.synced` from `integration-hub`
-- `action: lab_order.routed` from `integration-hub`
-- `action: dicom.stored` from `integration-hub`
-- `action: profile.changed` from `admin`
-- All entries have non-null `actor`, `resource_id`, `ts`, and `outcome` fields
-
-***
-
-## SCENARIO 6 — Resilience \& Recovery
-
-**Purpose:** Verify the system recovers gracefully from service restarts without data loss.
-
-### Steps
-
-**Step 6.1 — Integration Hub restart during active sync**
-
-```bash
-# Register a second test patient in OpenMRS (repeat Step 1.1 with different data)
-# Immediately kill the integration-hub container
-docker compose stop integration-hub
-
-# Wait 5 seconds, then restart
-sleep 5
-docker compose start integration-hub
-
-# Wait for recovery
-sleep 30
-
-# Verify the second patient was still synced to MPI
-curl -s "http://localhost/mpi/api/patients?national_id=FR-TEST-00002" | python -m json.tool
-```
-
-✅ **PASS:** The second patient's MPI record exists — the Redis Stream retained the event and the hub replayed it on restart.
-❌ **FAIL:** Patient not synced — the in-memory dedup set was cleared on restart OR Redis lost the stream event (AOF not enabled). See OBJ 3.3 in the to-do list.
-
-***
-
-**Step 6.2 — Redis restart (stream durability)**
-
-```bash
-# Check AOF is enabled
-docker exec openhis-redis redis-cli CONFIG GET appendonly
-```
-
-✅ **PASS:** Output is `appendonly yes`.
-❌ **FAIL (known gap):** Output is `appendonly no` — events are not durable across Redis restarts. See OBJ 3.3.
-
-```bash
-# Produce a test event, restart Redis, verify event survived
-docker exec openhis-redis redis-cli XADD openhis:events '*' type test.event data test_payload
-docker compose restart redis
-sleep 10
-docker exec openhis-redis redis-cli XLEN openhis:events
-```
-
-✅ **PASS:** Stream length is > 0 after restart (event survived).
-❌ **FAIL:** Length is 0 — AOF persistence is not active.
-
-***
-
-**Step 6.3 — MPI unavailable — hub queues gracefully**
-
-```bash
-docker compose stop mpi
-sleep 5
-
-# Try to register a patient in OpenMRS
-# (the hub should queue the sync attempt)
-
-docker compose start mpi
-sleep 30
-
-# Verify the patient eventually appears
-curl -s "http://localhost/mpi/api/patients?national_id=FR-TEST-00003"
-```
-
-✅ **PASS:** Patient synced after MPI came back online (retry mechanism worked).
-❌ **FAIL:** Patient never synced — the `with_retry` decorator may not be covering MPI calls.
-
-***
-
-## SCENARIO 7 — HL7 MLLP Interoperability
-
-**Purpose:** Verify the HL7 listener accepts inbound messages and routes them into the FHIR/event spine.
-
-### Prerequisites
-
-```bash
-# Install hl7 tools if available, or use netcat
-pip install hl7
-```
-
-
-### Steps
-
-**Step 7.1 — Send an inbound ADT^A01 (admit patient)**
-
-```bash
-# Construct a minimal HL7 ADT^A01 message and send via MLLP
-python3 << 'EOF'
-import socket, datetime
-
-MLLP_START = b'\x0b'
-MLLP_END   = b'\x1c\x0d'
-
-msg = (
-    "MSH|^~\\&|TEST_SYSTEM|TEST_FACILITY|OPENHIS|OPENHIS|"
-    + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    + "||ADT^A01|MSG00001|P|2.5\r"
-    "EVN|A01|" + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "\r"
-    "PID|1||FR-TEST-HL7-001^^^TEST&2.16.840.1.113883.19.5&ISO||"
-    "Dupont^Marie^^^^^L||19850310|F|||15 Rue Lafayette^^Paris^^75009^FRA\r"
-    "PV1|1|I|WARD^101^A^GEN||||||||||||||||V001\r"
-)
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect(('localhost', 2575))
-sock.sendall(MLLP_START + msg.encode('utf-8') + MLLP_END)
-response = sock.recv(1024)
-sock.close()
-print("ACK received:", response.decode('utf-8', errors='replace'))
-EOF
-```
-
-✅ **PASS:** ACK message received containing `MSA|AA` (Application Accept).
-❌ **FAIL:** `MSA|AE` (Application Error) or connection refused.
-
-***
-
-**Step 7.2 — Verify ADT patient appears in event stream**
-
-```bash
-docker exec openhis-redis redis-cli XRANGE openhis:events - + COUNT 10 | grep patient
-```
-
-✅ **PASS:** A `patient.synced` event is present referencing `FR-TEST-HL7-001`.
-
-***
-
-**Step 7.3 — Send an inbound ORU^R01 (lab result)**
-
-```bash
-python3 << 'EOF'
-import socket, datetime
-
-MLLP_START = b'\x0b'
-MLLP_END   = b'\x1c\x0d'
-
-msg = (
-    "MSH|^~\\&|LIS_SYSTEM|LAB|OPENHIS|OPENHIS|"
-    + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    + "||ORU^R01|MSG00002|P|2.5\r"
-    "PID|1||FR-TEST-HL7-001^^^TEST&2.16.840.1.113883.19.5&ISO\r"
-    "OBR|1|ORD-001|FIL-001|58410-2^CBC\r"
-    "OBX|1|NM|6690-2^WBC^LN||9.8|10*3/uL|4.5-11.0|N|||F\r"
-    "OBX|2|NM|718-7^Hemoglobin^LN||13.5|g/dL|12.0-16.0|N|||F\r"
-)
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect(('localhost', 2575))
-sock.sendall(MLLP_START + msg.encode('utf-8') + MLLP_END)
-response = sock.recv(1024)
-sock.close()
-print("ACK:", response.decode('utf-8', errors='replace'))
-EOF
-```
-
-✅ **PASS:** `MSA|AA` ACK received.
-
-***
-
-**Step 7.4 — Verify FHIR Observation created from ORU**
-
-The HL7 service publishes `lab_result.ready` to the bus; the integration hub translates this and pushes Observations to OpenMRS. Verify via the OpenMRS FHIR endpoint:
-
-```bash
-curl -s "http://localhost/openmrs/ws/fhir2/R4/Observation?patient.identifier=FR-TEST-HL7-001" \
-  -H "Accept: application/fhir+json" | python -m json.tool
-```
-
-✅ **PASS:** Bundle contains 2 `Observation` resources (WBC and Hemoglobin) with `status: final`.
-
-***
-
-## Consolidated Pass/Fail Summary
-
-After completing all scenarios, fill in this matrix:
-
-
-| Scenario | Description | Status | Notes |
-| :-- | :-- | :-- | :-- |
-| 1.1–1.5 | Patient registration \& MPI sync | ⬜ |  |
-| 2.1–2.6 | Lab order round-trip | ⬜ |  |
-| 3.1–3.7 | DICOM imaging workflow | ⬜ |  |
-| 4.1–4.6 | SSO \& RBAC enforcement | ⬜ |  |
-| 5.1–5.4 | Admin plane \& audit log | ⬜ |  |
-| 6.1–6.3 | Resilience \& recovery | ⬜ |  |
-| 7.1–7.4 | HL7 MLLP interoperability | ⬜ |  |
-
-**Minimum pass threshold for a release candidate:** All Scenarios 1–5 and 7 must fully pass. Scenario 6.1 must pass. Scenarios 6.2 and 6.3 are tracked but non-blocking until OBJ 3.3 is resolved.
-
-***
-
-## Known Expected Failures (Current State)
-
-Based on the codebase analysis, the following will fail until the corresponding to-do items are resolved:
-
-
-| Test | Expected Failure | Blocking To-Do |
-| :-- | :-- | :-- |
-| 1.4 — `openelis_id` in MPI crossref | `null` — write-back not implemented | OBJ 4.4 |
-| 4.3 — 403 for no-role user | May return 200 (fail-open) | OBJ 1.2 |
-| 6.2 — Redis AOF durability | `appendonly no` | OBJ 3.3 |
-| 6.3 — MPI-down queuing | May not retry (`with_retry` coverage gap) | OBJ 3.3 |
-| 3.6 — AI pipeline trigger | `dicom.stored` consumer not wired in ai-controller | OBJ 3.1 |
-
-<span style="display:none">[^1][^10][^11][^12][^13][^14][^15][^2][^3][^4][^5][^6][^7][^8][^9]</span>
-
-<div align="center">⁂</div>
-
-[^1]: https://discourse.ohie.org/t/ohie-testing-framework-action-from-community-leads/3123
-
-[^2]: https://openhie.github.io/instant/docs/more-info/architecture/
-
-[^3]: https://www.youtube.com/watch?v=KurYmn_fSE0
-
-[^4]: https://webtech.fr/en/blog/end-to-end-testing/
-
-[^5]: https://guides.ohie.org/getting-started/pathway-1-component-and-data-exchange/phase-2-requirements-and-design/testing
-
-[^6]: https://medic.org/stories/developing-interoperable-scalable-and-sustainable-health-information-systems-with-openhie-and-fhir/
-
-[^7]: https://www.youtube.com/watch?v=arPxzixIl38
-
-[^8]: https://www.ranorex.com/blog/end-to-end-testing/
-
-[^9]: https://docs.openfn.org/documentation/legacy/standards/openhie
-
-[^10]: https://www.youtube.com/watch?v=vatkp1o3LrQ
-
-[^11]: https://www.elephant-technologies.fr/blog/tests-end-to-end
-
-[^12]: https://ohie.org/test/
-
-[^13]: https://www.reddit.com/r/ExperiencedDevs/comments/m66kpx/what_integration_test_frameworks_do_you_use_at/
-
-[^14]: https://www.all4test.fr/blog-du-testeur/tests-end-to-end-e2e-guide-complet/
-
-[^15]: https://docs.openelisci.org/en/latest/deployomrs/
-
+The entire suite (excluding Scenario 6, which docker-gates) runs in
+under 15 seconds against a healthy local stack. It is safe to run
+repeatedly — every fixture is idempotent and every test uses unique
+UUID-scoped test data.

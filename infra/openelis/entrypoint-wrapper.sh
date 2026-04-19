@@ -46,6 +46,30 @@ cat "$JAVA_HOSTS"
 
 export CATALINA_OPTS="$CATALINA_OPTS -Djdk.net.hosts.file=$JAVA_HOSTS"
 
+# ── Wait for Keycloak OIDC discovery to be reachable ─────────────────────────
+# OpenELIS's Spring Security calls ClientRegistrations.fromOidcIssuerLocation()
+# synchronously during context init. It does NOT retry. If the call fails, the
+# OpenELIS-Global context is permanently dead and Tomcat falls back to ROOT.war
+# which 302-redirects every path to /OpenELIS-Global/ — the DEF-006 redirect
+# loop. Block the entrypoint until discovery answers 200, so context startup
+# cannot race with nginx/Keycloak readiness.
+OIDC_URL="http://localhost/keycloak/realms/openhis/.well-known/openid-configuration"
+echo "[entrypoint-wrapper] Waiting for OIDC discovery at $OIDC_URL (via $GATEWAY_IP)..."
+OIDC_READY=0
+for i in $(seq 1 180); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+        --resolve "localhost:80:$GATEWAY_IP" "$OIDC_URL" 2>/dev/null || echo 000)
+    if [ "$code" = "200" ]; then
+        echo "[entrypoint-wrapper] OIDC discovery ready after ${i}s (HTTP 200)"
+        OIDC_READY=1
+        break
+    fi
+    sleep 1
+done
+if [ "$OIDC_READY" -ne 1 ]; then
+    echo "[entrypoint-wrapper] WARNING: OIDC discovery did not return 200 within 180s — Spring context may fail to start"
+fi
+
 # ── Apply class patches (background watcher) ─────────────────────────────────
 # The stock CustomFormAuthenticationSuccessHandler doesn't handle OAuth2
 # principals — it only processes UserDetails (form login). Our patched version

@@ -13,7 +13,7 @@
 # Until then, this Makefile is the primary deployment interface.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: up down build up-build test test-service logs logs-service ps restart clean \
+.PHONY: up down build up-build test test-service test-unit test-integration e2e logs logs-service ps restart clean \
         base-up imaging-up emr-up lab-up erp-up analytics-up \
         openmrs-up openmrs-logs openmrs-seed openmrs-verify openmrs-clean \
         openelis-up openelis-logs openelis-verify openelis-clean \
@@ -56,9 +56,23 @@ build:
 up-build:
 	$(DC) up -d --build
 
-# Run the full test suite
+# Run the full test suite (unit + integration; e2e requires a live stack — see `make e2e`)
 test:
-	python -m pytest tests/ -v
+	python -m pytest tests/unit tests/integration -v
+
+# Run only the fast unit suite (no network, no Docker)
+test-unit:
+	python -m pytest tests/unit -q --tb=short
+
+# Run only the integration suite (respx-mocked HTTP)
+test-integration:
+	python -m pytest tests/integration -q --tb=short
+
+# Run the end-to-end V&V scenarios against a live stack (make up first).
+# See docs/verification_and_validation/v-and-v-scenario.md and tests/e2e/README.md.
+# Override Keycloak creds via KEYCLOAK_MASTER_USER / KEYCLOAK_MASTER_PASS if needed.
+e2e:
+	python -m pytest tests/e2e --e2e -v
 
 # Run tests for a single service, e.g.: make test-service SVC=ris
 test-service:

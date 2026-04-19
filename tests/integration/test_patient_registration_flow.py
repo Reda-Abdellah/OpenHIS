@@ -19,7 +19,7 @@ OMRS = "http://openmrs-int-test:9997"
 OE   = "http://openelis-int-test:9997"
 
 OMRS_FHIR = f"{OMRS}/openmrs/ws/fhir2/R4"
-OE_FHIR   = f"{OE}/fhir/R4"
+OE_FHIR   = f"{OE}/OpenELIS-Global/fhir"
 
 FHIR_PATIENT = {
     "resourceType": "Patient",

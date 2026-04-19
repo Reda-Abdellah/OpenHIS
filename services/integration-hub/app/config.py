@@ -2,6 +2,8 @@ import os
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
 OPENELIS_URL = os.environ.get("OPENELIS_URL", "http://openelis:8080")
+OPENELIS_USER     = os.environ.get("OPENELIS_USER", "admin")
+OPENELIS_PASSWORD = os.environ.get("OPENELIS_PASSWORD", "adminADMIN!")
 ODOO_URL     = os.environ.get("ODOO_URL",     "http://odoo:8069")
 ODOO_DB      = os.environ.get("ODOO_DB",      "odoo")
 ODOO_ADMIN_PASS = os.environ.get("ODOO_ADMIN_PASS", "")
