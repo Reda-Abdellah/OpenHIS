@@ -347,7 +347,7 @@ if profile_active emr; then
     backup_volume openmrs-data volumes
 fi
 
-# ── laboratory: OpenELIS (postgres), Mirth (Derby), Lucene index ─────────────
+# ── laboratory: OpenELIS (postgres), Lucene index ────────────────────────────
 if profile_active laboratory; then
     if (( COLD )); then
         backup_volume openelis-pg cold

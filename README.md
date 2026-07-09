@@ -120,12 +120,11 @@ OpenHIS/
 ├── pipelines/
 │   ├── poc-xray/              # X-ray AI pipeline container
 │   └── poc-ct/                # CT AI pipeline container
-├── docs/                      # Contract specifications
-│   ├── service-contract.md
-│   ├── adapter-contract.md
-│   └── profile-contract.md
+├── docs/                      # All documentation — see docs/README.md for the table of contents
+│   ├── explaining_the_project/  # Concepts, architecture, contracts, security
+│   ├── adr/                   # Architectural Decision Records
+│   └── task_planning/         # Active plans + defect report (archive/ for history)
 ├── tests/                     # Pytest suites
-├── documentation/             # Planning documents
 ├── Makefile
 ├── .env.example
 └── README.md
@@ -146,6 +145,11 @@ OpenHIS/
 ---
 
 ## Quick Start
+
+> **First deployment?** Follow the step-by-step quickstart guide (in French) —
+> from a bare 8 GB VPS to a running hospital in ~30 minutes, including profile
+> sizing, secure `opm init` setup, backups and the production checklist:
+> [docs/quickstart.md](docs/quickstart.md)
 
 ```bash
 # 1. Clone the repository
@@ -321,7 +325,7 @@ All services are accessed through nginx on **port 80**.
 | Protocol | Port | Service |
 |---|---|---|
 | DICOM C-STORE | `4242` | Orthanc — push DICOM from external modalities |
-| MLLP | `2575` | HL7 Gateway — HL7 v2 message ingestion |
+| MLLP | `2575` | HL7 Gateway — **not host-published by default** (internal to the Docker network; HL7 v2 is cleartext PHI). Opt-in via `compose/overrides/mllp-public.yml` behind a firewall or TLS proxy — read the warning header in that file first |
 
 ---
 
@@ -387,6 +391,18 @@ The platform event bus is a Redis Stream (`openhis:events`). Services publish ev
 | `lab_order.routed` | integration-hub | analytics | `omrs_id`, `oe_id` |
 | `lab_result.ready` | integration-hub | analytics | `oe_id`, `subject` |
 
+### Delivery semantics & dead-letter queue
+
+Consumers (via `openhis_sdk.bus.BusConsumer`) ack an entry **only after the
+handler succeeds**. Failed entries stay in the consumer group's pending list
+and are retried via `XAUTOCLAIM` once they have been idle for `idle_ms`
+(default 30 s). After `max_delivery` (default 5) failed deliveries the entry
+is parked on the bounded dead-letter stream **`openhis:events:dlq`** with
+`origin_id`, `type`, `payload`, `error` and `group` fields, and the original
+is acked so the group keeps moving. Handlers must be idempotent
+(at-least-once delivery). Full rationale:
+[ADR 0005](docs/adr/0005-bus-dead-letter-semantics.md).
+
 ### Watching events live
 
 ```bash
@@ -395,6 +411,9 @@ curl -N http://localhost/admin/api/events/stream
 
 # Direct Redis inspection
 docker exec -it openhis-redis-1 redis-cli XRANGE openhis:events - + COUNT 20
+
+# Inspect dead-lettered events
+docker exec -it openhis-redis-1 redis-cli XRANGE openhis:events:dlq - + COUNT 20
 ```
 
 ---

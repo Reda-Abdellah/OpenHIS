@@ -9,10 +9,10 @@ It orchestrates and integrates best-of-breed clinical systems (OpenMRS, OpenELIS
 The integration spine is **FHIR R4** (data contract) + **Redis Streams** (event bus); Keycloak handles all authentication.
 
 
-> **Before writing any code, read:** @docs/explaining-the-project/concepts.md  
+> **Before writing any code, read:** @docs/explaining_the_project/concepts.md  
 > It defines what OpenHIS is, what it is not, and the three governing principles.  
-> Architecture deep-dives: @docs/explaining-the-project/architecture.md  
-> ADRs (event bus, FHIR adapter, MPI spine): @docs/adr/
+> Architecture deep-dives: @docs/explaining_the_project/architecture.md  
+> ADRs (event bus, FHIR adapter, MPI spine, bus dead-letter semantics): @docs/adr/
 
 
 ---
@@ -30,7 +30,7 @@ The integration spine is **FHIR R4** (data contract) + **Redis Streams** (event 
 | Database | PostgreSQL (per-service) |
 | Reverse proxy | Nginx (NJS JWT validation) |
 | Containers | Docker Compose with profile system |
-| Shared SDK | `libs/openhissdk` |
+| Shared SDK | `libs/openhis_sdk` |
 | Platform CLI | `platform/opm.py` (OPM) |
 | HTTP mocking | `respx` |
 | Test runner | `pytest` |
@@ -47,7 +47,7 @@ compose/          Docker Compose files (base + per-profile overrides)
   profiles/       emr.yml  laboratory.yml  imaging.yml  erp.yml  analytics.yml
   overrides/      production.yml  ci.yml
 libs/
-  openhissdk/     Shared Python SDK — canonical source for auth, bus, logging, retry
+  openhis_sdk/    Shared Python SDK — canonical source for auth, bus, logging, retry
 platform/         OPM CLI (opm.py) + profile/nginx engines — installable via pip
 services/         FastAPI microservices
   admin/          Core — always deployed; the admin & operations plane
@@ -66,14 +66,20 @@ pipelines/        AI pipeline workers (poc-ct, poc-xray)
 tests/
   unit/           No Docker, no network; ~2 min; run on every commit
   integration/    respx HTTP mocks; ~5 min; run on every PR
+  auth/           Deny-by-default auth harness (every service, no Docker); run on every PR
+  benchmarks/     MPI matching accuracy floors (no Docker, <1 s); run on every PR
   smoke/          Full Docker stack; ~15 min; run on merge to main
 docs/
-  concepts.md                      ← What OpenHIS is and why (start here)
-  explaining_the_project/          Architecture, adapter/service/profile contracts
+  README.md                        ← Table of contents for all documentation
+  quickstart.md                    VPS-to-running-stack guide (French)
+  ROADMAP.md                       Positioning & direction (French)
+  explaining_the_project/          Concepts (start here), architecture, contracts, security
   adr/                             Architectural Decision Records
   guidelines_for_contributors/     CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
-  task_planning/                   Task tracking system — see its README.md
-                                   (active plan, defect registry, archive/)
+  task_planning/                   Task tracking — INDEX.md is the live board (epics, statuses, defects); see its README.md
+  verification_and_validation/     V&V scenarios (mirrored by tests/e2e) + demo walkthrough
+  benchmarks/                      MPI matching accuracy benchmark
+  reviews/                         Review-session artifacts
 ```
 
 ---
@@ -83,15 +89,16 @@ docs/
 
 
 ```bash
-# 1. Clone and create venv
-python -m venv venv && source venv/bin/activate
+# 1. Clone and create venv (this checkout's venv lives at venv_openhis/)
+python -m venv venv_openhis && source venv_openhis/bin/activate
 
 # 2. Install shared SDK and OPM in editable mode
-pip install -e libs/openhissdk
+pip install -e libs/openhis_sdk
 pip install -e platform
 
-# 3. Install all service dev dependencies
-pip install -r requirements-dev.txt
+# 3. Install dev/test dependencies (SDK dev extra + per-service requirements)
+pip install -e 'libs/openhis_sdk[dev]'
+for req in services/*/requirements.txt; do pip install -r "$req"; done
 
 # 4. Configure environment
 cp .env.example .env
@@ -130,6 +137,12 @@ pytest tests/unit -q --tb=short           # or: make test-unit
 
 # Integration — no Docker needed (respx mocks)
 pytest tests/integration -q --tb=short    # or: make test-integration
+
+# Auth harness — deny-by-default checks (401/403/200) across every service; no Docker
+pytest tests/auth -q
+
+# MPI matching benchmark — precision/recall regression floors; no Docker
+pytest tests/benchmarks -q
 
 # End-to-end V&V scenarios — require a live stack (make up)
 pytest tests/e2e --e2e -v                 # or: make e2e
@@ -187,7 +200,7 @@ python platform/opm.py add-service my-service --profile analytics --port 8099
 ```
 
 
-Full contract: @docs/explaining-the-project/adding-a-module.md
+Full contract: @docs/explaining_the_project/adding-a-module.md
 
 
 ---
@@ -206,40 +219,40 @@ Full contract: @docs/explaining-the-project/adding-a-module.md
 
 ### Authentication — use the SDK
 ```python
-from openhissdk.auth import require_token, require_roles
+from openhis_sdk.auth import require_token, require_roles
 
 @router.get("/protected")
 async def endpoint(claims: dict = Depends(require_token)):
     ...
 
 # OR as global middleware
-from openhissdk.auth import JWTMiddleware
+from openhis_sdk.auth import JWTMiddleware
 app.add_middleware(JWTMiddleware)
 ```
-**Never** create or edit `jwtauth.py` outside `libs/openhissdk/`.
+**Never** create or edit `jwt_auth.py` outside `libs/openhis_sdk/`.
 
 
 ### Logging — use the SDK
 ```python
-from openhissdk.logging import configure
+from openhis_sdk.logging import configure
 configure("my-service")   # call once in main.py
 log = logging.getLogger("my-service")
 log.info("event happened", extra={"patient_id": mrn})
 ```
 All logs must be JSON-formatted and include the `service` field.  
-**Never** create or edit `logconfig.py` outside `libs/openhissdk/`.
+**Never** create or edit `log_config.py` outside `libs/openhis_sdk/`.
 
 
 ### Redis event bus — use the SDK
 ```python
-from openhissdk.bus import publish, consume
+from openhis_sdk.bus import publish, consume
 await publish("patient.synced", {"mrn": mrn, "ts": ...})
 ```
 
 
 ### Retry
 ```python
-from openhissdk.retry import with_retry
+from openhis_sdk.retry import with_retry
 
 @with_retry(attempts=3, backoff=2.0)
 async def call_external():
@@ -264,7 +277,7 @@ if missing:
 
 
 - **No service calls another service's internal API directly.** All cross-system data flows go through `integration-hub/app/services/<app>.py` adapters.
-- Adapters implement `upsert_patient`, `get_patient`, and `healthcheck` as async functions (see @docs/explaining-the-project/adapter-contract.md).
+- Adapters implement `upsert_patient`, `get_patient`, and `healthcheck` as async functions (see @docs/explaining_the_project/adapter-contract.md).
 - After every successful sync, the hub publishes an event to the bus. Adding a new flow means publishing a new event, not wiring a new HTTP call.
 - Every cross-system write must produce an entry in the hub audit log.
 
@@ -277,13 +290,19 @@ if missing:
 
 | Event | Producer | Consumers |
 |---|---|---|
-| `patient.synced` | mpi | integration-hub, analytics, hl7 |
-| `lab.order.routed` | integration-hub | analytics |
-| `lab.result.ready` | integration-hub | analytics, hl7 |
+| `patient.synced` | mpi, integration-hub | integration-hub, analytics, admin, ai-controller |
+| `lab_order.routed` | integration-hub | analytics |
+| `lab_result.ready` | integration-hub | analytics, hl7, ai-controller |
 | `dicom.stored` | integration-hub | ai-controller, analytics |
 | `radiology.report.ready` | ris | analytics |
 | `ai.result.ready` | ai-controller | ris (save-back) |
 | `odoo.patient.synced` | integration-hub | analytics |
+
+Delivery semantics (ADR 0005, @docs/adr/0005-bus-dead-letter-semantics.md):
+SDK consumers ack ONLY after successful handling; failed entries stay pending,
+are retried via XAUTOCLAIM, and after `max_delivery` (default 5) attempts land
+on the bounded dead-letter stream `openhis:events:dlq`
+(`origin_id`/`type`/`payload`/`error`/`group`).
 
 
 ---
@@ -296,7 +315,7 @@ if missing:
 |---|---|---|
 | `base` (always on) | postgres, redis, nginx, keycloak, mpi, integration-hub, hl7, admin | ~512 MB |
 | `emr` | OpenMRS | +2 GB |
-| `laboratory` | OpenELIS | +1 GB |
+| `laboratory` | OpenELIS | +2 GB |
 | `imaging` | Orthanc, OHIF, RIS, AI controller | +1.5 GB |
 | `erp` | Odoo | +1 GB |
 | `analytics` | analytics service, patient-portal | +256 MB |
@@ -308,7 +327,7 @@ if missing:
 ## Git & PR Workflow
 
 
-- Default branch: `main`
+- Default branch: `master`
 - Branch naming: `feat/short-desc`, `fix/issue-123`, `docs/topic`, `refactor/scope`
 - Commit messages — Conventional Commits:
   ```
@@ -321,7 +340,7 @@ if missing:
   - `make e2e` run if the change touches cross-service behaviour (auth,
     bus events, FHIR/HL7 flow, service manifests, nginx routes) — no
     new FAILED; any new XPASSED has its `xfail` marker removed
-  - No new `jwtauth.py` or `logconfig.py` outside `libs/openhissdk/`
+  - No new `jwt_auth.py` or `log_config.py` outside `libs/openhis_sdk/`
   - Required env vars declared in `openhis.service.json` under `env.required`
   - New env vars added to `.env.example` with a comment
   - `openhis.service.json` updated if ports, paths, or bus topics changed
@@ -336,7 +355,7 @@ if missing:
 
 
 **Before making changes:**
-- Read @docs/concepts.md to decide whether the work belongs in the platform or in a module
+- Read @docs/explaining_the_project/concepts.md to decide whether the work belongs in the platform or in a module
 - Check the governing principle: integration over reimplementation → contracts over direct calls → platform-first
 - If the change adds a service-to-service HTTP call, rethink: it should be an adapter + event
 
@@ -385,17 +404,17 @@ Scale the test sweep to the blast radius of the change.
 
 
 **Hard rules:**
-- Do NOT touch `services/legacy/` (ehr, lis, pharmacy) — FROZEN
-- Do NOT create per-service `jwtauth.py` or `logconfig.py` — use `openhissdk`
+- Do NOT touch `services/_legacy/` (ehr, lis, pharmacy) — FROZEN
+- Do NOT create per-service `jwt_auth.py` or `log_config.py` — use `openhis_sdk`
 - Do NOT use `datetime.utcnow()` or `@app.on_event()`
-- Do NOT hand-edit `infra/nginx/nginx.conf` — regenerate via `python platform/nginxgen.py`
+- Do NOT hand-edit `infra/nginx/nginx.conf` — regenerate via `python platform/nginx_gen.py`
 - Do NOT add direct HTTP calls between native services — use the bus or the adapter hub
 
 
 **Quota hygiene:**
 - Read files only when you need to modify or directly reference them — do not speculatively scan the repo
 - Do not list directory trees unless asked; request the exact path from the user if unsure
-- Do not re-read `CLAUDE.md` or `@docs/concepts.md` mid-session — they are already in context
+- Do not re-read `CLAUDE.md` or `@docs/explaining_the_project/concepts.md` mid-session — they are already in context
 - When reviewing a change, prefer a `git diff` snippet over re-reading full files
 - For symbol or text searches, ask the user to run `rg <pattern>` and paste the output rather than scanning files yourself
 - Start a fresh conversation for each unrelated task — do not carry unrelated history forward
@@ -408,12 +427,14 @@ Scale the test sweep to the blast radius of the change.
 
 
 - **Keycloak runs in `start-dev` mode** by default — never use the base stack in production; use `compose/overrides/production.yml`
-- **In-memory dedup sets** in `integration-hub/worker.py` (`synced_patients`, `synced_orders`) do not survive container restarts — tracked for Redis SADD migration
-- **`CHANGEMEBEFOREDEPLOY`** in `.env` is a security hazard; the startup guard catches missing vars but not weak passwords
-- **`infra/nginx/nginx.conf`** is generated from `nginx.conf.j2` by `nginxgen.py` — manual edits are overwritten on next OPM command
-- **Some services still have local `jwtauth.py` / `logconfig.py`** — being migrated; CI fails if new ones are added outside `libs/`
+- **Fresh clones must run `opm init` (or `opm demo-render`) before the first `make up`** — the rendered Keycloak realm (`infra/keycloak/openhis-realm.json`) is gitignored and generated from `openhis-realm.json.j2`
+- **MLLP port 2575 is no longer host-published** — internal-only by default; re-expose deliberately via `compose/overrides/mllp-public.yml`
+- **`DEV_MODE=true` requires `ENV=development`** — the SDK exits at import time otherwise, so the JWT bypass can never reach a staging/production container
+- **`/metrics` is JWT-exempt but nginx 404s it externally** — Prometheus scraping works only from inside the compose network (e.g. `http://mpi:8007/metrics`)
+- **`CHANGEMEBEFOREDEPLOY`** in `.env` is a security hazard; `opm init` generates strong secrets and rejects weak supplied passwords
+- **`infra/nginx/nginx.conf`** is generated from `nginx.conf.j2` by `nginx_gen.py` — manual edits are overwritten on next OPM command
+- **Per-service `jwt_auth.py` files are SDK re-export shims** — all real auth logic lives in `libs/openhis_sdk`; CI fails if a new non-shim copy is added outside `libs/`
 - **Integration tests use `respx`** for HTTP mocking — mock at the HTTP boundary only, never at the adapter layer
-- **Redis dedup keys** need a TTL (7-day `EXPIRE`) to prevent unbounded growth — not yet implemented everywhere
 
 
 ---
@@ -422,11 +443,11 @@ Scale the test sweep to the blast radius of the change.
 ## Additional References
 
 
-- **Concepts & Goals (start here):** @docs/concepts.md
-- Architecture: @docs/explaining-the-project/architecture.md
-- Profiles system: @docs/explaining-the-project/profiles.md
-- Adding a module: @docs/explaining-the-project/adding-a-module.md
-- Adapter contract: @docs/explaining-the-project/adapter-contract.md
-- Service contract: @docs/explaining-the-project/service-contract.md
-- Security policy: @docs/guidelines-for-contributors/SECURITY.md
-- Contributing guide: @docs/guidelines-for-contributors/CONTRIBUTING.md
+- **Concepts & Goals (start here):** @docs/explaining_the_project/concepts.md
+- Architecture: @docs/explaining_the_project/architecture.md
+- Profiles system: @docs/explaining_the_project/profiles.md
+- Adding a module: @docs/explaining_the_project/adding-a-module.md
+- Adapter contract: @docs/explaining_the_project/adapter-contract.md
+- Service contract: @docs/explaining_the_project/service-contract.md
+- Security policy: @docs/guidelines_for_contributors/SECURITY.md
+- Contributing guide: @docs/guidelines_for_contributors/CONTRIBUTING.md
