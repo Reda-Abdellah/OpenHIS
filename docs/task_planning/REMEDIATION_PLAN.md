@@ -304,7 +304,7 @@ Additionally, the current `DEV_MODE` guard is "forbid `ENV=production`". It shou
 **Files:**
 - `libs/openhis_sdk/src/openhis_sdk/bus.py`
 - `tests/unit/sdk/test_bus.py` — new
-- `docs/adr/0004-bus-dead-letter-semantics.md` — new
+- `docs/adr/0005-bus-dead-letter-semantics.md` — new
 
 **Plan:**
 
@@ -313,7 +313,7 @@ Additionally, the current `DEV_MODE` guard is "forbid `ENV=production`". It shou
    - `run` acks only on success. On failure, leave the entry in the pending list. Log with the entry ID and the event type so operators can find it.
    - Add a `max_delivery: int = 5` parameter. On the first read, also call `XAUTOCLAIM` to grab entries that have been pending longer than `idle_ms=30_000` from other consumers and re-process them, incrementing their delivery count. After `max_delivery` attempts, XADD the entry to `openhis:events:dlq` and XACK the original.
 2. Add `openhis:events:dlq` as a convention. Update the README event-bus section.
-3. Write an ADR (`docs/adr/0004-bus-dead-letter-semantics.md`) explaining: ack-on-success, pending reclaim via XAUTOCLAIM, DLQ after N attempts. Reference from `CLAUDE.md`.
+3. Write an ADR (`docs/adr/0005-bus-dead-letter-semantics.md`) explaining: ack-on-success, pending reclaim via XAUTOCLAIM, DLQ after N attempts. Reference from `CLAUDE.md`.
 4. Tests in `tests/unit/sdk/test_bus.py`:
    - Handler raises → entry stays in pending list, not acked.
    - Next loop → same entry is re-delivered to the same consumer.
@@ -739,7 +739,7 @@ Without these, Phase 3+ regressions can't be caught in CI. Do all of Phase 2 bef
 **Files:**
 - `services/mpi/matcher.py`
 - `tests/unit/mpi/test_matcher.py` — new or extended
-- `docs/adr/0005-mpi-matcher-threshold.md` — new
+- `docs/adr/0006-mpi-matcher-threshold.md` — new
 
 **Plan:**
 
@@ -767,7 +767,7 @@ Without these, Phase 3+ regressions can't be caught in CI. Do all of Phase 2 bef
 **Acceptance criteria:**
 
 - `pytest tests/unit/mpi/test_matcher.py -v` passes with the new diacritic cases.
-- `docs/adr/0005-mpi-matcher-threshold.md` exists and is referenced from `CLAUDE.md`.
+- `docs/adr/0006-mpi-matcher-threshold.md` exists and is referenced from `CLAUDE.md`.
 
 **Commit:** `fix(mpi): handle diacritics in matcher; add phonetic bonus; ADR on threshold (F#50, F#51)`
 
@@ -1264,8 +1264,8 @@ Do these last. Safe, low-risk, and mostly cosmetic — but they reduce the cogni
 
 **Plan:**
 
-1. Merge `docs/task-planning/` (hyphen, 1 file) into `docs/task_planning/` (underscore, 7 files). Pick one naming and stick.
-2. Align `docs/explaining_the_project/` naming (hyphen vs underscore) — pick one, update all references in CLAUDE.md and README.
+1. ~~Merge the hyphenated `task-planning` fork (1 file) into `docs/task_planning/` (underscore). Pick one naming and stick.~~ **Done** — the defect report now lives in `docs/task_planning/`.
+2. ~~Align `docs/explaining_the_project/` naming (hyphen vs underscore) — pick one, update all references in CLAUDE.md and README.~~ **Done** — `snake_case` directories everywhere; CLAUDE.md/README references fixed.
 3. Clean up `.gitignore`: remove the `#tests` commented line and the dangling `scripts` entry.
 4. Update `CHANGELOG.md` with all changes from Phases 1–4 (one entry per PR would be ideal, but at minimum a rollup).
 

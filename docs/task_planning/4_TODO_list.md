@@ -129,9 +129,9 @@ Here is the full OpenHIS to-do list, organized by objective with granular tasks.
 
 **5.2 — FHIR CapabilityStatement**
 
-- [ ] Add a `GET /fhir/metadata` endpoint to `integration-hub` returning a FHIR R4 `CapabilityStatement` JSON resource
-- [ ] Populate it with the resource types the hub actually handles: `Patient`, `DiagnosticReport`, `ImagingStudy`, `Observation`, `ServiceRequest`, `MedicationRequest`
-- [ ] Add a test asserting the response validates as a valid FHIR R4 CapabilityStatement using `fhir.resources` library
+- [x] Add a `GET /fhir/metadata` endpoint to `integration-hub` returning a FHIR R4 `CapabilityStatement` JSON resource
+- [x] Populate it with the resource types the hub actually handles: `Patient`, `DiagnosticReport`, `ImagingStudy`, `Observation`, `ServiceRequest`, `MedicationRequest`
+- [x] Add a test asserting the response validates as a valid FHIR R4 CapabilityStatement using `fhir.resources` library
 
 **5.3 — Data retention \& privacy**
 
