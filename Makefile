@@ -20,7 +20,7 @@
         odoo-up odoo-logs odoo-verify odoo-clean \
         hub-up hub-logs hub-verify hub-clean \
         admin-up admin-logs mpi-up mpi-logs \
-        phase5-migrate health
+        phase5-migrate health backup restore
 
 # ── Profile-aware compose command ─────────────────────────────────────────────
 # Read OPENHIS_PROFILES from .env (if not already in environment).
@@ -230,6 +230,21 @@ hub-verify:
 hub-clean:
 	docker compose -f compose/base.yml stop integration-hub
 	docker compose -f compose/base.yml rm -f integration-hub
+
+# ── Backup & restore ──────────────────────────────────────────────────────────
+# Snapshot every database + named volume of the active profiles into
+# ./backups/<UTC-timestamp>/ with a sha256 manifest (see scripts/README.md).
+# Extra flags via ARGS, e.g.: make backup ARGS="--cold --keycloak-export"
+backup:
+	bash scripts/backup.sh $(ARGS)
+
+# Restore a backup directory created by `make backup`:
+#   make restore BACKUP=backups/<timestamp>
+# Prompts loudly before overwriting; pass ARGS="--yes" for automation,
+# ARGS="--dry-run" to preview the command plan.
+restore:
+	@test -n "$(BACKUP)" || { echo "usage: make restore BACKUP=backups/<timestamp> [ARGS=--yes|--dry-run]"; exit 2; }
+	bash scripts/restore.sh $(ARGS) $(BACKUP)
 
 # ── Data migration ────────────────────────────────────────────────────────────
 

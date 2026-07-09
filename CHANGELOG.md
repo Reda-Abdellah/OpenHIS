@@ -12,6 +12,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 - MPI FHIR R4 facade: PDQm-flavored `Patient` search plus IHE PIXm-style `$ihe-pix` cross-reference query (`services/mpi/routers/fhir.py`)
 - CI-independent deny-by-default auth harness (`pytest tests/auth`): every native service booted with real RS256 JWT validation and asserted for the full 401/403/2xx triple
 - Bus payload-contract tests pinning the exact field sets of `lab_order.routed` and `lab_result.ready`
+- `make backup` / `make restore`: profile-aware backup & restore tooling (`scripts/backup.sh`, `scripts/restore.sh`) with `--dry-run` plans, sha256 manifest, and a compose-driven completeness self-test
 - MPI matching accuracy benchmark (`pytest tests/benchmarks`): precision/recall regression floors on a corpus of real-world name variants (diacritics, Arabic/French transliterations); methodology and figures in `docs/benchmarks/mpi-matching.md`
 - `openhis_sdk.metrics`: Prometheus metrics for native services — `MetricsMiddleware` records `openhis_http_requests_total` and `openhis_http_request_duration_seconds` labeled by service/method/route-template/status; `metrics_router` exposes `GET /metrics` (JWT-exempt, in-network scrape only); pull-based `openhis_dlq_depth{stream}` gauge XLENs `openhis:events:dlq` at scrape time; `prometheus_client` backend with a zero-dependency text-exposition fallback; example alert rules in `infra/prometheus/alerts-example.yml`
 - `integration-hub` service: bidirectional FHIR R4 sync between OpenMRS, OpenELIS, and Odoo
