@@ -1,0 +1,33 @@
+# Example Prometheus alerting rules for OpenHIS.
+#
+# No Prometheus service ships with the compose stack (out of scope) — this
+# file documents the recommended rules for operators who point their own
+# Prometheus at the per-service /metrics endpoints (exposed by
+# openhis_sdk.metrics, scrapeable only on the compose network, e.g.
+# http://mpi:8007/metrics — nginx returns 404 for /<svc>/metrics).
+#
+# Load it via:
+#   rule_files:
+#     - /etc/prometheus/alerts-example.yml
+#
+# Referenced from libs/openhis_sdk/src/openhis_sdk/metrics.py (module docstring).
+
+groups:
+  - name: openhis-dlq
+    rules:
+      # openhis_dlq_depth{stream=...} samples openhis:events:dlq (SDK
+      # BusConsumer) via XLEN at scrape time. A non-empty DLQ means at least
+      # one bus event permanently failed processing (max_delivery exhausted)
+      # and is waiting for an operator.
+      - alert: OpenHISDeadLetterQueueNotEmpty
+        expr: openhis_dlq_depth > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OpenHIS DLQ {{ $labels.stream }} has parked events"
+          description: >-
+            Dead-letter stream {{ $labels.stream }} has held
+            {{ $value }} event(s) for more than 5 minutes. Inspect with
+            `redis-cli XRANGE {{ $labels.stream }} - +`, fix the consumer,
+            then re-inject or XDEL the entries.

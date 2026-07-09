@@ -19,3 +19,7 @@ repomix*
 **/.vscode/
 data/
 *.zip
+# local backups & dev TLS material — never commit
+.env.backup
+.env.*.backup
+infra/ssl/

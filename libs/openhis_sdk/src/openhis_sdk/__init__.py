@@ -16,6 +16,7 @@ Services install this via:
 from .auth import JWTMiddleware
 from .bus import BusConsumer, publish_event
 from .logging import configure_logging
+from .metrics import MetricsMiddleware, gauge, metrics_router, register_callback_gauge
 from .middleware import RequestLoggingMiddleware
 from .retry import with_retry
 
@@ -24,6 +25,10 @@ __all__ = [
     "BusConsumer",
     "publish_event",
     "configure_logging",
+    "MetricsMiddleware",
+    "metrics_router",
+    "gauge",
+    "register_callback_gauge",
     "RequestLoggingMiddleware",
     "with_retry",
 ]

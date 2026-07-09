@@ -18,7 +18,8 @@ Usage (per-endpoint dependency):
 Enforcement rules:
   - JWT validation is ON by default when KEYCLOAK_URL is set.
   - Set DEV_MODE=true to disable validation (logs a loud warning).
-  - Services exit with code 1 if DEV_MODE=true and ENV=production.
+  - DEV_MODE=true is only allowed when ENV=development — any other ENV value
+    (including unset) makes the service exit with code 1 at import time.
   - Health, docs, and OpenAPI paths are always exempt from the middleware.
   - JWKS keys are cached in memory with a 1-hour TTL.
 """
@@ -46,14 +47,20 @@ KEYCLOAK_AUDIENCE  = os.environ.get("KEYCLOAK_AUDIENCE", KEYCLOAK_CLIENT_ID)
 DEV_MODE           = os.environ.get("DEV_MODE", "false").lower() == "true"
 
 if DEV_MODE:
-    if os.environ.get("ENV", "").lower() == "production":
-        sys.exit("FATAL: DEV_MODE=true is not allowed when ENV=production")
+    _env = os.environ.get("ENV", "").lower()
+    if _env != "development":
+        sys.exit(
+            f"FATAL: DEV_MODE=true requires ENV=development (got ENV={_env!r}). "
+            "Never set DEV_MODE in staging or production."
+        )
     log.warning(
         "⚠️  DEV_MODE enabled — JWT validation is DISABLED. "
         "Never set this in production."
     )
 
-_SKIP_PREFIXES = ("/api/health", "/api/auth", "/docs", "/redoc", "/openapi.json")
+# /metrics: Prometheus scrape endpoint (openhis_sdk.metrics) — internal-only
+# (nginx returns 404 for /<svc>/metrics; service ports are not host-published).
+_SKIP_PREFIXES = ("/api/health", "/api/auth", "/docs", "/redoc", "/openapi.json", "/metrics")
 _JWKS_CACHE: Optional[dict] = None
 _JWKS_FETCHED_AT: float = 0.0
 _JWKS_TTL = 3600
