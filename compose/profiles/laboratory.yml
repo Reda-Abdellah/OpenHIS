@@ -36,11 +36,13 @@ services:
       # POSTGRES_USER must be a superuser — the image's init.sh creates the
       # clinlims and admin users internally from DB_PASSWORD /
       # DB_SUPERUSER_PASSWORD and loads OpenELIS-Global.sql (base schema).
+      # Dev defaults apply when unset — override in .env before deploy
+      # (see .env.example, Laboratory profile section).
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${OPENELIS_PG_PASSWORD:-postgres}
       POSTGRES_DB: clinlims
-      DB_PASSWORD: clinlims
-      DB_SUPERUSER_PASSWORD: clinlims_super
+      DB_PASSWORD: ${OPENELIS_DB_PASSWORD:-clinlims}
+      DB_SUPERUSER_PASSWORD: ${OPENELIS_DB_SUPERUSER_PASSWORD:-clinlims_super}
     volumes:
       - openelis-pg:/var/lib/postgresql/data
     networks: [openhis-net]
@@ -63,12 +65,15 @@ services:
       - "localhost:host-gateway"
     entrypoint: ["/entrypoint-wrapper.sh"]
     environment:
-      DEFAULT_PW: "adminADMIN!"
-      OE_DB_PASSWORD: "clinlims"
+      # OPENELIS_PASSWORD is the same var the integration-hub uses in
+      # base.yml — one var drives every consumer of the OE admin account.
+      # OPENELIS_DB_PASSWORD must match openelis-db's DB_PASSWORD above.
+      DEFAULT_PW: "${OPENELIS_PASSWORD:-adminADMIN!}"
+      OE_DB_PASSWORD: "${OPENELIS_DB_PASSWORD:-clinlims}"
       CATALINA_OPTS: >-
         -Ddatasource.url=jdbc:postgresql://openelis-db:5432/clinlims
         -Ddatasource.username=clinlims
-        -Ddatasource.password=clinlims
+        -Ddatasource.password=${OPENELIS_DB_PASSWORD:-clinlims}
     volumes:
       - ../infra/openelis/entrypoint-wrapper.sh:/entrypoint-wrapper.sh:ro
       - ../infra/openelis/common.properties:/run/secrets/common.properties:ro

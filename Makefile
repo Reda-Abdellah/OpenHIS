@@ -40,8 +40,19 @@ DC = docker compose -f compose/base.yml $(_PROFILE_FLAGS)
 
 # ── Core targets ──────────────────────────────────────────────────────────────
 
+# Rendered Keycloak realm — generated from infra/keycloak/openhis-realm.json.j2
+# by `opm init` / `opm demo-render`; gitignored, so a fresh clone has no copy.
+# Without it Keycloak imports nothing and every OIDC login fails.
+_REALM_FILE = infra/keycloak/openhis-realm.json
+
 # Start services for active profiles in detached mode
 up:
+	@test -f $(_REALM_FILE) || { \
+	  echo "ERROR: $(_REALM_FILE) is missing — Keycloak has no realm to import (all logins would fail)."; \
+	  echo "       Run 'python platform/opm.py init' first (or 'python platform/opm.py demo-render' for demo defaults)."; \
+	  echo "ERREUR: $(_REALM_FILE) est introuvable — Keycloak n'a aucun realm à importer."; \
+	  echo "        Exécutez d'abord 'python platform/opm.py init' (ou 'python platform/opm.py demo-render')."; \
+	  exit 1; }
 	$(DC) up -d
 
 # Stop all services

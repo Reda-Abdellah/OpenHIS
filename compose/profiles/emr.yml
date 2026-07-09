@@ -35,16 +35,18 @@ services:
       --lower_case_table_names=1
       --log_bin_trust_function_creators=1
     environment:
-      MYSQL_ROOT_PASSWORD: openmrs_root
+      # Dev defaults apply when the env vars are unset — override in .env
+      # before any real deployment (see .env.example, EMR profile section).
+      MYSQL_ROOT_PASSWORD: ${OPENMRS_DB_ROOT_PASSWORD:-openmrs_root}
       MYSQL_DATABASE: openmrs
       MYSQL_USER: openmrs
-      MYSQL_PASSWORD: openmrs
+      MYSQL_PASSWORD: ${OPENMRS_DB_PASSWORD:-openmrs}
     volumes:
       - openmrs-mysql:/var/lib/mysql
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-popenmrs_root"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${OPENMRS_DB_ROOT_PASSWORD:-openmrs_root}"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -60,11 +62,12 @@ services:
       OMRS_DB_PORT: 3306
       OMRS_DB_NAME: openmrs
       OMRS_DB_USERNAME: openmrs
-      OMRS_DB_PASSWORD: openmrs
+      # Must match openmrs-db MYSQL_PASSWORD — same env var drives both.
+      OMRS_DB_PASSWORD: ${OPENMRS_DB_PASSWORD:-openmrs}
       KEYCLOAK_URL: http://keycloak:8080/keycloak
       OMRS_CREATE_TABLES: "true"
       OMRS_AUTO_UPDATE_DATABASE: "true"
-      OMRS_ADMIN_USER_PASSWORD: Admin123
+      OMRS_ADMIN_USER_PASSWORD: ${OPENMRS_PASSWORD:-Admin123}
     volumes:
       - openmrs-data:/openmrs/data
       - ../infra/openmrs/modules/oauth2login-1.5.0.omod:/openmrs/data/modules/oauth2login-1.5.0.omod:ro

@@ -46,12 +46,21 @@ services:
       ORTHANC__PYTHON_SCRIPT: /etc/orthanc/plugin.py
       AI_CONTROLLER_URL: http://ai-controller:8000
       FHIR_BRIDGE_URL: http://integration-hub:8012
+      # Keycloak client-credentials for plugin.py — ai-controller enforces JWT
+      # and the hub's event-ingest routes require the internal-sync role.
+      ORTHANC_KC_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
+      ORTHANC_KC_CLIENT_ID: orthanc-sa
+      ORTHANC_KC_CLIENT_SECRET: ${ORTHANC_KC_CLIENT_SECRET:-orthanc-sa-secret}
     volumes:
       - ../infra/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - ../infra/orthanc/plugin.py:/etc/orthanc/plugin.py:ro
       - orthanc-data:/var/lib/orthanc/db
     ports:
-      - "4242:4242"
+      # DICOM C-STORE/C-FIND/C-MOVE — bound to localhost only; the raw DICOM
+      # protocol has no authentication. In-network containers (simulator,
+      # ai-controller, ohif) reach orthanc:4242/8042 directly and are
+      # unaffected. Remote modalities should tunnel or use a VPN.
+      - "127.0.0.1:4242:4242"
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -100,12 +109,33 @@ services:
       retries: 3
       start_period: 10s
 
+  # Docker socket proxy — least-privilege gateway between ai-controller and
+  # the Docker daemon. Only the containers + images API sections are exposed
+  # (CONTAINERS=1, IMAGES=1) with write methods enabled (POST=1) so
+  # ai-controller can create/start/wait/remove pipeline containers. The raw
+  # socket is mounted read-only here and ONLY here — no service mounts
+  # /var/run/docker.sock directly anymore.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      IMAGES: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [openhis-net]
+    restart: unless-stopped
+
   # AI Controller — orchestrates inference jobs on DICOM studies.
-  # Spawns pipeline containers (poc-xray, poc-ct) via Docker socket.
+  # Spawns pipeline containers (poc-xray, poc-ct) via the docker-socket-proxy
+  # above (docker.from_env() honours DOCKER_HOST).
   ai-controller:
     build:
       context: ${PWD}
       dockerfile: services/ai-controller/Dockerfile
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
     environment:
       ORTHANC_URL: http://orthanc:8042
       RIS_URL: http://ris:8002/api
@@ -113,12 +143,21 @@ services:
       JOBS_DATA_DIR: /data/jobs
       JOBS_VOLUME_NAME: openhis_ai-jobs
       DOCKER_NETWORK: openhis_openhis-net
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
       POC_XRAY_IMAGE: openhis/poc-xray:latest
       POC_CT_IMAGE: openhis/poc-ct:latest
       FHIR_BRIDGE_URL: http://integration-hub:8012
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      # Container hardening: only these images may be spawned as pipeline
+      # containers, each with hard mem/cpu/pids limits (see runner.py).
+      # Default covers all four seeded pipelines, incl. the bus-triggered
+      # clinical POCs (lab-risk, emr-alert).
+      POC_ALLOWED_IMAGES: ${POC_ALLOWED_IMAGES:-openhis/poc-xray:latest,openhis/poc-ct:latest,openhis/poc-lab-risk:latest,openhis/poc-emr-alert:latest}
+      POC_MEM_LIMIT: ${POC_MEM_LIMIT:-2g}
+      POC_CPU_LIMIT: ${POC_CPU_LIMIT:-2}
+      POC_PIDS_LIMIT: ${POC_PIDS_LIMIT:-256}
     volumes:
       - ai-jobs:/data/jobs
-      - /var/run/docker.sock:/var/run/docker.sock
       - ai-controller-db:/data
     networks: [openhis-net]
     restart: unless-stopped
@@ -131,10 +170,14 @@ services:
 
   # DICOM acquisition simulator — generates synthetic studies for testing.
   simulator:
-    build: ../services/simulator
+    build:
+      context: ${PWD}
+      dockerfile: services/simulator/Dockerfile
     environment:
       ORTHANC_URL: http://orthanc:8042
       ROOT_PATH: /simulator
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      KEYCLOAK_REALM: openhis
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
