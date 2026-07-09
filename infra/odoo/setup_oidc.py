@@ -21,7 +21,7 @@ Environment variables:
   KEYCLOAK_URL              http://keycloak:8080
   KEYCLOAK_REALM            openhis
   ODOO_OIDC_CLIENT_ID       odoo-oidc
-  ODOO_OIDC_CLIENT_SECRET   odoo-oidc-secret
+  ODOO_OIDC_CLIENT_SECRET   (no default — supplied by compose from ODOO_OIDC_SECRET)
 """
 
 import os
@@ -40,7 +40,10 @@ ODOO_LANG     = os.environ.get("ODOO_LANG",               "en_US")
 KC_URL        = os.environ.get("KEYCLOAK_URL",            "http://keycloak:8080")
 KC_REALM      = os.environ.get("KEYCLOAK_REALM",          "openhis")
 CLIENT_ID     = os.environ.get("ODOO_OIDC_CLIENT_ID",    "odoo-oidc")
-CLIENT_SEC    = os.environ.get("ODOO_OIDC_CLIENT_SECRET", "odoo-oidc-secret")
+# NOTE: unused below — Odoo 17 auth.oauth.provider has no client_secret field
+# (implicit/code flow validated at the userinfo endpoint). Kept for clarity;
+# no literal fallback: the value comes from compose (${ODOO_OIDC_SECRET}).
+CLIENT_SEC    = os.environ.get("ODOO_OIDC_CLIENT_SECRET", "")
 
 KC_BASE       = f"{KC_URL}/realms/{KC_REALM}/protocol/openid-connect"
 KC_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "http://localhost")

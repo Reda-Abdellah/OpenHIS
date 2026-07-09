@@ -1,9 +1,19 @@
+# njs module — powers the JWT auth_request guards in infra/nginx/njs/jwt-auth.js
+load_module modules/ngx_http_js_module.so;
+
+# Expose the JWKS endpoint override to njs (process.env); defaults to the
+# in-network Keycloak realm certs URL when unset.
+env KEYCLOAK_JWKS_URL;
+
 events {
     worker_connections 1024;
 }
 
 http {
     resolver 127.0.0.11 valid=10s ipv6=off;
+
+    js_import jwt from njs/jwt-auth.js;
+    js_fetch_timeout 5s;
 
     # ── Base service upstreams (always-on) ─────────────────────────────────────
     upstream admin_be      { server admin:8011; }
@@ -20,7 +30,7 @@ http {
 
 {% if 'laboratory' in active_profiles %}
     # ── Laboratory profile upstreams ────────────────────────────────────────────
-    upstream openelis_be   { server openelis:8080; }
+    upstream openelis_be    { server openelis:8080; }
 {% endif %}
 
 {% if 'erp' in active_profiles %}
@@ -50,6 +60,25 @@ http {
     server {
         listen 80;
         root /usr/share/nginx/html;
+
+        # ── Internal JWT guards (njs, RS256-verified against Keycloak JWKS) ────
+        # Mapped to jwt-auth.js; used as auth_request gates by locations whose
+        # upstream has no authentication of its own (e.g. Orthanc).
+        location = /_auth/admin       { internal; js_content jwt.require_admin; }
+        location = /_auth/clinician   { internal; js_content jwt.require_clinician; }
+        location = /_auth/lab_tech    { internal; js_content jwt.require_lab_tech; }
+        location = /_auth/radiologist { internal; js_content jwt.require_radiologist; }
+        location = /_auth/pharmacist  { internal; js_content jwt.require_pharmacist; }
+        location = /_auth/patient     { internal; js_content jwt.require_patient; }
+        location = /_auth/any         { internal; js_content jwt.require_any_auth; }
+
+        # ── Prometheus /metrics — internal scrape only ──────────────────────────
+        # Service /metrics endpoints (openhis_sdk.metrics) are JWT-exempt so
+        # the in-network scraper needs no token. Without this guard the
+        # service prefix locations below (/mpi/, /admin/, …) would expose
+        # /<svc>/metrics publicly. Regex locations win over prefix matches,
+        # so this 404s them all. Scrape directly: http://<svc>:<port>/metrics.
+        location ~ ^/[a-z0-9_-]+/metrics/?$ { return 404; }
 
         # ── Portal entry point ──────────────────────────────────────────────────
         location / {
@@ -154,6 +183,10 @@ http {
         }
 
         location /openelis-fhir/ {
+            # Machine-to-machine FHIR route — no JWT (OpenELIS subscriber has
+            # no token). Restricted to the pinned openhis-net Docker subnet.
+            allow 172.28.0.0/16;
+            deny  all;
             proxy_pass         http://openelis_be/fhir/;
             proxy_set_header   Host               $host;
             proxy_set_header   X-Real-IP          $remote_addr;
@@ -161,6 +194,7 @@ http {
             proxy_set_header   X-Forwarded-Proto  $scheme;
             proxy_read_timeout 300s;
         }
+
 {% endif %}
 
 {% if 'erp' in active_profiles %}
@@ -241,6 +275,13 @@ http {
         }
 
         location /orthanc/ {
+            # Orthanc itself has AuthenticationEnabled=false in dev: this
+            # gate is the ONLY auth layer in front of the DICOM store.
+            auth_request       /_auth/radiologist;
+            auth_request_set   $remote_user  $sent_http_x_remote_user;
+            auth_request_set   $remote_roles $sent_http_x_remote_roles;
+            proxy_set_header   X-Remote-User  $remote_user;
+            proxy_set_header   X-Remote-Roles $remote_roles;
             proxy_pass         http://orthanc/;
             proxy_set_header   Host               $host;
             proxy_set_header   X-Real-IP          $remote_addr;

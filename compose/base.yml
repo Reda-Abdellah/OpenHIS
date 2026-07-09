@@ -10,6 +10,12 @@ name: openhis
 networks:
   openhis-net:
     driver: bridge
+    # Pinned subnet — referenced by the nginx allow-list on the
+    # machine-to-machine FHIR routes (infra/nginx/nginx.conf.j2).
+    # Changing it requires `docker compose down` + nginx regeneration.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   pg-data:
@@ -24,14 +30,19 @@ services:
   # Backs the openhis:events stream consumed by MPI, Analytics, and HL7.
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "/etc/redis/redis.conf"]
+    # REDIS_PASSWORD empty (dev default) = auth disabled; set it in .env to
+    # require AUTH. All REDIS_URLs below embed the same var automatically.
+    command: ["redis-server", "/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD:-}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
       - ../infra/redis/redis.conf:/etc/redis/redis.conf:ro
       - redis-data:/data
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Expands inside the container ($$): adds -a only when a password is set.
+      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD --no-auth-warning} ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -73,7 +84,7 @@ services:
       KEYCLOAK_REALM: openhis
       KEYCLOAK_CLIENT_ID: openhis-platform
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-openhis-platform-secret}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
     volumes:
       - admin-data:/data
     networks: [openhis-net]
@@ -96,7 +107,7 @@ services:
     environment:
       ROOT_PATH: /mpi
       MPI_DATABASE_URL: postgresql://mpi:${MPI_DB_PASS:-mpi}@postgres:5432/mpi
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       KEYCLOAK_URL: http://keycloak:8080/keycloak
       KEYCLOAK_REALM: openhis
       KEYCLOAK_CLIENT_ID: openhis-platform
@@ -130,13 +141,15 @@ services:
       OPENELIS_PASSWORD: ${OPENELIS_PASSWORD:-adminADMIN!}
       ODOO_URL: http://odoo:8069
       ODOO_DB: odoo
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
+      KEYCLOAK_REALM: openhis
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: integration-hub-sa
       KEYCLOAK_CLIENT_SECRET: ${INTEGRATION_HUB_KC_CLIENT_SECRET:-integration-hub-sa-secret}
       ODOO_ADMIN_PASS: ${ODOO_ADMIN_PASS:-admin}
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       MPI_URL: http://mpi:8007
     volumes:
       - hub-audit:/data
@@ -157,6 +170,9 @@ services:
 
   # ── HL7 Gateway ────────────────────────────────────────────────────────────
   # Accepts and emits HL7 v2 messages (ADT, ORU, ORM) via MLLP on port 2575.
+  # MLLP is internal-only (reachable at hl7:2575 inside openhis-net); the host
+  # port is NOT published because MLLP is cleartext HL7 v2 carrying PHI (F#47).
+  # To expose it deliberately, layer compose/overrides/mllp-public.yml.
   # Health:  http://localhost/hl7/api/health
   hl7:
     build:
@@ -167,7 +183,7 @@ services:
       OPENMRS_URL: http://openmrs:8080
       OPENELIS_URL: http://openelis:8080
       MPI_BASE_URL: http://mpi:8007
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       ROOT_PATH: /hl7
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: hl7-sa
@@ -177,8 +193,6 @@ services:
       MLLP_PORT: "2575"
     volumes:
       - hl7-data:/data
-    ports:
-      - "2575:2575"
     networks: [openhis-net]
     restart: unless-stopped
     healthcheck:
@@ -222,6 +236,11 @@ services:
     build:
       context: ${PWD}/infra/nginx
       dockerfile: Dockerfile
+    environment:
+      # JWKS endpoint the njs JWT guard verifies RS256 signatures against.
+      # Keycloak serves under /keycloak (KC_HTTP_RELATIVE_PATH) — keep the
+      # path segment if you override this.
+      KEYCLOAK_JWKS_URL: ${KEYCLOAK_JWKS_URL:-http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/certs}
     ports:
       - "80:80"
     volumes:

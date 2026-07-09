@@ -37,7 +37,10 @@ services:
       # via the web UI (or -d flag). The user must have CREATEDB rights.
       POSTGRES_DB: postgres
       POSTGRES_USER: odoo
-      POSTGRES_PASSWORD: odoo
+      # Dev default applies when unset — override in .env before deploy
+      # (see .env.example, ERP profile section). Same var drives the odoo
+      # service's PASSWORD below — they must stay in sync.
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
     volumes:
       - odoo-pg:/var/lib/postgresql/data
     networks: [openhis-net]
@@ -58,7 +61,11 @@ services:
       HOST: odoo-db
       PORT: 5432
       USER: odoo
-      PASSWORD: odoo
+      # Same var as odoo-db POSTGRES_PASSWORD. NOTE: the official odoo
+      # image prefers values found in odoo.conf over these env vars —
+      # db_password was therefore removed from infra/odoo/odoo.conf so
+      # this env var is authoritative.
+      PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
     volumes:
       - odoo-data:/var/lib/odoo
       - ../infra/odoo/odoo.conf:/etc/odoo/odoo.conf:ro

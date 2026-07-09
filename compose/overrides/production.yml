@@ -26,6 +26,18 @@ services:
     ports:
       - "80:80"
 
+  # Orthanc with HTTP authentication enabled (effective only when the imaging
+  # profile file is also passed — compose merges this over imaging.yml).
+  # ⚠️ OPERATORS: edit infra/orthanc/orthanc.production.json and replace the
+  # CHANGE_ME_BEFORE_DEPLOY password in RegisteredUsers before deploying, then
+  # configure OHIF / ai-controller / RIS clients with those credentials.
+  # The image is repeated so `base.yml + production.yml` alone stays a valid
+  # compose project.
+  orthanc:
+    image: orthancteam/orthanc
+    volumes:
+      - ../infra/orthanc/orthanc.production.json:/etc/orthanc/orthanc.json:ro
+
   # Prevent debug/admin ports from being exposed
   postgres:
     ports: []

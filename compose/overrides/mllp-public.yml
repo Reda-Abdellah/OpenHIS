@@ -1,0 +1,23 @@
+# ── MLLP public-exposure override (OPT-IN, READ THIS FIRST) ──────────────────
+#
+# ⚠ SECURITY WARNING — publishing this port exposes CLEARTEXT HL7 v2 on the
+#   host's interfaces. HL7 v2 messages carry PHI (patient names, DOB, and the
+#   SSN parsed from PID segments) with NO transport encryption and NO
+#   authentication. Anyone who can reach port 2575 can inject ADT/ORU/ORM
+#   messages into the platform and read nothing back — but the injection
+#   alone is a patient-safety and privacy hazard (finding F#47).
+#
+# The base stack keeps MLLP internal-only: feeders inside openhis-net reach
+# the gateway at hl7:2575. External feeders should connect through a VPN or
+# an SSH tunnel into the Docker host, or through an MLLP-over-TLS proxy
+# (e.g. stunnel) terminating in front of this port.
+#
+# Only layer this file if the host port is shielded by a firewall restricted
+# to known feeder IPs, or fronted by a TLS proxy:
+#
+#   docker compose -f compose/base.yml -f compose/overrides/mllp-public.yml up -d hl7
+#
+services:
+  hl7:
+    ports:
+      - "2575:2575"

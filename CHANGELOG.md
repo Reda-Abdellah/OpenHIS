@@ -23,6 +23,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 - Tests reorganized into `tests/unit/`, `tests/integration/`, and `tests/smoke/`
 
 ### Security
+- Infra hardening pass: all hardcoded compose credentials externalized to env vars with dev-safe defaults (`${VAR:-dev_value}` — OpenMRS, OpenELIS, Odoo); Redis AUTH support via `REDIS_PASSWORD` (empty = dev unchanged); Keycloak realm and OpenELIS `extra.properties` now rendered from `.j2` templates by `opm init` (rendered files gitignored — no client secrets in git); Orthanc production config with `AuthenticationEnabled` + plugin Keycloak client-credentials auth (`orthanc-sa` service account); ai-controller reaches Docker through a least-privilege `docker-socket-proxy` instead of mounting `/var/run/docker.sock`; self-signed dev TLS cert generator (`scripts/gen_dev_certs.sh`)
+- nginx njs guard now verifies RS256 JWT signatures against the Keycloak JWKS (was structure/expiry only) and is wired via `auth_request`; machine-to-machine FHIR routes restricted to the pinned `openhis-net` subnet (172.28.0.0/16)
+- HL7 MLLP port 2575 no longer host-published — internal-only by default, deliberate re-exposure via `compose/overrides/mllp-public.yml` (T-08)
+- `make up` now refuses to start when the rendered Keycloak realm is missing, pointing at `opm init` (prevents silent every-login-fails deployments)
 - `DEV_MODE=true` (JWT bypass) now refuses to boot unless `ENV=development` — the bypass is structurally unreachable in staging/production
 
 ### Removed

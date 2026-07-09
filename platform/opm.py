@@ -13,6 +13,7 @@ All docker compose operations run from the project root.
 OPM wraps the Makefile logic — it does not replace it.
 """
 import os
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,10 @@ from typing import Optional
 import click
 import requests
 import yaml
+
+#: Single source of truth for the package version — pyproject.toml reads it
+#: via [tool.hatch.version] path = "opm.py".
+__version__ = "0.1.0"
 
 # ── Path resolution ────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).parent.parent
@@ -36,15 +41,16 @@ from profile_engine import (
     resolve_compose_files,
 )
 from nginx_gen import render as nginx_render, reload_nginx
+from infra_render import DEV_DEFAULTS, InfraRenderError, render_templates
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _read_env() -> dict:
-    """Parse .env file into a dict."""
+def _read_env(path: Path = ENV_FILE) -> dict:
+    """Parse a .env-style file into a dict."""
     env: dict = {}
-    if ENV_FILE.exists():
-        for line in ENV_FILE.read_text().splitlines():
+    if path.exists():
+        for line in path.read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
@@ -52,10 +58,36 @@ def _read_env() -> dict:
     return env
 
 
-def _write_env(env: dict) -> None:
-    """Write dict back to .env (preserving comments is not attempted)."""
-    lines = [f"{k}={v}" for k, v in env.items()]
-    ENV_FILE.write_text("\n".join(lines) + "\n")
+def _write_env(env: dict, path: Path = ENV_FILE) -> None:
+    """
+    Write *env* to *path*, preserving comments and blank lines.
+
+    The existing file (or .env.example on first run) is used as the layout:
+    assignment lines whose key appears in *env* get the new value in place;
+    every other line — comments, blanks, untouched assignments — is kept
+    verbatim.  Keys not present in the layout are appended at the end.
+    """
+    layout = path if path.exists() else REPO_ROOT / ".env.example"
+    base_lines = layout.read_text().splitlines() if layout.exists() else []
+
+    remaining = dict(env)
+    out: list[str] = []
+    for line in base_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.partition("=")[0].strip()
+            if key in remaining:
+                out.append(f"{key}={remaining.pop(key)}")
+                continue
+        out.append(line)
+
+    if remaining:
+        if out:
+            out.append("")
+        out.append("# ── Added by opm init ────────────────────────────────────────────────────────")
+        out.extend(f"{k}={v}" for k, v in remaining.items())
+
+    path.write_text("\n".join(out) + "\n")
 
 
 def _active_profiles() -> list[str]:
@@ -100,6 +132,7 @@ def _notify_registry(profiles: list[str]) -> None:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 @click.group()
+@click.version_option(__version__, prog_name="opm")
 def cli():
     """OpenHIS Platform Manager — manage profiles and deployments."""
 
@@ -107,30 +140,116 @@ def cli():
 # ── opm init ─────────────────────────────────────────────────────────────────
 
 _CHANGEME_SENTINEL = "CHANGE_ME_BEFORE_DEPLOY"
-_CREDENTIAL_KEYS = ["POSTGRES_PASSWORD", "ADMIN_PASS", "KEYCLOAK_ADMIN_PASSWORD",
-                    "KEYCLOAK_CLIENT_SECRET"]
+
+#: Every secret `opm init` must populate.  docker-compose falls back to weak,
+#: publicly known dev defaults when any of these is unset — init must leave
+#: none of them missing (F#45, F#46).
+#:
+#: OPENMRS_PASSWORD / OPENELIS_PASSWORD seed the real OpenMRS / OpenELIS
+#: admin accounts (compose fallbacks `Admin123` / `adminADMIN!` are public
+#: knowledge, and the OpenELIS UI is host-published on :8082).
+#: REDIS_PASSWORD: empty = dev no-auth mode; init generates a value, which
+#: enables Redis AUTH on initialized stacks (all compose REDIS_URLs and the
+#: redis healthcheck already embed/handle it).
+_REQUIRED_SECRETS = [
+    "POSTGRES_PASSWORD", "MPI_DB_PASS",
+    "ADMIN_PASS",
+    "REDIS_PASSWORD",
+    "KEYCLOAK_ADMIN_PASSWORD", "KEYCLOAK_CLIENT_SECRET",
+    "INTEGRATION_HUB_KC_CLIENT_SECRET", "HL7_KC_CLIENT_SECRET",
+    "ANALYTICS_KC_CLIENT_SECRET", "RIS_KC_CLIENT_SECRET",
+    "ORTHANC_KC_CLIENT_SECRET",
+    "PATIENT_PORTAL_KC_CLIENT_SECRET", "OPENMRS_KC_CLIENT_SECRET",
+    "OPENMRS_PASSWORD", "OPENELIS_PASSWORD",
+    "ODOO_MASTER_PASS", "ODOO_ADMIN_PASS", "ODOO_OIDC_SECRET",
+    "OPENELIS_OIDC_SECRET",
+]
+
+#: Legacy per-secret CLI flags / env vars kept for backward compatibility.
+_LEGACY_FLAG_KEYS = {
+    "POSTGRES_PASSWORD": "--postgres-pass / OPENHIS_POSTGRES_PASS",
+    "ADMIN_PASS": "--admin-pass / OPENHIS_ADMIN_PASS",
+    "KEYCLOAK_ADMIN_PASSWORD": "--keycloak-pass / OPENHIS_KEYCLOAK_PASS",
+    "KEYCLOAK_CLIENT_SECRET": "--keycloak-secret / OPENHIS_KEYCLOAK_SECRET",
+}
+
+
+def _check_secret_strength(value: str) -> bool:
+    """True when *value* has ≥16 chars and ≥3 character classes."""
+    if len(value) < 16:
+        return False
+    classes = sum((
+        any(c.islower() for c in value),
+        any(c.isupper() for c in value),
+        any(c.isdigit() for c in value),
+        any(not c.isalnum() for c in value),
+    ))
+    return classes >= 3
+
+
+def _generate_secret() -> str:
+    """Strong random secret (~43 chars urlsafe); retries until it passes the strength check."""
+    while True:
+        candidate = secrets.token_urlsafe(32)
+        if _check_secret_strength(candidate):
+            return candidate
+
+
+def _validate_env_file(path: Path) -> list[str]:
+    """
+    Re-read *path* from disk and return a list of problems.
+
+    Required secrets must be present, non-empty, not the CHANGEME sentinel
+    and pass the strength check; no other variable may hold the sentinel.
+    """
+    env = _read_env(path)
+    problems: list[str] = []
+    for key in _REQUIRED_SECRETS:
+        value = env.get(key, "")
+        if not value:
+            problems.append(f"{key} is missing or empty")
+        elif value == _CHANGEME_SENTINEL:
+            problems.append(f"{key} is still {_CHANGEME_SENTINEL}")
+        elif not _check_secret_strength(value):
+            problems.append(f"{key} is too weak (need ≥16 chars and ≥3 character classes)")
+    for key, value in env.items():
+        if key not in _REQUIRED_SECRETS and value == _CHANGEME_SENTINEL:
+            problems.append(f"{key} is still {_CHANGEME_SENTINEL}")
+    return problems
 
 
 @cli.command()
 @click.option("--non-interactive", is_flag=True,
-              help="Use env-var credentials only; fails if any are unset or sentinel values.")
+              help="No prompts: secrets come from flags/env vars or --auto-generate; "
+                   "fails if any secret would be left unset.")
+@click.option("--auto-generate/--prompt", "auto_generate", default=True,
+              help="Auto-generate strong random values for missing secrets (default), "
+                   "or prompt for each one.")
 @click.option("--postgres-pass", envvar="OPENHIS_POSTGRES_PASS", default=None,
-              help="PostgreSQL password (required in --non-interactive mode).")
+              help="PostgreSQL password (optional; overrides auto-generation).")
 @click.option("--admin-pass", envvar="OPENHIS_ADMIN_PASS", default=None,
-              help="Admin panel password (required in --non-interactive mode).")
+              help="Admin panel password (optional; overrides auto-generation).")
 @click.option("--keycloak-pass", envvar="OPENHIS_KEYCLOAK_PASS", default=None,
-              help="Keycloak admin password (required in --non-interactive mode).")
+              help="Keycloak admin password (optional; overrides auto-generation).")
 @click.option("--keycloak-secret", envvar="OPENHIS_KEYCLOAK_SECRET", default=None,
-              help="Keycloak client secret (required in --non-interactive mode).")
-@click.option("--validate", is_flag=True,
-              help="Validate that no CHANGE_ME_BEFORE_DEPLOY tokens remain before writing.")
-def init(non_interactive: bool, postgres_pass, admin_pass, keycloak_pass,
-         keycloak_secret, validate: bool):
-    """First-run wizard: choose profiles, set passwords, write .env."""
+              help="Keycloak client secret (optional; overrides auto-generation).")
+@click.option("--validate/--no-validate", "validate", default=True,
+              help="After writing, re-read .env from disk and fail on empty, "
+                   "sentinel or weak secret values (default: on).")
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Write .env and rendered infra files under this directory instead "
+                   "of the repo root (dry-run / testing; skips nginx render).")
+def init(non_interactive: bool, auto_generate: bool, postgres_pass, admin_pass,
+         keycloak_pass, keycloak_secret, validate: bool, output_dir: Optional[Path]):
+    """First-run wizard: choose profiles, set ALL secrets, write .env, render infra."""
     click.echo("\n  OpenHIS Platform Manager — first-run setup\n")
 
-    if ENV_FILE.exists() and not non_interactive:
-        if not click.confirm(f"  .env already exists at {ENV_FILE}. Overwrite?"):
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    env_path = (output_dir / ".env") if output_dir else ENV_FILE
+
+    if env_path.exists() and not non_interactive:
+        if not click.confirm(f"  .env already exists at {env_path}. Overwrite?"):
             click.echo("  Aborted.")
             return
 
@@ -159,63 +278,95 @@ def init(non_interactive: bool, postgres_pass, admin_pass, keycloak_pass,
     ram = estimate_ram_mb(chosen)
     click.echo(f"\n  Estimated RAM requirement: {ram} MB ({ram // 1024} GB)")
 
-    # Passwords
-    if non_interactive:
-        # Require explicit passwords via CLI flags or env vars — no defaults allowed.
-        missing = []
-        if not postgres_pass:  missing.append("--postgres-pass / OPENHIS_POSTGRES_PASS")
-        if not admin_pass:     missing.append("--admin-pass / OPENHIS_ADMIN_PASS")
-        if not keycloak_pass:  missing.append("--keycloak-pass / OPENHIS_KEYCLOAK_PASS")
-        if not keycloak_secret: missing.append("--keycloak-secret / OPENHIS_KEYCLOAK_SECRET")
-        if missing:
-            click.echo(
-                "\n  ERROR: --non-interactive requires all passwords to be supplied "
-                "explicitly.\n  Missing:\n"
-                + "".join(f"    • {m}\n" for m in missing),
-                err=True,
-            )
-            sys.exit(1)
-        env["POSTGRES_PASSWORD"]       = postgres_pass
-        env["ADMIN_PASS"]              = admin_pass
-        env["KEYCLOAK_ADMIN_PASSWORD"] = keycloak_pass
-        env["KEYCLOAK_CLIENT_SECRET"]  = keycloak_secret
-    else:
+    # ── Secrets ──
+    # Resolution order per key: legacy flag → env var of the same name →
+    # auto-generate (default) → interactive prompt.  In --non-interactive
+    # mode without --auto-generate, every key must be supplied explicitly —
+    # nothing may silently fall through to a compose `${VAR:-default}`.
+    flag_values = {
+        "POSTGRES_PASSWORD": postgres_pass,
+        "ADMIN_PASS": admin_pass,
+        "KEYCLOAK_ADMIN_PASSWORD": keycloak_pass,
+        "KEYCLOAK_CLIENT_SECRET": keycloak_secret,
+    }
+    supplied: list[str] = []
+    generated: list[str] = []
+    prompted: list[str] = []
+    missing: list[str] = []
+
+    if not non_interactive and not auto_generate:
         click.echo()
-        env["POSTGRES_PASSWORD"] = click.prompt(
-            "  PostgreSQL password", hide_input=True, confirmation_prompt=True
+
+    for key in _REQUIRED_SECRETS:
+        value = flag_values.get(key) or os.environ.get(key)
+        if value:
+            supplied.append(key)
+        elif auto_generate:
+            value = _generate_secret()
+            generated.append(key)
+        elif non_interactive:
+            missing.append(_LEGACY_FLAG_KEYS.get(key, f"{key} env var"))
+            continue
+        else:
+            value = click.prompt(f"  {key}", hide_input=True)
+            prompted.append(key)
+        env[key] = value
+
+    if missing:
+        click.echo(
+            "\n  ERROR: --non-interactive without --auto-generate requires every "
+            "secret to be supplied explicitly.\n  Missing:\n"
+            + "".join(f"    • {m}\n" for m in missing),
+            err=True,
         )
-        env["ADMIN_PASS"] = click.prompt(
-            "  Admin panel password", hide_input=True, confirmation_prompt=True
-        )
-        env["KEYCLOAK_ADMIN_PASSWORD"] = click.prompt(
-            "  Keycloak admin password", hide_input=True, confirmation_prompt=True
-        )
-        env["KEYCLOAK_CLIENT_SECRET"] = click.prompt(
-            "  Keycloak client secret", hide_input=True
-        )
+        sys.exit(1)
+
+    click.echo(
+        f"\n  Secrets: {len(generated)} auto-generated, "
+        f"{len(prompted)} prompted, {len(supplied)} supplied"
+    )
+    if generated:
+        click.echo("  Auto-generated (values never shown): " + ", ".join(generated))
 
     env["POSTGRES_USER"] = "openhis"
     env["ADMIN_USER"] = "admin"
     env["KEYCLOAK_ADMIN"] = "admin"
 
-    # --validate: reject any CHANGEME sentinel values
+    _write_env(env, env_path)
+    click.echo(f"\n  Wrote {env_path}")
+
+    # Validate the file actually written to disk — not the in-memory dict.
     if validate:
-        bad = [k for k, v in env.items() if v == _CHANGEME_SENTINEL]
-        if bad:
+        problems = _validate_env_file(env_path)
+        if problems:
             click.echo(
-                f"\n  ERROR: The following vars still contain the sentinel value "
-                f"'{_CHANGEME_SENTINEL}':\n"
-                + "".join(f"    • {k}\n" for k in bad),
+                f"\n  ERROR: {env_path} failed validation:\n"
+                + "".join(f"    • {p}\n" for p in problems)
+                + "  Fix the values above, or re-run with --no-validate to skip.",
                 err=True,
             )
             sys.exit(1)
+        click.echo("  Validation passed: no empty, sentinel, or weak secret values.")
 
-    _write_env(env)
-    click.echo(f"\n  Wrote {ENV_FILE}")
+    # Render nginx config (in-place only — meaningless for a dry-run dir)
+    if output_dir is not None:
+        click.echo("  Skipped nginx render (--output-dir set).")
+    else:
+        nginx_render(chosen)
+        click.echo("  Rendered infra/nginx/nginx.conf")
 
-    # Render nginx config
-    nginx_render(chosen)
-    click.echo("  Rendered infra/nginx/nginx.conf")
+    # Render secret-bearing infra templates (Keycloak realm + the matching
+    # OpenMRS/OpenELIS consumer-side OIDC config) from .env
+    try:
+        rendered = render_templates(
+            _read_env(env_path),
+            out_root=(output_dir / "infra") if output_dir else None,
+        )
+    except InfraRenderError as exc:
+        click.echo(f"\n  ERROR: {exc}", err=True)
+        sys.exit(1)
+    for path in rendered:
+        click.echo(f"  Rendered {path}")
 
     click.echo("\n  Done. Run `opm up` or `make up` to start the stack.\n")
 
@@ -520,6 +671,57 @@ def nginx(reload: bool, dry_run: bool):
     if reload:
         ok = reload_nginx()
         click.echo(f"  nginx reload: {'ok' if ok else 'FAILED'}")
+
+
+# ── opm render-infra ─────────────────────────────────────────────────────────
+
+@cli.command("render-infra")
+@click.option("--validate", is_flag=True,
+              help="Check that every template variable is set; write nothing.")
+@click.option("--env-file", type=click.Path(dir_okay=False, path_type=Path), default=None,
+              help="Read variables from this file instead of the repo .env.")
+@click.option("--out-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Write rendered files under this directory instead of infra/ (testing).")
+def render_infra(validate: bool, env_file: Optional[Path], out_dir: Optional[Path]):
+    """Render infra/**/*.j2 secret templates (except nginx) from .env values."""
+    source = env_file if env_file is not None else ENV_FILE
+    if not source.exists():
+        click.echo(f"  ERROR: {source} not found — run `opm init` first.", err=True)
+        sys.exit(1)
+
+    try:
+        outputs = render_templates(
+            _read_env(source), out_root=out_dir, write=not validate
+        )
+    except InfraRenderError as exc:
+        click.echo(f"  ERROR: {exc}", err=True)
+        sys.exit(1)
+
+    if validate:
+        click.echo(f"  OK — {len(outputs)} template(s) renderable with values from {source}")
+    else:
+        for path in outputs:
+            click.echo(f"  Rendered {path}")
+
+
+# ── opm demo-render ──────────────────────────────────────────────────────────
+
+@cli.command("demo-render")
+@click.option("--out-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Write rendered files under this directory instead of infra/ (testing).")
+def demo_render(out_dir: Optional[Path]):
+    """Render infra templates with well-known DEV-ONLY values (local demo only)."""
+    click.echo(
+        "  WARNING: rendering with publicly known dev-only secrets — "
+        "local demo use only, NEVER in any real deployment."
+    )
+    try:
+        outputs = render_templates(DEV_DEFAULTS, out_root=out_dir)
+    except InfraRenderError as exc:
+        click.echo(f"  ERROR: {exc}", err=True)
+        sys.exit(1)
+    for path in outputs:
+        click.echo(f"  Rendered {path}")
 
 
 # ── opm add-service ──────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ services:
       RIS_URL: http://ris:8002/api
       AI_CONTROLLER_URL: http://ai-controller:8000/api
       ROOT_PATH: /analytics
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: analytics-sa
       KEYCLOAK_CLIENT_SECRET: ${ANALYTICS_KC_CLIENT_SECRET:-analytics-sa-secret}
@@ -62,6 +63,7 @@ services:
       OPENELIS_URL: http://openelis:8080
       RIS_URL: http://ris:8002/api
       ROOT_PATH: /patient-portal
+      KEYCLOAK_URL: http://keycloak:8080/keycloak
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: patient-portal-sa
       KEYCLOAK_CLIENT_SECRET: ${PATIENT_PORTAL_KC_CLIENT_SECRET:-patient-portal-sa-secret}

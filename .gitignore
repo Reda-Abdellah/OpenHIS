@@ -1,5 +1,10 @@
 venv*
-scripts
+# scripts/ holds local helper scripts — ignored except committed tooling
+scripts/*
+!scripts/gen_dev_certs.sh
+!scripts/backup.sh
+!scripts/restore.sh
+!scripts/README.md
 #tests
 repomix*
 **/__pycache__/
@@ -19,7 +24,19 @@ repomix*
 **/.vscode/
 data/
 *.zip
-# local backups & dev TLS material — never commit
+# Local env-file backups must never be committed (contain secrets)
 .env.backup
-.env.*.backup
+.env*.backup
+# Locally generated TLS material (scripts/gen_dev_certs.sh)
 infra/ssl/
+# Rendered from infra/keycloak/openhis-realm.json.j2 by `opm init` /
+# `opm render-infra` / `opm demo-render` — per-deployment artifact that
+# carries real client secrets; never commit it.
+infra/keycloak/openhis-realm.json
+# Consumer-side OIDC config rendered from the sibling *.j2 templates by the
+# same commands — they carry OPENMRS_KC_CLIENT_SECRET / OPENELIS_OIDC_SECRET,
+# which must match the rendered Keycloak realm; never commit them.
+infra/openmrs/oauth2.properties
+infra/openelis/extra.properties
+# Backup output from scripts/backup.sh (PHI/data — never commit)
+backups/

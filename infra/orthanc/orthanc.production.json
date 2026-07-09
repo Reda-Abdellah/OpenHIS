@@ -1,0 +1,42 @@
+{
+  "Name"                  : "OpenHIS",
+  "StorageDirectory"      : "/var/lib/orthanc/db",
+  "HttpServerEnabled"     : true,
+  "HttpPort"              : 8042,
+  "HttpCompressionEnabled": true,
+  "HttpPrefix": "/orthanc",
+  "RemoteAccessAllowed"   : true,
+  "AuthenticationEnabled" : true,
+  "RegisteredUsers" : {
+    "orthanc" : "CHANGE_ME_BEFORE_DEPLOY"
+  },
+  "DicomServerEnabled"    : true,
+  "DicomAet"              : "ORTHANC",
+  "DicomPort"             : 4242,
+  "DefaultEncoding"       : "Latin1",
+  "OverwriteInstances"    : false,
+
+  "DicomWeb" : {
+    "Enable"             : true,
+    "Root"               : "/dicom-web/",
+    "EnableWado"         : true,
+    "WadoRoot"           : "/wado",
+    "Ssl"                : false,
+    "QidoCaseSensitive"  : false,
+    "Host"               : "localhost",
+    "PublicRoot"         : "/orthanc/dicom-web/"
+  },
+
+  "PostgreSQL" : {
+    "EnableIndex" : true,
+    "Host"        : "postgres",
+    "Port"        : 5432,
+    "Database"    : "orthanc",
+    "Username"    : "orthanc",
+    "Password"    : "orthanc",
+    "EnableSsl"   : false
+  },
+
+  "PythonScript"  : "/etc/orthanc/plugin.py",
+  "PythonVerbose" : false
+}
