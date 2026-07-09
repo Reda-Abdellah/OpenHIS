@@ -116,7 +116,7 @@ This creates `services/my-service/` with:
 - `openhis.service.json` — service manifest
 - `tests/test_my_service.py`
 
-See [docs/adding-a-module.md](docs/adding-a-module.md) for the full contract.
+See [docs/explaining_the_project/adding-a-module.md](../explaining_the_project/adding-a-module.md) for the full contract.
 
 ---
 

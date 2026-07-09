@@ -16,7 +16,7 @@ Options evaluated:
   on OpenMRS for all identity lookups.
 - **External MPI (OpenEMPI, HAPI FHIR Patient/$match)** — standards-based but
   adds infrastructure complexity.
-- **Custom lightweight MPI service** — SQLite-backed service that stores a master
+- **Custom lightweight MPI service** — a small service that stores a master
   patient index and cross-reference table linking system-specific IDs.
 
 ## Decision
@@ -35,8 +35,9 @@ The MRN (medical record number) is the matching key between systems.
 
 - **Stable identity across systems** — any service can resolve a patient by MRN
   and get back OpenMRS UUID, OpenELIS ID, and Odoo partner ID in one call.
-- **SQLite dependency** — acceptable for single-node deployments; replace with
-  PostgreSQL if the deployment scales to multiple MPI replicas.
+- **PostgreSQL-backed** — originally shipped on SQLite; migrated to PostgreSQL
+  (Postgres-specific DDL: `SERIAL`, `ON CONFLICT`, `RETURNING`), which removes
+  the single-replica limitation this ADR initially accepted.
 - **Eventual consistency** — cross-references are updated asynchronously via the
   event bus; there is a brief window where a newly synced patient is not yet
   cross-referenced.

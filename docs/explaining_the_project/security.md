@@ -47,6 +47,40 @@ clinical environment with real patient data.
       varies EU)
 - [ ] Confirm Admin UI audit log view shows events from all services
 
+## What the platform already enforces (2026-06 hardening wave)
+
+The following protections now ship enabled in the tree — the checklist
+above covers what *you* still have to do per deployment:
+
+- **MLLP is internal-only by default** — compose no longer publishes port
+  2575 on the host. Re-expose it deliberately with
+  `docker compose -f compose/base.yml -f compose/overrides/mllp-public.yml …`
+  and apply the firewall restriction from the MLLP checklist above.
+- **Redis AUTH** — set `REDIS_PASSWORD` in `.env` and every service and the
+  event bus connect with it (empty keeps the open dev behaviour).
+- **nginx njs RS256 gate** — the njs guard verifies RS256 JWT signatures
+  against the Keycloak JWKS (not just token structure/expiry); `/orthanc/`
+  is role-gated behind it and machine-to-machine FHIR routes are restricted
+  to the pinned `openhis-net` subnet.
+- **docker-socket-proxy** — ai-controller reaches Docker through a
+  least-privilege socket proxy instead of mounting `/var/run/docker.sock`;
+  pipeline containers are restricted to the `POC_ALLOWED_IMAGES` allowlist
+  and run with memory/CPU/pids caps plus `no-new-privileges`.
+- **`opm init` generates strong secrets** — every required secret is
+  auto-generated (weak supplied passwords are rejected) and the Keycloak
+  realm is rendered from `infra/keycloak/openhis-realm.json.j2` with those
+  values. The rendered realm is gitignored: fresh clones must run
+  `opm init` (or `opm demo-render` for throwaway dev values) before the
+  first `make up`.
+- **`/metrics` exposure model** — every native service serves a JWT-exempt
+  Prometheus `GET /metrics`, but nginx returns 404 for it externally;
+  scraping only works from inside the compose network
+  (e.g. `http://mpi:8007/metrics`).
+- **`DEV_MODE` guard** — `DEV_MODE=true` (JWT bypass) refuses to boot
+  unless `ENV=development`, so the bypass cannot reach staging or
+  production containers.
+
 ## Reporting Vulnerabilities
 
-See [SECURITY.md](../SECURITY.md) at the repo root.
+See [SECURITY.md](../../SECURITY.md) at the repo root and the
+[contributor security policy](../guidelines_for_contributors/SECURITY.md).

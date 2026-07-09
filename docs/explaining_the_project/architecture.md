@@ -90,4 +90,4 @@ See [adding-a-module.md](adding-a-module.md) for the full contract.
 
 ## Architectural Decisions
 
-See [adr/](adr/) for the rationale behind key design choices.
+See [docs/adr/](../adr/) for the rationale behind key design choices.

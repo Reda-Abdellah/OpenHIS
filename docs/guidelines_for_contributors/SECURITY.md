@@ -46,7 +46,7 @@ Operators are responsible for:
 
 ## Known Hardening Requirements (pre-production)
 
-See [docs/security.md](docs/security.md) for the full checklist, including:
+See [docs/explaining_the_project/security.md](../explaining_the_project/security.md) for the full checklist, including:
 - Keycloak production mode (`start` not `start-dev`)
 - MLLP TLS configuration
 - Redis AOF persistence
