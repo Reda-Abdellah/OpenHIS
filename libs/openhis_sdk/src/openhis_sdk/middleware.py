@@ -15,7 +15,9 @@ from starlette.requests import Request
 
 log = logging.getLogger("openhis_sdk.access")
 
-_SKIP_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json"}
+# /metrics: scraped periodically (openhis_sdk.metrics) — keep it out of the
+# access log for the same reason as /api/health.
+_SKIP_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json", "/metrics"}
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

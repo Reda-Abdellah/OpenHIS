@@ -13,10 +13,16 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "redis[hiredis]>=5.0",
     "python-json-logger>=3.0",
+    # openhis_sdk.metrics primary backend (zero-dep fallback keeps the SDK
+    # importable without it)
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "respx"]
+# fakeredis backs tests/unit/sdk/test_bus.py (in-memory Redis Streams)
+# fhir.resources validates the hub CapabilityStatement payload
+# (tests/unit/integration-hub/test_hub_fhir_metadata.py)
+dev = ["pytest", "pytest-asyncio", "respx", "fakeredis", "fhir.resources>=7.1"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/openhis_sdk"]
