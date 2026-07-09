@@ -34,6 +34,17 @@ jobs:
             exit 1
           fi
 
+      - name: Check no inline JWT validation logic outside libs/
+        # Catches re-implementations that don't define JWTMiddleware
+        # (e.g. dependency-only modules doing their own JWKS/jose decode).
+        run: |
+          found=$(grep -rlE "jose_jwt\.decode|_get_jwks" services/ --include='*.py' 2>/dev/null | grep -v '_legacy' || true)
+          if [ -n "$found" ]; then
+            echo "ERROR: Inline JWT validation logic found outside libs/:"
+            echo "$found"
+            exit 1
+          fi
+
   # ── Unit tests ──────────────────────────────────────────────────────────────
   unit-tests:
     name: Unit Tests
@@ -81,79 +92,60 @@ jobs:
 
       - name: Install all service dependencies
         run: |
-          pip install pytest pytest-asyncio httpx
+          pip install pytest pytest-asyncio httpx respx
+          # [dev] extra pulls fakeredis (tests/unit/sdk + bus regression tests)
+          # and fhir.resources (tests/unit/integration-hub CapabilityStatement)
+          pip install -e 'libs/openhis_sdk[dev]'
+          pip install -e platform
           for req in services/*/requirements.txt; do
             pip install -r "$req"
           done
 
-      - name: Run Admin tests
-        env:
-          LOG_FORMAT: text
-        run: pytest tests/unit/admin/ -v
-
-      - name: Run MPI tests
+      # The MPI suite needs the Postgres sidecar (MPI_DATABASE_URL); without it
+      # 74 DB-bound tests skip silently — see tests/unit/mpi/conftest.py (DEF-003).
+      - name: Run unit suite
         env:
           MPI_DATABASE_URL: postgresql://mpi:mpi@localhost:5432/mpi_test
           REDIS_URL: redis://localhost:6379
-          LOG_FORMAT: text
-        run: pytest tests/mpi/ -v
-
-      - name: Run HL7 tests
-        env:
-          OPENMRS_USER: admin
-          OPENMRS_PASS: test
-          REDIS_URL: redis://localhost:6379
-          LOG_FORMAT: text
-        run: pytest tests/hl7/ -v
-
-      - name: Run Integration-Hub tests
-        env:
           OPENMRS_USER: admin
           OPENMRS_PASS: test
           OPENELIS_USER: admin
           OPENELIS_PASS: test
           ODOO_USER: admin
           ODOO_PASS: test
-          REDIS_URL: redis://localhost:6379
           LOG_FORMAT: text
-        run: pytest tests/integration-hub/ -v
+        run: pytest tests/unit -q --tb=short
 
-      - name: Run Analytics tests
+      - name: Assert MPI DB-bound tests actually ran (no silent skips)
         env:
+          MPI_DATABASE_URL: postgresql://mpi:mpi@localhost:5432/mpi_test
+          LOG_FORMAT: text
+        run: |
+          skipped=$(pytest tests/unit/mpi -q -rs --tb=no | grep -c 'PostgreSQL not reachable' || true)
+          if [ "$skipped" -gt 0 ]; then
+            echo "ERROR: $skipped MPI tests skipped — Postgres sidecar misconfigured"
+            exit 1
+          fi
+
+      - name: Run auth deny-by-default harness
+        env:
+          LOG_FORMAT: text
+        run: pytest tests/auth -q --tb=short
+
+      - name: Run MPI matching benchmark (regression floors)
+        env:
+          LOG_FORMAT: text
+        run: pytest tests/benchmarks -q --tb=short
+
+      - name: Run integration suite (respx mocks)
+        env:
+          REDIS_URL: redis://localhost:6379
           OPENMRS_USER: admin
           OPENMRS_PASS: test
           OPENELIS_USER: admin
           OPENELIS_PASS: test
-          REDIS_URL: redis://localhost:6379
           LOG_FORMAT: text
-        run: pytest tests/analytics/ -v
-
-      - name: Run AI-Controller tests
-        env:
-          REDIS_URL: redis://localhost:6379
-          LOG_FORMAT: text
-        run: pytest tests/ai-controller/ -v
-
-      - name: Run RIS tests
-        env:
-          OPENMRS_USER: admin
-          OPENMRS_PASS: test
-          LOG_FORMAT: text
-        run: pytest tests/ris/ -v
-
-      - name: Run Patient Portal tests
-        env:
-          OPENMRS_USER: admin
-          OPENMRS_PASS: test
-          OPENELIS_USER: admin
-          OPENELIS_PASS: test
-          LOG_FORMAT: text
-        run: pytest tests/patient-portal/ -v
-
-      - name: Run HL7 simulator tests
-        env:
-          LOG_FORMAT: text
-        run: pytest tests/simulator/ -v
+        run: pytest tests/integration -q --tb=short
 
   # ── Smoke tests ─────────────────────────────────────────────────────────────
   # Requires a full running stack; runs on push to main/master only.
@@ -197,6 +189,71 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f compose/base.yml down -v
+
+  # ── End-to-end V&V scenarios ────────────────────────────────────────────────
+  # Executable mirror of docs/verification_and_validation/v-and-v-scenario.md.
+  # Boots an ephemeral stack with the clinical profiles, then runs the 8
+  # cross-service scenarios. Heavy (OpenMRS+OpenELIS first boot), so it only
+  # runs on merge to main/master or on demand.
+  e2e-tests:
+    name: E2E V&V Scenarios
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    needs: unit-tests
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy env file
+        run: cp .env.example .env && sed -i 's/CHANGE_ME_BEFORE_DEPLOY/test_ci_value/g' .env
+
+      - name: Render infra templates (Keycloak realm, OpenELIS properties)
+        # The rendered realm is gitignored (carries client secrets) — a
+        # fresh checkout must render it or Keycloak imports nothing and
+        # every OIDC login fails.
+        run: |
+          pip install jinja2 click requests pyyaml
+          python platform/opm.py demo-render
+
+      - name: Start stack with clinical profiles
+        run: |
+          OPENHIS_PROFILES=emr,laboratory,imaging,analytics \
+          docker compose \
+            -f compose/base.yml \
+            -f compose/profiles/emr.yml \
+            -f compose/profiles/laboratory.yml \
+            -f compose/profiles/imaging.yml \
+            -f compose/profiles/analytics.yml \
+            up -d --wait --wait-timeout 900
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install e2e deps
+        run: pip install pytest httpx
+
+      - name: Run e2e scenarios
+        run: pytest tests/e2e --e2e -v
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f compose/base.yml ps
+          docker compose -f compose/base.yml logs --tail=80
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f compose/base.yml \
+            -f compose/profiles/emr.yml \
+            -f compose/profiles/laboratory.yml \
+            -f compose/profiles/imaging.yml \
+            -f compose/profiles/analytics.yml \
+            down -v
 
   # ── Docker build check ──────────────────────────────────────────────────────
   docker-build:
