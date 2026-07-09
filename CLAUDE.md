@@ -69,10 +69,11 @@ tests/
   smoke/          Full Docker stack; ~15 min; run on merge to main
 docs/
   concepts.md                      ← What OpenHIS is and why (start here)
-  explaining-the-project/          Architecture, adapter/service/profile contracts
+  explaining_the_project/          Architecture, adapter/service/profile contracts
   adr/                             Architectural Decision Records
-  guidelines-for-contributors/     CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
-  task-planning/                   Active TODO list and phase plans
+  guidelines_for_contributors/     CONTRIBUTING, SECURITY, CODE_OF_CONDUCT
+  task_planning/                   Task tracking system — see its README.md
+                                   (active plan, defect registry, archive/)
 ```
 
 ---
