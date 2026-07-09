@@ -9,10 +9,15 @@ that are still emitted by services that survive Phase 5 cutover:
 Each handler translates the payload to FHIR and pushes it to OpenMRS FHIR R4.
 Patient resolution is best-effort: we search OpenMRS by PatientID / MRN field
 from the source payload and fall back to a placeholder reference if not found.
+
+Ingest endpoints are role-gated (T-06): callers must present a JWT carrying
+"radiologist"/"admin" (report-final) or "internal-sync"/"admin" (machine
+webhooks). In DEV_MODE the SDK dev-claims path supplies the admin role.
 """
 import logging
 import httpx
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
+from openhis_sdk.auth import require_roles
 from app.config import OPENMRS_URL
 from app.token import get_service_token
 from app.translators.diagnostic_report import to_fhir_diagnostic_report_radiology
@@ -73,8 +78,9 @@ async def _resolve_patient_uuid(mrn_or_id: str) -> str:
 
 # ── event handlers ────────────────────────────────────────────────────────────
 
-@router.post("/report-final")
-async def on_report_final(payload: dict, bg: BackgroundTasks):
+@router.post("/report-final",
+             dependencies=[Depends(require_roles("radiologist", "admin"))])
+async def on_report_final(payload: dict, bg: BackgroundTasks) -> dict:
     """RIS FINAL radiology report → FHIR DiagnosticReport → OpenMRS."""
     bg.add_task(_handle_report_final, payload)
     return {"status": "queued"}
@@ -113,8 +119,9 @@ async def _handle_report_final(payload: dict):
         await audit.log_event("fhir_push_failed", "DiagnosticReport", report.get("order_id", ""), "hub→omrs", "failed", str(exc))
 
 
-@router.post("/dicom-stored")
-async def on_dicom_stored(payload: dict, bg: BackgroundTasks):
+@router.post("/dicom-stored",
+             dependencies=[Depends(require_roles("internal-sync", "admin"))])
+async def on_dicom_stored(payload: dict, bg: BackgroundTasks) -> dict:
     """Orthanc stored DICOM instance → FHIR ImagingStudy → OpenMRS."""
     bg.add_task(_handle_dicom_stored, payload)
     return {"status": "queued"}
@@ -160,8 +167,9 @@ async def _handle_dicom_stored(payload: dict):
         await audit.log_event("fhir_push_failed", "ImagingStudy", instance_id, "hub→omrs", "failed", str(exc))
 
 
-@router.post("/ai-job-completed")
-async def on_ai_job_completed(payload: dict, bg: BackgroundTasks):
+@router.post("/ai-job-completed",
+             dependencies=[Depends(require_roles("internal-sync", "admin"))])
+async def on_ai_job_completed(payload: dict, bg: BackgroundTasks) -> dict:
     """AI controller job completed → FHIR Observations → OpenMRS."""
     bg.add_task(_handle_ai_job, payload)
     return {"status": "queued"}

@@ -17,6 +17,8 @@ from builder import build_ack
 from database import get_db
 from parser import parse as hl7_parse
 
+from openhis_sdk.bus import MAXLEN as BUS_MAXLEN
+
 log = logging.getLogger("hl7.handlers")
 
 OPENMRS_URL  = os.environ.get("OPENMRS_URL",  "http://openmrs:8080")
@@ -52,7 +54,7 @@ async def _bus_publish(event_type: str, payload: dict) -> None:
                 "payload": json.dumps(payload),
                 "ts": datetime.datetime.now(timezone.utc).isoformat(),
             },
-            maxlen=10_000,
+            maxlen=BUS_MAXLEN,
             approximate=True,
         )
         await r.aclose()

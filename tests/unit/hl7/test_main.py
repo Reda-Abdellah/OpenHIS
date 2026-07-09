@@ -389,6 +389,73 @@ class TestSendAPI:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TestOutboundPatientPersistence (DEF-008)
+# Outbound messages must persist patient_id / patient_name via the shared
+# PID parser, for both nested {"patient": {...}} and flat portal/e2e bodies.
+# ─────────────────────────────────────────────────────────────────────────────
+class TestOutboundPatientPersistence:
+    def test_adt_nested_patient_persists_id_and_name(self, client):
+        r = client.post("/api/send/adt",
+                        json={"event": "A04", "patient": PATIENT})
+        assert r.status_code == 200
+        msg = client.get(f"/api/messages/{r.json()['msg_id']}").json()
+        assert msg["patient_id"]   == "MRN-001"
+        assert msg["patient_name"] == "Jane Doe"
+
+    def test_adt_flat_body_persists_id_and_name(self, client):
+        r = client.post("/api/send/adt", json={
+            "mrn":        "E2E-HL7-A04",
+            "first_name": "Marie",
+            "last_name":  "Curie",
+            "gender":     "F",
+            "birth_date": "1867-11-07",
+            "event_code": "A04",
+        })
+        assert r.status_code == 200
+        assert r.json()["msg_type"] == "ADT^A04"
+        msg = client.get(f"/api/messages/{r.json()['msg_id']}").json()
+        assert msg["patient_id"] == "E2E-HL7-A04"
+        assert msg["patient_name"]          # non-empty
+
+    def test_oru_flat_body_persists_id_and_name(self, client):
+        r = client.post("/api/send/oru", json={
+            "mrn":           "E2E-HL7-A04",
+            "first_name":    "Marie",
+            "last_name":     "Curie",
+            "order_id":      "E2E-ORD-001",
+            "test_code":     "GLU",
+            "test_name":     "Glucose",
+            "value":         "92",
+            "unit":          "mg/dL",
+            "abnormal_flag": "N",
+        })
+        assert r.status_code == 200
+        assert "OBX|1|" in r.json()["raw"]
+        msg = client.get(f"/api/messages/{r.json()['msg_id']}").json()
+        assert msg["patient_id"] == "E2E-HL7-A04"
+        assert msg["patient_name"]          # non-empty
+
+    def test_orm_persists_patient_id(self, client):
+        r = client.post("/api/send/orm", json={
+            "patient":  PATIENT,
+            "order_id": "ORD-ORM-001",
+            "tests":    [{"loinc": "2345-7", "name": "Glucose"}],
+            "transmit": False,
+        })
+        assert r.status_code == 200
+        msg = client.get(f"/api/messages/{r.json()['msg_id']}").json()
+        assert msg["patient_id"]   == "MRN-001"
+        assert msg["patient_name"] == "Jane Doe"
+
+    def test_adt_without_patient_stores_empty_without_error(self, client):
+        r = client.post("/api/send/adt", json={"event": "A04"})
+        assert r.status_code == 200
+        msg = client.get(f"/api/messages/{r.json()['msg_id']}").json()
+        assert msg["patient_id"] in ("", None)
+        assert msg["patient_name"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TestInboundAPI
 # ─────────────────────────────────────────────────────────────────────────────
 class TestInboundAPI:

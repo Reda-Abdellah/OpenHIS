@@ -31,7 +31,7 @@ def set_config(key: str, body: dict, claims: dict = Depends(require_token)):
     if value is None:
         raise HTTPException(400, "'value' required")
     value = str(value).strip()
-    now   = datetime.datetime.utcnow().isoformat(timespec='seconds')
+    now   = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
     username = claims.get("preferred_username", "unknown")
     with get_db() as db:
         db.execute(

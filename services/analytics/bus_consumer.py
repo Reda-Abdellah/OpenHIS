@@ -9,36 +9,26 @@ Consumer group: analytics
 Consumer name:  analytics-1
 
 Events recorded: all (type is stored verbatim so new events appear
-automatically in the dashboard without code changes).
+automatically in the dashboard without code changes) — consumed through
+the SDK BusConsumer's fallback_handler, which receives the raw field
+mapping for every entry. Entries are acked only after successful
+handling; poison entries land on openhis:events:dlq after max_delivery
+attempts (see docs/adr/0005-bus-dead-letter-semantics.md).
 """
-import asyncio
-import json
 import logging
 import os
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
-
 from database import get_db
+from openhis_sdk.bus import BusConsumer
 
 log = logging.getLogger("analytics.bus")
 
-STREAM   = "openhis:events"
 GROUP    = "analytics"
 CONSUMER = "analytics-1"
-BLOCK_MS = 5_000
 BATCH    = 50
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "")
-
-_client: aioredis.Redis | None = None
-
-
-def _get_client() -> aioredis.Redis:
-    global _client
-    if _client is None:
-        _client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    return _client
 
 
 def _ensure_event_counts_table() -> None:
@@ -73,6 +63,15 @@ def _record_event(event_type: str, source: str, ts: str) -> None:
         )
 
 
+async def _record_fields(fields: dict) -> None:
+    """Fallback handler: tally any event from its raw field mapping."""
+    _record_event(
+        fields.get("type", "unknown"),
+        fields.get("source", "unknown"),
+        fields.get("ts", ""),
+    )
+
+
 async def consume_loop() -> None:
     """Main consumer loop — runs until the task is cancelled."""
     if not REDIS_URL:
@@ -80,39 +79,12 @@ async def consume_loop() -> None:
         return
 
     _ensure_event_counts_table()
-    r = _get_client()
-
-    try:
-        await r.xgroup_create(STREAM, GROUP, id="$", mkstream=True)
-    except aioredis.ResponseError as e:
-        if "BUSYGROUP" not in str(e):
-            log.warning("xgroup_create: %s", e)
-
-    log.info("Analytics bus consumer started (stream=%s group=%s)", STREAM, GROUP)
-
-    while True:
-        try:
-            results = await r.xreadgroup(
-                groupname=GROUP,
-                consumername=CONSUMER,
-                streams={STREAM: ">"},
-                count=BATCH,
-                block=BLOCK_MS,
-            )
-            if not results:
-                continue
-
-            for _stream, messages in results:
-                for entry_id, fields in messages:
-                    event_type = fields.get("type", "unknown")
-                    source     = fields.get("source", "unknown")
-                    ts         = fields.get("ts", "")
-                    _record_event(event_type, source, ts)
-                    await r.xack(STREAM, GROUP, entry_id)
-
-        except asyncio.CancelledError:
-            log.info("Analytics bus consumer stopping")
-            break
-        except Exception as exc:
-            log.error("Bus consumer error: %s — retrying in 5 s", exc)
-            await asyncio.sleep(5)
+    consumer = BusConsumer(
+        redis_url=REDIS_URL,
+        group=GROUP,
+        consumer=CONSUMER,
+        handlers={},
+        batch=BATCH,
+        fallback_handler=_record_fields,
+    )
+    await consumer.run()

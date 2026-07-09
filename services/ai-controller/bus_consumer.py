@@ -5,6 +5,10 @@ Listens for clinical data events (lab_result.ready, patient.synced) and
 automatically triggers matching AI pipeline jobs when auto-trigger rules
 are configured for those source types.
 
+Consumption goes through the SDK BusConsumer: entries are acked only
+after successful handling; poison entries land on openhis:events:dlq
+after max_delivery attempts (see docs/adr/0005-bus-dead-letter-semantics.md).
+
 Consumer group: ai-controller
 Consumer name:  ai-controller-1
 """
@@ -15,28 +19,15 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
-
 from database import get_db, rows_to_list
+from openhis_sdk.bus import BusConsumer
 
 log = logging.getLogger("ai-controller.bus")
 
-STREAM   = "openhis:events"
 GROUP    = "ai-controller"
 CONSUMER = "ai-controller-1"
-BLOCK_MS = 5_000   # block up to 5 s waiting for new messages
-BATCH    = 20
 
 REDIS_URL: str = os.environ.get("REDIS_URL", "")
-
-_client: aioredis.Redis | None = None
-
-
-def _get_client() -> aioredis.Redis:
-    global _client
-    if _client is None:
-        _client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    return _client
 
 
 # ── rule matching ─────────────────────────────────────────────────────────────
@@ -232,56 +223,14 @@ _HANDLERS = {
 }
 
 
-async def _process_message(entry_id: str, fields: dict) -> None:
-    event_type = fields.get("type", "")
-    handler = _HANDLERS.get(event_type)
-    if handler is None:
-        return
-    try:
-        payload = json.loads(fields.get("payload", "{}"))
-        await handler(payload)
-    except Exception as exc:
-        log.error("Error handling %s (%s): %s", event_type, entry_id, exc)
-
-
 # ── main loop ─────────────────────────────────────────────────────────────────
 
 async def consume_loop() -> None:
     """Main consumer loop — runs until the task is cancelled."""
-    if not REDIS_URL:
-        log.info("REDIS_URL not set — AI controller bus consumer disabled")
-        return
-
-    r = _get_client()
-
-    try:
-        await r.xgroup_create(STREAM, GROUP, id="$", mkstream=True)
-    except aioredis.ResponseError as e:
-        if "BUSYGROUP" not in str(e):
-            log.warning("xgroup_create: %s", e)
-
-    log.info("AI controller bus consumer started (stream=%s group=%s)", STREAM, GROUP)
-
-    while True:
-        try:
-            results = await r.xreadgroup(
-                groupname=GROUP,
-                consumername=CONSUMER,
-                streams={STREAM: ">"},
-                count=BATCH,
-                block=BLOCK_MS,
-            )
-            if not results:
-                continue
-
-            for _stream, messages in results:
-                for entry_id, fields in messages:
-                    await _process_message(entry_id, fields)
-                    await r.xack(STREAM, GROUP, entry_id)
-
-        except asyncio.CancelledError:
-            log.info("AI controller bus consumer stopping")
-            break
-        except Exception as exc:
-            log.error("Bus consumer error: %s — retrying in 5 s", exc)
-            await asyncio.sleep(5)
+    consumer = BusConsumer(
+        redis_url=REDIS_URL,
+        group=GROUP,
+        consumer=CONSUMER,
+        handlers=_HANDLERS,
+    )
+    await consumer.run()

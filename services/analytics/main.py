@@ -13,11 +13,16 @@ log = logging.getLogger('analytics')
 
 ROOT_PATH = os.environ.get('ROOT_PATH', '')
 
-_REQUIRED_ENV = ["KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+_REQUIRED_ENV = ["KEYCLOAK_URL", "KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+
+
+def _missing_env() -> list[str]:
+    """Return the names of required env vars that are unset or empty."""
+    return [k for k in _REQUIRED_ENV if not os.getenv(k)]
 
 
 def _check_env() -> None:
-    missing = [k for k in _REQUIRED_ENV if not os.getenv(k)]
+    missing = _missing_env()
     if missing:
         sys.exit(f"FATAL: Missing required env vars: {', '.join(missing)}")
 
@@ -51,9 +56,12 @@ async def lifespan(app: FastAPI):
 
 
 from jwt_auth import JWTMiddleware
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="Analytics", version="1.0.0", root_path=ROOT_PATH, lifespan=lifespan)
 app.add_middleware(JWTMiddleware)
+app.add_middleware(MetricsMiddleware, service="analytics")
+app.include_router(metrics_router)   # Prometheus /metrics (SDK) — distinct from routers/metrics.py
 app.include_router(metrics.router)
 app.include_router(export.router)
 

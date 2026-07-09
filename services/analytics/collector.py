@@ -60,7 +60,7 @@ async def collect_all() -> dict:
         total_patients = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   auth_hdr)
         active_enc     = await _fhir_count(c, f"{_OMRS_FHIR}/Encounter", auth_hdr,
                                            {"status": "in-progress"})
-        today_str      = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        today_str      = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         new_today      = await _fhir_count(c, f"{_OMRS_FHIR}/Patient",   auth_hdr,
                                            {"_lastUpdated": f"ge{today_str}"})
         result["ehr"] = {
@@ -120,7 +120,7 @@ async def collect_all() -> dict:
 
 
 async def collect_and_store():
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     try:
         data = await collect_all()
         with get_db() as db:

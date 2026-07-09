@@ -37,9 +37,12 @@ async def lifespan(app: FastAPI):
 
 
 from jwt_auth import JWTMiddleware
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="RIS — Radiology Information System", version="3.3.0", root_path=ROOT_PATH, lifespan=lifespan)
 app.add_middleware(JWTMiddleware, extra_public_prefixes=("/static/",))
+app.add_middleware(MetricsMiddleware, service="ris")
+app.include_router(metrics_router)
 
 
 @app.get("/api/auth/config")

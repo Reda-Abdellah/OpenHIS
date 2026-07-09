@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/patients", tags=["patients"])
 
@@ -20,7 +21,7 @@ class PatientUpdate(BaseModel):
     sex:          Optional[str] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
 def list_patients(q: Optional[str] = Query(None)):
     with get_db() as db:
         if q:
@@ -35,7 +36,7 @@ def list_patients(q: Optional[str] = Query(None)):
         return rows_to_list(rows)
 
 
-@router.get("/{patient_id}")
+@router.get("/{patient_id}", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
 def get_patient(patient_id: int):
     with get_db() as db:
         row = db.execute(
@@ -45,7 +46,7 @@ def get_patient(patient_id: int):
         return dict(row)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles("clinician", "admin"))])
 def create_patient(body: PatientCreate):
     with get_db() as db:
         if body.mrn and db.execute(
@@ -61,7 +62,7 @@ def create_patient(body: PatientCreate):
             "SELECT * FROM patients WHERE id=?", (cur.lastrowid,)).fetchone())
 
 
-@router.patch("/{patient_id}")
+@router.patch("/{patient_id}", dependencies=[Depends(require_roles("clinician", "admin"))])
 def update_patient(patient_id: int, body: PatientUpdate):
     allowed = {"patient_name", "birth_date", "sex"}
     updates = {k: v for k, v in body.model_dump().items()
@@ -79,7 +80,7 @@ def update_patient(patient_id: int, body: PatientUpdate):
         return dict(row)
 
 
-@router.delete("/{patient_id}", status_code=204)
+@router.delete("/{patient_id}", status_code=204, dependencies=[Depends(require_roles("admin"))])
 def delete_patient(patient_id: int):
     with get_db() as db:
         db.execute("DELETE FROM patients WHERE id=?", (patient_id,))
@@ -95,7 +96,7 @@ class EHRPatientPush(BaseModel):
     sex:          Optional[str] = None
 
 
-@router.post("/from-ehr", status_code=200)
+@router.post("/from-ehr", status_code=200, dependencies=[Depends(require_roles("clinician", "admin"))])
 def upsert_from_ehr(body: EHRPatientPush):
     """
     Upsert a patient pushed by the EHR via the FHIR bridge.

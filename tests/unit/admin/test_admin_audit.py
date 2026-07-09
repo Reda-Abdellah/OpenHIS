@@ -17,11 +17,6 @@ def test_audit_log_endpoint_returns_list(client, auth_headers):
     assert isinstance(entries, list)
 
 
-@pytest.mark.xfail(
-    reason="DEFECT: registry mutations (POST /api/registry) do not write to "
-           "audit_log. The audit router exists but no write path triggers it. "
-           "See defect report: admin_registry_mutations_not_audited."
-)
 def test_audit_log_records_registry_post(client, auth_headers):
     """Registering a service via POST should create an audit entry."""
     client.post("/api/registry", json={

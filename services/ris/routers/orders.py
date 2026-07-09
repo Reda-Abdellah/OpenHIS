@@ -147,7 +147,7 @@ def create_order(body: OrderCreate):
     return row_to_dict(row)
 
 
-@router.get("/orders/{order_id}")
+@router.get("/orders/{order_id}", dependencies=[Depends(require_roles("clinician", "radiologist", "admin"))])
 def get_order(order_id: int):
     with get_db() as db:
         row = db.execute(_WORKLIST_SQL + "WHERE o.id=?", (order_id,)).fetchone()
@@ -156,7 +156,7 @@ def get_order(order_id: int):
     return row_to_dict(row)
 
 
-@router.put("/orders/{order_id}")
+@router.put("/orders/{order_id}", dependencies=[Depends(require_roles("radiologist", "admin"))])
 def update_order(order_id: int, body: OrderUpdate):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
@@ -176,7 +176,7 @@ def update_order(order_id: int, body: OrderUpdate):
     return row_to_dict(row)
 
 
-@router.delete("/orders/{order_id}", status_code=204)
+@router.delete("/orders/{order_id}", status_code=204, dependencies=[Depends(require_roles("admin"))])
 def cancel_order(order_id: int):
     with get_db() as db:
         row = db.execute("SELECT id FROM orders WHERE id=?", (order_id,)).fetchone()

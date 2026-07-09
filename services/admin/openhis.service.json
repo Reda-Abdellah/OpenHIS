@@ -7,8 +7,11 @@
   "health_path": "/api/health",
   "bus": {
     "publishes": [],
-    "subscribes": []
+    "subscribes": ["patient.synced"]
   },
   "depends_on": ["postgres", "keycloak", "redis"],
+  "env": {
+    "required": ["KEYCLOAK_URL", "REDIS_URL"]
+  },
   "description": "Management plane: users, config, service registry, announcements, live event stream."
 }

@@ -59,7 +59,7 @@ Exercising each tile from the portal (`localhost/`) with an
 
 ## Defects in Service Logic
 
-### DEF-001 — `health_check()` adapters require a Keycloak token
+### DEF-001 — `health_check()` adapters require a Keycloak token  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
 
 **Affected service:** `services/integration-hub/`  
 **Files:** `app/services/openmrs.py`, `app/services/openelis.py`  
@@ -77,9 +77,16 @@ dedicated unauthenticated health probe.
 now mocks the Keycloak token endpoint alongside the upstream endpoints to reflect the
 current (defective) behaviour.
 
+**Resolution applied in code 2026-06-12:** `health_check()` in the OpenMRS and
+OpenELIS adapters now probes upstream liveness **without** fetching a Keycloak
+token, so "Keycloak down" can no longer masquerade as "upstream down". Unit and
+integration tests updated (`test_hub_health.py`, `test_lab_result_flow.py`);
+the e2e suite no longer treats a `degraded` hub as expected. Status: fixed in
+code 2026-06-12 — pending live `make e2e` confirmation.
+
 ---
 
-### DEF-002 — Admin registry mutations are not audited
+### DEF-002 — Admin registry mutations are not audited  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
 
 **Affected service:** `services/admin/`  
 **Files:** `routers/registry.py`, `routers/audit.py`  
@@ -94,6 +101,15 @@ OpenHIS audit contract for write operations.
 handler (`register_service`, `deregister_service`, `enable_profile`, `disable_profile`).  
 **Test status:** `test_admin_audit.py::test_audit_log_records_registry_post` marked
 `xfail` with this defect reference; will auto-promote to FAILED if fixed.
+
+**Resolution applied in code 2026-06-12 (T-03):** every admin write handler
+(registry, profiles, identity, config, announcements, platform) now requires
+auth + roles and writes an audit row; a `patient.synced` bus consumer
+(`services/admin/bus_consumer.py`) bridges bus events into the admin audit log
+(S1.7). Unit coverage in `tests/unit/admin/test_admin_audit_mutations.py`,
+`test_admin_bus_audit.py` and `test_admin_auth_enforcement.py`; the S1.7 e2e
+xfail marker was removed. Status: fixed in code 2026-06-12 — pending live
+`make e2e` confirmation.
 
 ---
 
@@ -161,7 +177,7 @@ Smoke-level check still TODO: `GET /OpenELIS-Global/fhir/metadata`
 
 ---
 
-### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS
+### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS  *(PARTIALLY FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
 
 **Affected service:** `services/integration-hub/app/worker.py`
 **Surfaced while resolving:** DEF-006 (OpenELIS redirect loop) on 2026-04-19.
@@ -192,9 +208,19 @@ Keycloak bearer to HTTP Basic using `OPENELIS_USER`/`OPENELIS_PASSWORD`
 OpenELIS does not validate Keycloak tokens on its FHIR chain, so Bearer
 was always rejected with a 302 to `/oauth2/authorization/localhost`.
 
+**Resolution applied in code 2026-06-12 (publish path):** MPI REST routes
+(`POST /api/patients`, `PATCH /api/patients/{pid}`, merge) now publish
+`patient.synced` after commit via `services/mpi/bus.py` (fire-and-forget;
+publish failures never fail the API request), so downstream consumers — the
+admin audit bridge in particular (S1.7) — hear about REST-created patients.
+Status: fixed in code 2026-06-12 — pending live `make e2e` confirmation.
+**Still open:** the hub-side `patient.synced` → `openelis.upsert_patient`
+consumer described in *Fix direction* does not exist yet, so S1.6 remains
+xfailed under this defect.
+
 ---
 
-### DEF-007 — Analytics service refuses every feature call: "KEYCLOAK_URL missing"
+### DEF-007 — Analytics service refuses every feature call: "KEYCLOAK_URL missing"  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
 
 **Affected service:** `services/analytics/`
 **Observed on:** 2026-04-19, live stack.
@@ -223,9 +249,18 @@ but no live test catches this misconfiguration. Add an integration smoke
 check: `GET /analytics/api/metrics/summary` with a valid bearer returns
 200 (not 503).
 
+**Resolution applied in code 2026-06-12:** both fix directions landed —
+`KEYCLOAK_URL` is wired into the analytics container
+(`compose/profiles/analytics.yml`) and declared in `env.required` of the
+service manifest, and `services/analytics/main.py` now enforces the startup
+env-var guard so the container refuses to boot instead of 503-looping. The
+S8.3–S8.6 e2e xfail markers were removed. Status: fixed in code 2026-06-12 —
+pending live `make e2e` confirmation (the analytics container must be
+recreated to pick up the new env wiring).
+
 ---
 
-### DEF-008 — HL7 outbound messages: patient identifiers not persisted
+### DEF-008 — HL7 outbound messages: patient identifiers not persisted  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
 
 **Affected service:** `services/hl7/`
 **Observed on:** 2026-04-19, live stack.
@@ -246,6 +281,14 @@ the request model before rendering the ER7).
 **Test status:** no unit test covers this assertion. Add a test in
 `tests/unit/hl7/` that POSTs ADT^A04 and asserts the persisted row has
 `patient_id == mrn`.
+
+**Resolution applied in code 2026-06-12:** the outbound store paths
+(`routers/send.py` for ADT/ORU/ORM and the bus-consumer `_log_outbound`)
+now derive `patient_id`/`patient_name` via the shared PID parser; flat and
+nested patient request bodies are both normalised. Unit coverage added in
+`tests/unit/hl7/test_main.py::TestOutboundPatientPersistence`; the S7.7 e2e
+xfail marker was removed. Status: fixed in code 2026-06-12 — pending live
+`make e2e` confirmation.
 
 ---
 

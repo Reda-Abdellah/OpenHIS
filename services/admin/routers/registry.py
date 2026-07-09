@@ -15,7 +15,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from jwt_auth import require_token
-from database import get_db, rows_to_list, row_to_dict
+from database import get_db, rows_to_list, row_to_dict, audit
 
 router = APIRouter(prefix="/api/registry", tags=["registry"])
 
@@ -88,7 +88,7 @@ async def _probe(entry: dict) -> dict:
 
 
 def _update_status(name: str, status: str):
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         db.execute(
             "UPDATE service_registry SET status=?, last_seen=? WHERE name=?",
@@ -114,7 +114,7 @@ async def list_services(_: dict = Depends(require_token)):
         "online": online, "offline": offline,
         "degraded": len(results) - online - offline,
         "total": len(results),
-        "checked_at": datetime.datetime.utcnow().isoformat(timespec="seconds"),
+        "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     }
 
 
@@ -132,8 +132,8 @@ async def get_service(name: str, _: dict = Depends(require_token)):
 
 
 @router.post("", status_code=201)
-async def register_service(entry: ServiceEntry, _: dict = Depends(require_token)):
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+async def register_service(entry: ServiceEntry, claims: dict = Depends(require_token)):
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         db.execute(
             """INSERT INTO service_registry
@@ -149,11 +149,16 @@ async def register_service(entry: ServiceEntry, _: dict = Depends(require_token)
             (entry.name, entry.profile, entry.internal_url, entry.health_url,
              entry.nginx_path, json.dumps(entry.metadata), now),
         )
+    audit(claims.get("preferred_username", "unknown"), "service-registered",
+          target=entry.name,
+          detail=f"profile={entry.profile} url={entry.internal_url}")
     return {"registered": entry.name}
 
 
 @router.delete("/{name}", status_code=200)
-async def deregister_service(name: str, _: dict = Depends(require_token)):
+async def deregister_service(name: str, claims: dict = Depends(require_token)):
     with get_db() as db:
         db.execute("DELETE FROM service_registry WHERE name=?", (name,))
+    audit(claims.get("preferred_username", "unknown"), "service-deregistered",
+          target=name)
     return {"deregistered": name}

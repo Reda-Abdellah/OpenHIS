@@ -12,13 +12,15 @@ Covers:
   ✅ S2.2 — integration-hub /api/atomfeed/trigger accepts the request
   ✅ S2.3 — integration-hub /api/events/report-final queues a payload
   ✅ S2.4 — hub audit captures the queued event (within 5s)
+  ✅ S2.5 — ServiceRequest flow OpenMRS → OpenELIS
+  ✅ S2.6 — DiagnosticReport flow OpenELIS → OpenMRS
 
-Known gaps — xfail until blocking defects are fixed:
-  ❌ S2.5 — ServiceRequest flow OpenMRS → OpenELIS
-            (DEF-001: hub reports OpenMRS down so no SRs to route;
-             DEF-006 redirect loop is resolved so the OpenELIS side is reachable)
-  ❌ S2.6 — DiagnosticReport flow OpenELIS → OpenMRS
-            (DEF-001 blocks the omrs push step; OpenELIS poll now works)
+DEF-001 (adapter health checks required a Keycloak token) is fixed — the
+hub now probes unauthenticated liveness endpoints, so the former xfail
+markers on S2.5/S2.6 have been removed. If a live `make e2e` still shows
+these failing, the residual blocker is the worker DATA path (OpenMRS 302s
+the hub's service-account bearer on FHIR reads/writes) — that is a
+separate defect, not DEF-001.
 """
 import time
 
@@ -82,21 +84,13 @@ class TestS2_LabFlow:
             if retry_depth > 0:
                 return
             time.sleep(0.5)
-        # The hub already proved it accepted the POST (S2.3). Not finding an
-        # audit row within 6s is informational rather than a hard failure
-        # while the OpenMRS push path is blocked by DEF-001.
-        pytest.xfail("No DiagnosticReport audit row yet (blocked by DEF-001)")
+        # The hub accepted the POST (S2.3); within 6s it must either audit
+        # the DiagnosticReport push or queue it for retry.
+        pytest.fail("No DiagnosticReport audit row or retry-queue growth within 6s")
 
 
 class TestS2_KnownDefects:
 
-    @pytest.mark.xfail(
-        reason="DEF-001: hub cannot reach OpenMRS (FHIR /metadata requires auth "
-               "and 302s the service-account bearer), so no ServiceRequests "
-               "are polled to route. DEF-006 (OpenELIS redirect loop) is "
-               "resolved — the downstream OE write path is now reachable.",
-        strict=False,
-    )
     def test_s2_5_openmrs_to_openelis_service_request(self, hub_api):
         r = hub_api.get("/audit", params={"limit": 50})
         events = r.json().get("events", [])
@@ -108,12 +102,6 @@ class TestS2_KnownDefects:
             for e in events
         )
 
-    @pytest.mark.xfail(
-        reason="DEF-001: hub cannot reach OpenMRS to push the polled "
-               "DiagnosticReports back. DEF-006 is resolved — the OE poll "
-               "itself now succeeds (see `oe→omrs` direction).",
-        strict=False,
-    )
     def test_s2_6_openelis_to_openmrs_diagnostic_report(self, hub_api):
         """
         The hub polls OpenELIS for completed reports and pushes them to

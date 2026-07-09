@@ -10,5 +10,8 @@
     "subscribes": ["*"]
   },
   "depends_on": ["redis"],
+  "env": {
+    "required": ["KEYCLOAK_URL", "KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+  },
   "description": "Periodic metrics collector and dashboard. Subscribes to all bus events for activity tallies."
 }

@@ -4,7 +4,7 @@ MPI test conftest.
 The MPI service uses PostgreSQL with PostgreSQL-specific DDL (SERIAL, RETURNING,
 ON CONFLICT, NOW()::TEXT) — there is no in-memory equivalent. These tests therefore
 require a reachable PostgreSQL instance with a `mpi_test` database. Per DEF-003 in
-docs/task-planning/test-defect-report-2026-04-14.md, the suite degrades gracefully:
+docs/task_planning/test-defect-report-2026-04-14.md, the suite degrades gracefully:
 
   - If MPI_DATABASE_URL is reachable → tests run against it (DDL is wiped per test)
   - If unreachable → DB-bound tests are skipped at collection time
@@ -66,7 +66,7 @@ def fresh_db(request):
     mods_to_remove = [
         m for m in list(sys.modules)
         if m.startswith(("routers", "bus_consumer"))
-        or m in ("main", "database", "matcher", "log_config", "jwt_auth")
+        or m in ("main", "database", "matcher", "log_config", "jwt_auth", "bus")
     ]
     for mod in mods_to_remove:
         sys.modules.pop(mod, None)

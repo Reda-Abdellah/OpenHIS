@@ -1,0 +1,17 @@
+{
+  "name": "simulator",
+  "display_name": "DICOM Study Simulator",
+  "port": 8001,
+  "profile": "imaging",
+  "nginx_path": "/simulator/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": [],
+    "subscribes": []
+  },
+  "depends_on": ["orthanc"],
+  "env": {
+    "required": []
+  },
+  "description": "Dev/demo DICOM study generator. Pushes synthetic studies to Orthanc; not intended for production deployments."
+}

@@ -1,10 +1,10 @@
-import asyncio, os, logging
+import asyncio, os, sys, logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from database import init_db, get_db
-from routers import patients, crossref, matching, sync, audit
+from routers import patients, crossref, matching, sync, audit, fhir
 import bus_consumer
 from openhis_sdk.logging import configure
 
@@ -13,9 +13,28 @@ log = logging.getLogger("mpi")
 
 ROOT_PATH = os.environ.get('ROOT_PATH', '')
 
+# Startup guard (service contract): fail fast instead of booting with auth
+# silently disabled — JWTMiddleware becomes a pass-through when KEYCLOAK_URL
+# is unset. REDIS_URL and MPI_DATABASE_URL are NOT listed: bus.py degrades
+# gracefully without Redis and database.py has a compose-correct default DSN
+# (see openhis.service.json env.optional).
+_REQUIRED_ENV = ["KEYCLOAK_URL"]
+
+
+def _missing_env() -> list[str]:
+    """Return the names of required env vars that are unset or empty."""
+    return [k for k in _REQUIRED_ENV if not os.getenv(k)]
+
+
+def _check_env() -> None:
+    missing = _missing_env()
+    if missing:
+        sys.exit(f"FATAL: Missing required env vars: {', '.join(missing)}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_env()
     init_db()
     task = asyncio.create_task(bus_consumer.consume_loop())
     log.info("MPI v1.0 ready")
@@ -28,11 +47,14 @@ async def lifespan(app: FastAPI):
 
 
 from openhis_sdk.auth import JWTMiddleware
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="MPI", version="1.0.0", root_path=ROOT_PATH, lifespan=lifespan)
 app.add_middleware(JWTMiddleware)
+app.add_middleware(MetricsMiddleware, service="mpi")
+app.include_router(metrics_router)
 
-for r in [patients.router, crossref.router, matching.router, sync.router, audit.router]:
+for r in [patients.router, crossref.router, matching.router, sync.router, audit.router, fhir.router]:
     app.include_router(r)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

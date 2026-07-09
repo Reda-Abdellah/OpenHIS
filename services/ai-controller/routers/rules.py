@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list
+from jwt_auth import require_roles
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
@@ -19,7 +20,7 @@ class RuleCreate(BaseModel):
     enabled: int = 1
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("admin", "radiologist"))])
 def list_rules(pipeline_id: Optional[str] = None):
     with get_db() as db:
         if pipeline_id:
@@ -36,7 +37,7 @@ def list_rules(pipeline_id: Optional[str] = None):
     return rows_to_list(rows)
 
 
-@router.get("/{rule_id}")
+@router.get("/{rule_id}", dependencies=[Depends(require_roles("admin", "radiologist"))])
 def get_rule(rule_id: int):
     with get_db() as db:
         row = db.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()
@@ -45,7 +46,7 @@ def get_rule(rule_id: int):
         return dict(row)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles("admin"))])
 def create_rule(body: RuleCreate):
     with get_db() as db:
         cur = db.execute(
@@ -60,7 +61,7 @@ def create_rule(body: RuleCreate):
     return dict(row)
 
 
-@router.patch("/{rule_id}")
+@router.patch("/{rule_id}", dependencies=[Depends(require_roles("admin"))])
 def update_rule(rule_id: int, body: dict):
     allowed = {"name", "modality", "body_part", "trigger_filter",
                "auto_trigger", "auto_saveback", "saveback_types", "priority", "enabled"}
@@ -73,7 +74,8 @@ def update_rule(rule_id: int, body: dict):
     return {"updated": rule_id}
 
 
-@router.delete("/{rule_id}", status_code=204)
+@router.delete("/{rule_id}", status_code=204,
+               dependencies=[Depends(require_roles("admin"))])
 def delete_rule(rule_id: int):
     with get_db() as db:
         db.execute("DELETE FROM rules WHERE id=?", (rule_id,))

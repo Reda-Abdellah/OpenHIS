@@ -20,15 +20,23 @@ import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
+
+from jwt_auth import require_roles
 
 log = logging.getLogger("admin.events")
 
 STREAM   = "openhis:events"
 REDIS_URL: str = os.environ.get("REDIS_URL", "")
 
-router = APIRouter(prefix="/api/events", tags=["events"])
+# T-03: the live event stream exposes every bus event (PHI-adjacent payloads)
+# — admin role required on all routes in this router.
+router = APIRouter(
+    prefix="/api/events",
+    tags=["events"],
+    dependencies=[Depends(require_roles("admin"))],
+)
 
 
 def _redis_client():

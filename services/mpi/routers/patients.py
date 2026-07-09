@@ -1,12 +1,38 @@
 import datetime
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict, new_id
 from jwt_auth import JWTMiddleware  # noqa: F401 — imported for side-effect
-from openhis_sdk.auth import require_token, require_roles
+from openhis_sdk.auth import require_roles
+import bus
+
+log = logging.getLogger("mpi.patients")
 
 router = APIRouter(prefix="/api/patients", tags=["patients"])
+
+
+def _publish_patient_synced(master_id: str, mrn: str) -> None:
+    """Best-effort patient.synced emit after a committed REST mutation (DEF-010).
+
+    Called AFTER the `with get_db()` block exits, so consumers can never
+    observe an event for an uncommitted (or rolled-back) row. bus.publish
+    already swallows Redis errors; the extra guard makes the invariant
+    structural — a publish failure must NEVER fail the API request.
+    """
+    try:
+        bus.publish("patient.synced", {
+            "master_id": master_id,
+            "mrn":       mrn,
+            "source":    "mpi",
+        })
+    except Exception:
+        log.warning(
+            "patient.synced publish failed",
+            extra={"master_id": master_id, "mrn": mrn},
+            exc_info=True,
+        )
 
 _MP_SQL = """
     SELECT m.*,
@@ -58,7 +84,7 @@ def list_patients(q: Optional[str] = None, status: Optional[str] = "active"):
         ).fetchall())
 
 
-@router.get("/lookup", dependencies=[Depends(require_token)])
+@router.get("/lookup", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
 def lookup(
     mrn:          Optional[str] = None,
     system:       Optional[str] = None,
@@ -122,7 +148,7 @@ def get_patient(pid: str):
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles("clinician", "admin"))])
 def create_patient(body: PatientCreate):
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     pid = new_id()
     with get_db() as db:
         if db.execute(
@@ -141,12 +167,15 @@ def create_patient(body: PatientCreate):
             "INSERT INTO audit_log(master_id,action,details) VALUES(?,?,?)",
             (pid, "created", f"MRN={body.mrn}")
         )
-        return row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
+        created = row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
+    # Transaction committed on `with` exit — publish only for persisted rows.
+    _publish_patient_synced(pid, body.mrn)
+    return created
 
 
 @router.patch("/{pid}", dependencies=[Depends(require_roles("clinician", "admin"))])
 def update_patient(pid: str, body: PatientUpdate):
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         row = db.execute(
             "SELECT status FROM master_patients WHERE id=?", (pid,)
@@ -168,7 +197,10 @@ def update_patient(pid: str, body: PatientUpdate):
             "INSERT INTO audit_log(master_id,action,details) VALUES(?,?,?)",
             (pid, "updated", ", ".join(updates.keys()))
         )
-        return row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
+        updated = row_to_dict(db.execute("SELECT * FROM master_patients WHERE id=?", (pid,)).fetchone())
+    # Transaction committed on `with` exit — publish only for persisted rows.
+    _publish_patient_synced(pid, updated["mrn"])
+    return updated
 
 
 @router.post("/{pid}/merge", dependencies=[Depends(require_roles("admin"))])
@@ -179,7 +211,7 @@ def merge_patients(pid: str, body: dict):
         raise HTTPException(400, "merge_id required")
     if merge_id == pid:
         raise HTTPException(400, "Cannot merge a patient with itself")
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         surviving = db.execute(
             "SELECT * FROM master_patients WHERE id=? AND status='active'", (pid,)
@@ -225,6 +257,9 @@ def merge_patients(pid: str, body: dict):
             (pid, "merged", body.get("performed_by", "system"),
              f"merged {merge_id} into {pid}; transferred {len(xrefs)} xrefs")
         )
-        return row_to_dict(db.execute(
+        merged = row_to_dict(db.execute(
             f"{_MP_SQL} WHERE m.id=?", (pid,)
         ).fetchone())
+    # Transaction committed on `with` exit — surviving record is the master.
+    _publish_patient_synced(pid, dict(surviving)["mrn"])
+    return merged

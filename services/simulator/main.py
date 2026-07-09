@@ -1,13 +1,15 @@
-import os, logging, uuid
+import os, sys, logging, uuid
 from collections import deque
 from datetime import datetime
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from openhis_sdk.auth import JWTMiddleware, require_roles
 
 from presets import MODALITY_PRESETS
 from dicom_factory import build_dicom, SUPPORTED
@@ -15,8 +17,22 @@ from dicom_factory import build_dicom, SUPPORTED
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("simulator")
 
+# ── dev-only guard (T-06, F#38) ───────────────────────────────────────────────
+# The simulator injects synthetic DICOM straight into Orthanc — it must never
+# run outside a development environment, regardless of auth configuration.
+ENV = os.environ.get("ENV", "development").lower()
+if ENV != "development":
+    sys.exit(
+        f"FATAL: simulator is a dev-only tool (got ENV={ENV!r}). "
+        "Do not enable it in non-development environments."
+    )
+
 ROOT_PATH = os.environ.get("ROOT_PATH", "")
 app = FastAPI(title="DICOM Acquisition Simulator", version="2.3.0", root_path=ROOT_PATH)
+
+# JWT validation on every /api/* route except health (T-06). The static UI
+# assets stay public; the data-touching endpoint below is also role-gated.
+app.add_middleware(JWTMiddleware, extra_public_prefixes=("/static",))
 
 STATIC_DIR  = os.path.join(os.path.dirname(__file__), "static")
 ORTHANC_URL = os.environ.get("ORTHANC_URL", "http://orthanc:8042")
@@ -69,8 +85,9 @@ def get_jobs():
     return list(reversed(job_history))   # newest first
 
 
-@app.post("/api/generate")
-async def generate(req: GenerateRequest):
+@app.post("/api/generate",
+          dependencies=[Depends(require_roles("admin", "radiologist"))])
+async def generate(req: GenerateRequest) -> dict:
     mod = req.modality.upper()
     if mod not in SUPPORTED:
         raise HTTPException(422, f"Modality '{mod}' not supported. Available: {SUPPORTED}")

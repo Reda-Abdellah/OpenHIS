@@ -5,10 +5,13 @@ from pathlib import Path
 def fresh_db():
     """Setup fresh hl7 database for each test"""
     hl7_path = str(Path(__file__).parent.parent.parent.parent / "services" / "hl7")
-    test_db = "/tmp/test_hl7.db"
+    # Per-process path: concurrent pytest runs (e.g. parallel CI shards or
+    # agents) sharing a fixed /tmp/test_hl7.db corrupt each other's WAL.
+    test_db = f"/tmp/test_hl7_{os.getpid()}.db"
 
     mods_to_remove = [m for m in sys.modules.keys()
-                      if m.startswith(('hl7_', 'routers', 'handlers', 'mllp', 'parser', 'builder'))
+                      if m.startswith(('hl7_', 'routers', 'handlers', 'mllp',
+                                       'parser', 'builder', 'bus_consumer'))
                       or m in ('main', 'database')]
     for mod in mods_to_remove:
         try:

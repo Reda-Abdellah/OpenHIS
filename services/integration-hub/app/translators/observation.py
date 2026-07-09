@@ -2,7 +2,7 @@ import datetime, json
 
 def to_fhir_observations_from_ai(job: dict) -> list:
     """Convert AI controller job result_summary → list of FHIR Observations."""
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     summary = job.get("result_summary")
     if isinstance(summary, str):
         try:

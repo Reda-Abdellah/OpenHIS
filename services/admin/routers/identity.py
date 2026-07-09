@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from jwt_auth import require_roles
+from database import audit
 import keycloak_client
 import provisioning
 
@@ -55,8 +56,11 @@ async def _publish(event_type: str, payload: dict) -> None:
         log.warning("Event publish failed: %s", e)
 
 
-@router.post("/users", dependencies=[Depends(require_roles("admin"))], status_code=201)
-async def create_user(body: CreateUserRequest):
+@router.post("/users", status_code=201)
+async def create_user(
+    body: CreateUserRequest,
+    claims: dict = Depends(require_roles("admin")),
+):
     """Create a user in Keycloak, assign roles, and provision in host apps."""
     try:
         kc_id = await keycloak_client.create_user(body)
@@ -87,24 +91,35 @@ async def create_user(body: CreateUserRequest):
     provision_results = await provisioning.provision_user(kc_id, body, service_token)
 
     await _publish("identity.user-created", {"keycloak_id": kc_id, "roles": body.roles})
+    audit(claims.get("preferred_username", "unknown"), "user-created",
+          target=kc_id, detail=f"username={body.username} roles={body.roles}")
 
     return {"id": kc_id, "status": "created", "provisioned": provision_results}
 
 
-@router.patch("/users/{user_id}/roles", dependencies=[Depends(require_roles("admin"))])
-async def update_roles(user_id: str, body: dict):
+@router.patch("/users/{user_id}/roles")
+async def update_roles(
+    user_id: str,
+    body: dict,
+    claims: dict = Depends(require_roles("admin")),
+):
     """Replace all realm roles for a user."""
     roles = body.get("roles", [])
     try:
         await keycloak_client.set_roles(user_id, roles)
     except Exception as e:
         raise HTTPException(503, f"Keycloak unavailable: {e}")
+    audit(claims.get("preferred_username", "unknown"), "user-roles-updated",
+          target=user_id, detail=f"roles={roles}")
     # Host apps pick up new roles on next OIDC token refresh — no action needed.
     return {"status": "updated"}
 
 
-@router.delete("/users/{user_id}", dependencies=[Depends(require_roles("admin"))])
-async def deactivate_user(user_id: str):
+@router.delete("/users/{user_id}")
+async def deactivate_user(
+    user_id: str,
+    claims: dict = Depends(require_roles("admin")),
+):
     """Disable a user. Keycloak is disabled first so all tokens are immediately rejected."""
     try:
         await keycloak_client.disable_user(user_id)
@@ -113,6 +128,8 @@ async def deactivate_user(user_id: str):
 
     await provisioning.deprovision_user(user_id)
     await _publish("identity.user-disabled", {"keycloak_id": user_id})
+    audit(claims.get("preferred_username", "unknown"), "user-disabled",
+          target=user_id)
 
     return {"status": "disabled"}
 

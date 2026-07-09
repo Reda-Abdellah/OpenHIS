@@ -22,10 +22,17 @@ async def _auth_headers() -> dict:
 
 
 async def health_check() -> bool:
+    """Probe OpenMRS liveness without any credentials (DEF-001 fix).
+
+    Deliberately does NOT call _auth_headers(): a Keycloak outage must not
+    mask real upstream availability. The FHIR /metadata endpoint 302s to the
+    login page in this deployment, so we probe /openmrs/health/started — the
+    same unauthenticated endpoint the compose healthcheck uses
+    (compose/profiles/emr.yml).
+    """
     try:
-        hdrs = await _auth_headers()
         async with httpx.AsyncClient(timeout=8) as c:
-            r = await c.get(f"{_FHIR}/metadata", headers=hdrs)
+            r = await c.get(f"{OPENMRS_URL}/openmrs/health/started")
             return r.status_code == 200
     except Exception:
         return False

@@ -24,6 +24,12 @@ def fresh_db():
         os.remove(test_db)
 
     os.environ['DB_PATH'] = test_db
+    # Root tests/conftest.py stubs KEYCLOAK_URL as "" — the analytics startup
+    # guard (main._check_env, DEF-007) requires it non-empty, so override here
+    # and restore afterwards. Harmless under DEV_MODE=true: auth short-circuits
+    # before KEYCLOAK_URL is ever consulted.
+    prev_keycloak_url = os.environ.get('KEYCLOAK_URL')
+    os.environ['KEYCLOAK_URL'] = 'http://keycloak-test:8080/keycloak'
     # Point all upstreams at an unreachable port — no real HTTP in unit tests
     os.environ['OPENMRS_URL']          = 'http://localhost:19999'
     os.environ['OPENMRS_USER']         = 'admin'
@@ -39,6 +45,11 @@ def fresh_db():
     init_db()
 
     yield
+
+    if prev_keycloak_url is None:
+        os.environ.pop('KEYCLOAK_URL', None)
+    else:
+        os.environ['KEYCLOAK_URL'] = prev_keycloak_url
 
     if os.path.exists(test_db):
         os.remove(test_db)

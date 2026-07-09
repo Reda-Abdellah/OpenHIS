@@ -16,6 +16,7 @@ def admin_env(tmp_path):
         if m.startswith(("routers", "routers."))
         or m in (
             "main", "database", "security", "log_config", "jwt_auth",
+            "bus_consumer",
             "routers.auth", "routers.users", "routers.registry",
             "routers.profiles", "routers.audit", "routers.config",
             "routers.announcements", "routers.platform", "routers.events",
@@ -32,7 +33,11 @@ def admin_env(tmp_path):
     db_file = str(tmp_path / "admin_test.db")
     os.environ["DB_PATH"]      = db_file
     os.environ["ROOT_PATH"]    = ""
-    os.environ["KEYCLOAK_URL"] = ""   # DEV_MODE bypasses Keycloak calls
+    # Blank KEYCLOAK_URL so DEV_MODE bypasses Keycloak calls — but restore it
+    # afterwards: other suites (e.g. integration-hub) require it non-empty for
+    # their startup env guard, and the root conftest only setdefault()s it once.
+    prev_keycloak_url = os.environ.get("KEYCLOAK_URL")
+    os.environ["KEYCLOAK_URL"] = ""
     os.environ["LOG_FORMAT"]   = "text"
     os.environ["REDIS_URL"]    = ""
     # NOTE: ADMIN_USER, ADMIN_PASS, REQUIRE_JWT are not read by admin v2.0
@@ -49,9 +54,15 @@ def admin_env(tmp_path):
 
     yield
 
+    if prev_keycloak_url is None:
+        os.environ.pop("KEYCLOAK_URL", None)
+    else:
+        os.environ["KEYCLOAK_URL"] = prev_keycloak_url
+
     for mod in list(sys.modules):
         if mod.startswith(("routers", "routers.")) or mod in (
             "main", "database", "security", "log_config", "jwt_auth",
+            "bus_consumer",
         ):
             sys.modules.pop(mod, None)
 

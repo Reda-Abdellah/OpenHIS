@@ -162,12 +162,14 @@ async def _sync_patients() -> int:
 
 
 async def _sync_orders() -> int:
+    """Pick lab ServiceRequests from OpenMRS and route them to OpenELIS."""
     orders = await openmrs.get_active_service_requests()
     count = 0
     for sr in orders:
         oid = sr.get("id", "")
         if await _dedup_check("orders", oid):
             continue
+
         try:
             oe_id = await openelis.create_service_request(sr)
             if oe_id:

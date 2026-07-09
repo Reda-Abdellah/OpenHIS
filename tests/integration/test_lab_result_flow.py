@@ -18,9 +18,11 @@ OE_FHIR   = f"{OE}/OpenELIS-Global/fhir"
 
 
 def _mock_keycloak_token(mock):
-    # See DEF-001: adapter _auth_headers() fetches a service token before any
-    # FHIR call. Root conftest sets KEYCLOAK_TOKEN_URL to a non-resolvable
-    # test address, so every respx block that exercises an adapter must mock it.
+    # Adapter data-path calls (_auth_headers() in openmrs.py) fetch a service
+    # token before any FHIR read/write, so respx blocks exercising those must
+    # mock the token endpoint (root conftest sets KEYCLOAK_TOKEN_URL to a
+    # non-resolvable test address). NOTE: this applies to DATA calls only —
+    # health_check() probes are unauthenticated since the DEF-001 fix.
     token_url = os.environ["KEYCLOAK_TOKEN_URL"]
     mock.post(token_url).mock(
         return_value=httpx.Response(200, json={"access_token": "test-tok", "expires_in": 3600})

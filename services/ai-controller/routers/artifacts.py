@@ -1,9 +1,15 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from database import get_db, rows_to_list
+from jwt_auth import require_roles
 
-router = APIRouter(prefix="/api/artifacts", tags=["artifacts"])
+# Router-level gate: every artifacts route (list / get / download) serves PHI.
+router = APIRouter(
+    prefix="/api/artifacts",
+    tags=["artifacts"],
+    dependencies=[Depends(require_roles("admin", "radiologist", "clinician"))],
+)
 
 JOBS_DATA_DIR = os.environ.get("JOBS_DATA_DIR", "/data/jobs")
 

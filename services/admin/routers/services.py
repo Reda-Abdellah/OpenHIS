@@ -58,5 +58,5 @@ async def get_services(_: dict = Depends(require_token)):
         "offline":    offline,
         "degraded":   degraded,
         "total":      len(results),
-        "checked_at": datetime.datetime.utcnow().isoformat(timespec="seconds"),
+        "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     }

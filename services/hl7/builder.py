@@ -106,3 +106,53 @@ def build_oru_r01(patient: dict, order_id: str,
             f"OBX|{i}|NM|{analyte}^^LN||{value}|{unit}|{refrange}||{flag}|||F"
         )
     return '\r'.join(segs) + '\r'
+
+
+def build_orm_o01(
+    patient: dict,
+    order_id: str,
+    tests: list,
+    *,
+    notes: list[str] | None = None,
+    sending_app: str = 'OPENHIS',
+    priority: str = 'R',
+) -> str:
+    """Build ORM^O01 (Order Message) — outbound lab order routing.
+
+    Segments:
+      MSH  message header
+      PID  patient
+      ORC  common order (placer + filler info)
+      OBR  observation request (per test)
+      NTE  notes — one per ``notes`` entry, attached after the LAST OBR
+           so they apply to the whole order
+
+    ``tests``: list of ``{loinc, name, system}`` dicts, one per test
+    being ordered. LOINC is preferred; falls back to a free-text
+    universal service identifier.
+
+    ``notes``: free-text order annotations. Each becomes one NTE
+    segment so downstream LIMS can preserve the rationale.
+
+    ``priority``: HL7 OR (Routine), S (STAT), A (ASAP), P (Pre-op).
+    """
+    segs = [
+        _msh('ORM^O01', sending_app),
+        _pid(patient),
+        # ORC — placer info; status NW (new order)
+        f"ORC|NW|{order_id}|||IP||{priority}|{_ts()}|||{patient.get('id', '')}",
+    ]
+    for i, t in enumerate(tests, 1):
+        code   = t.get('loinc') or t.get('code', '')
+        name   = t.get('name', '')
+        system = t.get('system', 'LN' if t.get('loinc') else 'L')
+        segs.append(
+            f"OBR|{i}|{order_id}|{order_id}|{code}^{name}^{system}|||{_ts()}"
+            f"|||||||||||||||||{priority}"
+        )
+    for j, note in enumerate(notes or [], 1):
+        # Replace HL7 delimiters in note text so they don't break parsing.
+        safe = (note or '').replace('|', ' ').replace('^', '~') \
+                            .replace('\n', '\\.br\\').replace('\r', '')
+        segs.append(f"NTE|{j}|L|{safe[:1900]}")
+    return '\r'.join(segs) + '\r'

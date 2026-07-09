@@ -1,0 +1,17 @@
+{
+  "name": "ris",
+  "display_name": "Radiology Information System",
+  "port": 8002,
+  "profile": "imaging",
+  "nginx_path": "/ris/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": [],
+    "subscribes": []
+  },
+  "depends_on": ["keycloak", "orthanc"],
+  "env": {
+    "required": ["KEYCLOAK_URL", "KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+  },
+  "description": "Radiology worklist and reporting. Receives AI results via the ai-controller save-back HTTP hook and syncs reports to OpenMRS."
+}

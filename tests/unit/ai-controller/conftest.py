@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 def fresh_db():
     """Setup fresh ai-controller database for each test"""
     ai_path = str(Path(__file__).parent.parent.parent.parent / "services" / "ai-controller")
-    test_db = "/tmp/test_ai_controller.db"
+    # Per-process path: several pytest processes may run concurrently in this
+    # repo; a shared fixed path causes sqlite "disk I/O error" races.
+    test_db = f"/tmp/test_ai_controller_{os.getpid()}.db"
 
     # Clear cached modules
     mods_to_remove = [m for m in sys.modules.keys()

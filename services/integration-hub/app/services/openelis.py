@@ -25,10 +25,14 @@ async def _auth_headers() -> dict:
 
 
 async def health_check() -> bool:
+    """Probe the public FHIR /metadata endpoint with no credentials (DEF-001).
+
+    The FHIR capability statement is public; sending Basic auth here would
+    let a bad OPENELIS_PASSWORD masquerade as an upstream outage.
+    """
     try:
-        hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=8, auth=_AUTH) as c:
-            r = await c.get(f"{_FHIR}/metadata", headers=hdrs)
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(f"{_FHIR}/metadata", headers=_HDR)
             return r.status_code == 200
     except Exception:
         return False
@@ -109,6 +113,25 @@ async def create_service_request(sr: dict) -> Optional[str]:
             return oe_id
     except Exception as e:
         log.warning(f"create_service_request: {e}")
+        return None
+
+
+async def get_diagnostic_report(oe_id: str) -> Optional[dict]:
+    """Fetch a DiagnosticReport by OpenELIS id, or None on any failure.
+
+    Fail-soft read used by the hub's /api/context surface (audited,
+    hub-mediated reads for native services — no direct OpenELIS access).
+    """
+    try:
+        hdrs = await _auth_headers()
+        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
+            r = await c.get(f"{_FHIR}/DiagnosticReport/{oe_id}", headers=hdrs)
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        log.warning(f"get DiagnosticReport/{oe_id}: {e}")
         return None
 
 

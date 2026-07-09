@@ -3,7 +3,7 @@ Profile management — enable/disable deployment profiles via the admin API.
 
 POST /api/profiles/enable   body: {"profiles": ["emr", "laboratory"]}
 POST /api/profiles/disable  body: {"profiles": ["erp"]}
-GET  /api/profiles/active   — current active profile list from .env
+GET  /api/profiles/active   — current active profile list from .env (any valid token)
 
 These endpoints write to .env and trigger nginx config regeneration.
 They do NOT start/stop containers — that requires `make up` or `opm up`
@@ -16,6 +16,7 @@ import sys
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from jwt_auth import require_token
+from database import audit
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -83,12 +84,12 @@ def _regen_nginx(active: list[str]) -> None:
 
 
 @router.get("/active")
-def active_profiles():
+def active_profiles(claims: dict = Depends(require_token)):
     return {"profiles": _read_active()}
 
 
 @router.post("/enable")
-def enable_profiles(body: ProfileList, _=Depends(require_token)):
+def enable_profiles(body: ProfileList, claims: dict = Depends(require_token)):
     unknown = [p for p in body.profiles if p not in _KNOWN]
     if unknown:
         raise HTTPException(400, f"Unknown profiles: {unknown}")
@@ -101,6 +102,8 @@ def enable_profiles(body: ProfileList, _=Depends(require_token)):
     new_active = active + to_add
     _write_active(new_active)
     _regen_nginx(new_active)
+    audit(claims.get("preferred_username", "unknown"), "profiles-enabled",
+          target=",".join(to_add), detail=f"active={new_active}")
 
     return {
         "message": f"Enabled {to_add}. Run `make up` or `opm up` to start their containers.",
@@ -109,7 +112,7 @@ def enable_profiles(body: ProfileList, _=Depends(require_token)):
 
 
 @router.post("/disable")
-def disable_profiles(body: ProfileList, _=Depends(require_token)):
+def disable_profiles(body: ProfileList, claims: dict = Depends(require_token)):
     active = _read_active()
     to_remove = [p for p in body.profiles if p in active]
     if not to_remove:
@@ -118,6 +121,8 @@ def disable_profiles(body: ProfileList, _=Depends(require_token)):
     new_active = [p for p in active if p not in to_remove]
     _write_active(new_active)
     _regen_nginx(new_active)
+    audit(claims.get("preferred_username", "unknown"), "profiles-disabled",
+          target=",".join(to_remove), detail=f"active={new_active}")
 
     return {
         "message": f"Disabled {to_remove}. Run `make down && make up` to stop their containers.",

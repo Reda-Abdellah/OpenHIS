@@ -13,6 +13,8 @@ Shared fixtures:
                       via the e2e-test-sa service-account client (auto-provisioned
                       on first run using the Keycloak master admin credentials).
 - `noauth_token`    — JWT from a service account with zero roles (for RBAC tests).
+- `patient_token`   — JWT from a service account with only the `patient` role
+                      (for gate tests asserting 403 on clinical-only routes).
 - `auth_hdrs`       — {"Authorization": f"Bearer {admin_token}"} convenience.
 - `http`            — preconfigured httpx.Client keyed on the portal URL.
 - `admin_api`       — httpx.Client rooted at /admin/api.
@@ -20,7 +22,8 @@ Shared fixtures:
 - `hub_api`         — httpx.Client rooted at /integration-hub/api.
 - `hl7_api`         — httpx.Client rooted at /hl7/api.
 - `ris_api`         — httpx.Client rooted at /ris/api.
-- `orthanc`         — httpx.Client rooted at /orthanc (no auth required).
+- `orthanc`         — httpx.Client rooted at /orthanc (admin bearer token — the
+                      nginx njs guard gates /orthanc/ behind /_auth/radiologist).
 - `simulator_api`   — httpx.Client rooted at /simulator/api.
 - `ai_api`          — httpx.Client rooted at /ai-controller/api.
 - `docker_available`— True if `docker ps` succeeds without sudo (gates Scenario 6).
@@ -50,6 +53,7 @@ REALM           = os.getenv("KEYCLOAK_REALM",       "openhis")
 E2E_MRN_PREFIX  = "E2E-"
 E2E_SA_CLIENT   = "e2e-test-sa"
 E2E_NOAUTH_SA   = "e2e-noauth-sa"   # zero-roles SA for RBAC tests
+E2E_PATIENT_SA  = "e2e-patient-sa"  # patient-role-only SA for gate tests
 
 
 # ── Pytest plumbing ─────────────────────────────────────────────────────────
@@ -254,6 +258,21 @@ def noauth_token() -> str:
     return _sa_token(E2E_NOAUTH_SA, secret)
 
 
+@pytest.fixture(scope="session")
+def patient_token() -> str:
+    """
+    Service-account JWT carrying only the `patient` realm role. Used by gate
+    tests to assert that clinical-only routes (e.g. the nginx njs guard on
+    /orthanc/) return 403 for an authenticated-but-unauthorised caller.
+    """
+    try:
+        master = _master_admin_token()
+    except Exception as e:
+        pytest.skip(f"Cannot reach Keycloak master realm: {e}")
+    secret = _ensure_sa_client(master, E2E_PATIENT_SA, roles=["patient"])
+    return _sa_token(E2E_PATIENT_SA, secret)
+
+
 @pytest.fixture
 def auth_hdrs(admin_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {admin_token}"}
@@ -321,9 +340,14 @@ def ai_api(admin_token: str) -> Iterator[httpx.Client]:
 
 
 @pytest.fixture
-def orthanc() -> Iterator[httpx.Client]:
-    """Orthanc REST API is not behind Keycloak in the default stack."""
-    with _client("/orthanc") as c:
+def orthanc(admin_token: str) -> Iterator[httpx.Client]:
+    """
+    Orthanc REST API client. The nginx njs guard fronts /orthanc/ with
+    auth_request /_auth/radiologist (the ONLY auth layer before the DICOM
+    store), so every request must carry a radiologist/clinician/admin bearer
+    token — the admin SA token satisfies the gate.
+    """
+    with _client("/orthanc", admin_token) as c:
         yield c
 
 

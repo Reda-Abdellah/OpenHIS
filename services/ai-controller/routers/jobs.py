@@ -1,10 +1,11 @@
 import json
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 from database import get_db, rows_to_list, row_to_dict
+from jwt_auth import require_roles
 from runner import run_job
 import orthanc_client as oc
 
@@ -94,12 +95,13 @@ async def trigger_job(req: TriggerRequest, bg: BackgroundTasks) -> dict:
             "source_type": source_type}
 
 
-@router.post("", status_code=202)
+@router.post("", status_code=202,
+             dependencies=[Depends(require_roles("admin", "radiologist", "clinician"))])
 async def create_job(req: TriggerRequest, bg: BackgroundTasks):
     return await trigger_job(req, bg)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("admin", "radiologist", "clinician"))])
 def list_jobs(pipeline_id: Optional[str] = None, status: Optional[str] = None,
               source_type: Optional[str] = None, limit: int = 200):
     with get_db() as db:
@@ -120,7 +122,8 @@ def list_jobs(pipeline_id: Optional[str] = None, status: Optional[str] = None,
     return rows_to_list(rows)
 
 
-@router.get("/{job_id}")
+@router.get("/{job_id}",
+            dependencies=[Depends(require_roles("admin", "radiologist", "clinician"))])
 def get_job(job_id: str):
     with get_db() as db:
         row = db.execute(
@@ -142,7 +145,8 @@ def get_job(job_id: str):
     return job
 
 
-@router.delete("/{job_id}", status_code=204)
+@router.delete("/{job_id}", status_code=204,
+               dependencies=[Depends(require_roles("admin", "radiologist"))])
 def delete_job(job_id: str):
     with get_db() as db:
         db.execute("DELETE FROM jobs WHERE id=?", (job_id,))

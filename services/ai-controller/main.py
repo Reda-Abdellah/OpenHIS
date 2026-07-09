@@ -1,8 +1,9 @@
 import asyncio
 import os
+import sys
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -15,9 +16,27 @@ import log_config
 log_config.configure("ai-controller")
 log = logging.getLogger("ai-controller")
 
+# Startup guard (service contract): fail fast instead of booting with auth
+# silently disabled — JWTMiddleware becomes a pass-through when KEYCLOAK_URL
+# is unset. POC_ALLOWED_IMAGES is NOT listed: runner.py ships a safe default
+# allowlist, so the var is optional (see openhis.service.json env.optional).
+_REQUIRED_ENV = ["KEYCLOAK_URL"]
+
+
+def _missing_env() -> list[str]:
+    """Return the names of required env vars that are unset or empty."""
+    return [k for k in _REQUIRED_ENV if not os.getenv(k)]
+
+
+def _check_env() -> None:
+    missing = _missing_env()
+    if missing:
+        sys.exit(f"FATAL: Missing required env vars: {', '.join(missing)}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_env()
     init_db()
     task = asyncio.create_task(bus_consumer.consume_loop())
     log.info("AI Controller v1.0 ready")
@@ -29,10 +48,13 @@ async def lifespan(app: FastAPI):
         pass
 
 
-from jwt_auth import JWTMiddleware
+from jwt_auth import JWTMiddleware, require_roles
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="AI Controller", version="1.0.0", root_path="", lifespan=lifespan)
 app.add_middleware(JWTMiddleware)
+app.add_middleware(MetricsMiddleware, service="ai-controller")
+app.include_router(metrics_router)
 
 # ── routers ───────────────────────────────────────────────────────────────────
 app.include_router(pipelines.router)
@@ -68,10 +90,12 @@ class InstanceTrigger(BaseModel):
     instance_id: str
 
 
-@app.post("/api/trigger-instance", status_code=202)
+@app.post("/api/trigger-instance", status_code=202,
+          dependencies=[Depends(require_roles("internal-sync", "admin"))])
 async def trigger_instance(body: InstanceTrigger, bg: BackgroundTasks):
     """
-    Called by orthanc/plugin.py for every stored instance.
+    Called by orthanc/plugin.py for every stored instance (the plugin's
+    service account carries the internal-sync role).
     Resolves the series, checks matching auto-trigger rules,
     and submits jobs not already queued for this series.
     """
@@ -146,7 +170,8 @@ def _check_existing_job(orthanc_series_id: str, pipeline_id: str) -> bool:
 
 
 # ── Orthanc series browser ────────────────────────────────────────────────────
-@app.get("/api/orthanc/series")
+@app.get("/api/orthanc/series",
+         dependencies=[Depends(require_roles("admin", "radiologist", "clinician"))])
 async def list_orthanc_series():
     """Browse Orthanc series for manual job triggering."""
     try:
