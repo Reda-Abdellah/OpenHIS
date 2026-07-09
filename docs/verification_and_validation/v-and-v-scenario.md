@@ -1,6 +1,6 @@
 # OpenHIS — Verification & Validation Scenarios
 
-**Version:** 2.0 · **Last updated:** 2026-04-19
+**Version:** 2.2 · **Last updated:** 2026-06-12
 **Scope:** `base` + `emr` + `laboratory` + `imaging` + `analytics` profiles
 
 > **Executable mirror:** every scenario in this document has a matching
@@ -54,12 +54,12 @@ make health
 | `http://localhost/keycloak/realms/openhis/.well-known/openid-configuration` | 200 + issuer/token_endpoint | `S4.6` |
 | `http://localhost/admin/api/health` | `{"status":"ok"}` | `S5.2` |
 | `http://localhost/mpi/api/health` | `{"status":"ok"}` | implicit via `S1.*` |
-| `http://localhost/integration-hub/api/health` | `{"status":"degraded\|ok"}` (see DEF-001) | `S2.1` |
+| `http://localhost/integration-hub/api/health` | `{"status":"ok"}` when upstreams are up (DEF-001 fixed in code 2026-06-12 — pending live confirmation; `degraded` now means a real upstream outage) | `S2.1` |
 | `http://localhost/hl7/api/health` | `{"status":"ok"}` | implicit via `S7.*` |
 | `http://localhost/ris/api/health` | `{"status":"ok"}` | implicit via `S3.*` |
 | `http://localhost/ai-controller/api/health` | `{"status":"ok"}` | `S3.2` |
 | `http://localhost/orthanc/system` | 200 + Orthanc metadata | `S3.1` |
-| TCP `localhost:2575` | MLLP socket accepts a connection | `S7.6` |
+| TCP `localhost:2575` | Connection refused on a default stack (MLLP is internal-only since T-08); accepts only when `compose/overrides/mllp-public.yml` is applied | `S7.6` (self-skips when the port is not published) |
 
 ✅ **PASS:** all checks return the expected response within 5 seconds.
 ❌ **FAIL:** any service returns non-2xx or connection refused — run
@@ -67,13 +67,16 @@ make health
 
 ### Test identity (auto-provisioned by the e2e conftest)
 
-On first run the suite creates two Keycloak service-account clients:
+On first run the suite creates three Keycloak service-account clients:
 
 - `e2e-test-sa` — realm roles: `admin`, `clinician`, `radiologist`,
   `lab-tech`, `pharmacist`, `patient`, `internal-sync`. Audience mapper
   adds `openhis-platform`; realm-roles mapper projects the roles into the
   `roles` JWT claim.
 - `e2e-noauth-sa` — no roles (used to assert 401/403 paths).
+- `e2e-patient-sa` — `patient` role only (used to assert that clinical-only
+  gates, e.g. the nginx njs guard on `/orthanc/`, return 403 for an
+  authenticated-but-unauthorised caller — S4.9).
 
 Override the Keycloak master admin credentials with
 `KEYCLOAK_MASTER_USER` / `KEYCLOAK_MASTER_PASS` if your stack differs
@@ -111,8 +114,8 @@ Address:    12 Rue de Rivoli, Lyon, 69001
 | S1.3 | `POST /mpi/api/crossref {master_id, system:"openmrs", system_id}` | 201 (create) or 409 (re-run) | 422 / 500 |
 | S1.4 | `GET /mpi/api/patients/{id}?include=xref,audit` | xref visible in detail or via `/crossref?master_id=` | Empty |
 | S1.5 | `GET /mpi/api/audit` | Row `action="created"` for the master id | No row |
-| S1.6 | **OpenELIS FHIR** `GET /OpenELIS-Global/fhir/R4/Patient?identifier=…` | Bundle ≥ 1 entry | Redirect loop — **xfail DEF-006** |
-| S1.7 | **Admin** `GET /admin/api/audit` | Row `action="patient.synced"` | No row — **xfail DEF-002** |
+| S1.6 | **OpenELIS FHIR** `GET /OpenELIS-Global/fhir/R4/Patient?identifier=…` | Bundle ≥ 1 entry | Empty bundle (DEF-006 resolved 2026-04-19 — redirect loop gone) |
+| S1.7 | **Admin** `GET /admin/api/audit` | Row `action="patient.synced"` | No row (DEF-002 + DEF-010 fixed in code 2026-06-12 — pending live `make e2e` confirmation; xfail marker removed) |
 
 ---
 
@@ -131,8 +134,8 @@ them for push to OpenMRS, and exposes an atomfeed sync trigger.
 | S2.2 | `POST /integration-hub/api/atomfeed/trigger` | `{"status":"triggered"}` | Non-200 |
 | S2.3 | `POST /integration-hub/api/events/report-final {report_id, order_id, impression, status}` | `{"status":"queued"}` | 4xx |
 | S2.4 | Hub audit row for the queued report | `DiagnosticReport` push row **or** `retry_queue_depth > 0` within 6 s | — (soft xfail) |
-| S2.5 | OpenMRS ServiceRequest picked up by the hub (`hub→openelis`) | `ServiceRequest` audit row with `status=ok` | **xfail DEF-006** |
-| S2.6 | OpenELIS DiagnosticReport polled by the hub (`openelis→hub`) | `DiagnosticReport` audit row with direction `openelis→hub` | **xfail DEF-006** |
+| S2.5 | OpenMRS ServiceRequest picked up by the hub (`hub→openelis`) | `ServiceRequest` audit row with `status=ok` | No audit row (DEF-006 resolved 2026-04-19) |
+| S2.6 | OpenELIS DiagnosticReport polled by the hub (`openelis→hub`) | `DiagnosticReport` audit row with direction `openelis→hub` | No audit row (DEF-006 resolved 2026-04-19) |
 
 ---
 
@@ -167,7 +170,8 @@ endpoints reject unauthorised callers, and missing/malformed tokens
 return 401.
 
 **Covers:** Keycloak realm config · MPI `require_roles` · audience
-validation
+validation · nginx njs gate on `/orthanc/` (the only auth layer in front
+of the DICOM store)
 
 **Automated by:** [`tests/e2e/test_s04_sso_rbac.py`](../../tests/e2e/test_s04_sso_rbac.py)
 
@@ -179,6 +183,9 @@ validation
 | S4.4 | No header → `GET /mpi/api/patients` | 401 | 200 / 5xx |
 | S4.5 | `Bearer not.a.real.jwt` → `GET /mpi/api/patients` | 401 | 200 / 5xx |
 | S4.6 | `GET /keycloak/realms/openhis/.well-known/openid-configuration` | 200 + `issuer` endswith `/realms/openhis` | Non-200 |
+| S4.7 | No token → `GET /orthanc/system` | 401 (njs gate fails closed) | 200 / 5xx (DICOM store exposed — **critical**) |
+| S4.8 | `admin_token` → `GET /orthanc/system` | 200 + `Version` key (admin passes every guard) | 401 / 403 |
+| S4.9 | `e2e-patient-sa` token → `GET /orthanc/system` | 403 (valid signature, wrong role) | 200 (fail-open — **critical**) / 401 (gate misreads a valid token); self-skips if the patient SA unexpectedly carries a gate-passing role |
 
 ---
 
@@ -252,8 +259,8 @@ accepts an MLLP TCP connection on port 2575.
 | S7.3 | `GET /hl7/api/messages` | Both messages present; `direction=outbound`, `status=sent` | Missing |
 | S7.4 | `GET /hl7/api/messages/stats` | `total ≥ 2`, `outbound ≥ 2`, by-type includes ADT^A04 + ORU^R01 | Wrong counts |
 | S7.5 | `GET /hl7/` | 200 + SPA title | SPA broken |
-| S7.6 | TCP connect to `localhost:2575`; send a minimal MLLP frame | Socket accepts | `ConnectionRefused` |
-| S7.7 | `GET /hl7/api/messages/{id}` exposes `patient_id` + `patient_name` from the PID segment we sent | Both non-empty | Empty — **xfail DEF-008** |
+| S7.6 | TCP connect to `localhost:2575`; send a minimal MLLP frame | Socket accepts **only when `compose/overrides/mllp-public.yml` is applied** — on a default stack the port is not host-published (T-08) and the test self-skips | Socket accepts on a default stack (the override leaked into the base compose) |
+| S7.7 | `GET /hl7/api/messages/{id}` exposes `patient_id` + `patient_name` from the PID segment we sent | Both non-empty | Empty (DEF-008 fixed in code 2026-06-12 — pending live `make e2e` confirmation; xfail marker removed) |
 
 ---
 
@@ -268,10 +275,10 @@ trends, an on-demand refresh endpoint, and CSV export.
 |---|---|---|---|
 | S8.1 | `GET /analytics/` | SPA loads | — |
 | S8.2 | `GET /analytics/api/health` | `status=ok` | — |
-| S8.3 | `GET /analytics/api/metrics/summary` | KPI object with `patients` / `lab` / `imaging` | **xfail DEF-007** |
-| S8.4 | `GET /analytics/api/metrics/trends` | Time-series list/dict | **xfail DEF-007** |
-| S8.5 | `POST /analytics/api/metrics/refresh` | 200 / 202 | **xfail DEF-007** |
-| S8.6 | `GET /analytics/api/export/patients` | 200 + `Content-Type: text/csv` | **xfail DEF-007** |
+| S8.3 | `GET /analytics/api/metrics/summary` | KPI object with `patients` / `lab` / `imaging` | Non-200 (DEF-007 fixed in code 2026-06-12 — pending live `make e2e` confirmation; xfail marker removed) |
+| S8.4 | `GET /analytics/api/metrics/trends` | Time-series list/dict | Non-200 (DEF-007 fixed in code — see S8.3) |
+| S8.5 | `POST /analytics/api/metrics/refresh` | 200 / 202 | Non-200 (DEF-007 fixed in code — see S8.3) |
+| S8.6 | `GET /analytics/api/export/patients` | 200 + `Content-Type: text/csv` | Non-200 (DEF-007 fixed in code — see S8.3) |
 
 ---
 
@@ -323,21 +330,23 @@ Read it as:
 
 ---
 
-## Known expected failures (as of 2026-04-19)
+## Known expected failures (as of 2026-06-12)
 
-Tied to [`docs/task-planning/test-defect-report-2026-04-14.md`](../task-planning/test-defect-report-2026-04-14.md).
+Tied to [`docs/task_planning/test-defect-report-2026-04-14.md`](../task_planning/test-defect-report-2026-04-14.md).
 
-| Defect | Test(s) xfailed | Will auto-promote to PASSED when… |
+| Defect | Test(s) xfailed | Status |
 |---|---|---|
-| **DEF-001** — `health_check()` requires Keycloak token | (S5.1 sees only base services, hub reports degraded) | hub adapters probe `/metadata` unauthenticated |
-| **DEF-002** — admin mutations not audited | `S1.7` | admin registry/identity routers call `_audit()` |
-| **DEF-006** — OpenELIS redirect loop | `S1.6`, `S2.5`, `S2.6` | Tomcat `proxyName`/`proxyProto` are set, or `X-Forwarded-*` is correctly propagated |
-| **DEF-007** — analytics service rejects every feature call (`KEYCLOAK_URL missing`) | `S8.3`–`S8.6` | `KEYCLOAK_URL` is wired into the analytics container |
-| **DEF-008** — HL7 outbound not persisting PID fields | `S7.7` | outbound store path calls the shared PID parser |
+| ~~**DEF-001** — `health_check()` requires Keycloak token~~ | — (was: S5.1 sees only base services, hub reports degraded) | **Fixed in code 2026-06-12** — hub adapters probe upstream liveness unauthenticated; pending live `make e2e` confirmation |
+| ~~**DEF-002** — admin mutations not audited~~ | — (was `S1.7`; xfail marker removed) | **Fixed in code 2026-06-12** — admin routers audit every mutation (T-03); pending live `make e2e` confirmation |
+| ~~**DEF-006** — OpenELIS redirect loop~~ | ~~`S1.6`, `S2.5`, `S2.6`~~ | **Resolved 2026-04-19** — Tomcat `proxyName`/`proxyProto` set; xfail markers already removed from the e2e suite |
+| ~~**DEF-007** — analytics service rejects every feature call (`KEYCLOAK_URL missing`)~~ | — (was `S8.3`–`S8.6`; xfail markers removed) | **Fixed in code 2026-06-12** — `KEYCLOAK_URL` wired into the analytics container + startup env guard; pending live `make e2e` confirmation (recreate the analytics container first) |
+| ~~**DEF-008** — HL7 outbound not persisting PID fields~~ | — (was `S7.7`; xfail marker removed) | **Fixed in code 2026-06-12** — outbound store paths use the shared PID parser; pending live `make e2e` confirmation |
+| **DEF-010** — MPI patients not visible to OpenELIS | `S1.6` (still xfailed) | **Partially fixed in code 2026-06-12** — MPI REST routes now publish `patient.synced` (covers S1.7); the hub-side `patient.synced` → OpenELIS upsert consumer is still missing, so S1.6 stays xfail. Pending live `make e2e` confirmation for the publish path |
 
-When you close one of these defects, run `make e2e`. The corresponding
-xfailed test will report **XPASSED** — remove the `xfail` marker in the
-scenario file and the defect is officially closed.
+The fixed-in-code rows above have had their `xfail` markers removed, so a
+still-broken live stack now surfaces as **FAILED**, not xfail. When the
+next `make e2e` run against a live stack is green, flip "pending live
+confirmation" to "verified" here and in the defect report.
 
 ---
 

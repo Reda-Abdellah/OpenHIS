@@ -3,22 +3,58 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opm"
-version = "0.1.0"
+name = "openhis-opm"
 description = "OpenHIS Platform Manager — profile-driven deployment CLI"
+readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
+authors = [
+    { name = "OpenHIS contributors" },
+]
+keywords = ["healthcare", "his", "fhir", "hl7", "docker", "deployment", "hospital"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: System :: Installation/Setup",
+]
+dynamic = ["version"]
 dependencies = [
     "click>=8.1",
     "pyyaml>=6.0",
-    "rich>=13.0",
+    "jinja2>=3.1",
+    "requests>=2.31",
 ]
 
-[project.scripts]
-opm = "opm:main"
+[project.urls]
+Homepage = "https://github.com/Reda-Abdellah/OpenHIS"
+Repository = "https://github.com/Reda-Abdellah/OpenHIS"
+Documentation = "https://github.com/Reda-Abdellah/OpenHIS/tree/master/docs"
+Issues = "https://github.com/Reda-Abdellah/OpenHIS/issues"
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
-include = ["opm.py", "profile_engine.py", "nginx_gen.py", "registry.py", "templates/"]
+[project.scripts]
+opm = "opm:cli"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-mock"]
+
+[tool.hatch.version]
+path = "opm.py"
+
+[tool.hatch.build.targets.wheel]
+include = ["opm.py", "profile_engine.py", "nginx_gen.py", "infra_render.py"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "opm.py",
+    "profile_engine.py",
+    "nginx_gen.py",
+    "infra_render.py",
+    "README.md",
+    "requirements.txt",
+    "pyproject.toml",
+]

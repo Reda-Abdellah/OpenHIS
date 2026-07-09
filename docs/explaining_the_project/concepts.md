@@ -192,4 +192,4 @@ When you open a PR, ask:
 
 ---
 
-*See also: @docs/explaining-the-project/architecture.md, @docs/adr/, @docs/explaining-the-project/adding-a-module.md*
+*See also: @docs/explaining_the_project/architecture.md, @docs/adr/, @docs/explaining_the_project/adding-a-module.md*
