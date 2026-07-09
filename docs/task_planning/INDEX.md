@@ -2,7 +2,7 @@
 
 > Single source of truth for **status**. Task definitions live in the plan
 > files; conventions in [README.md](README.md). Update this file in the same
-> PR as the work. Last updated: **2026-07-09** (S-00 done — EP-01 at 1/9).
+> PR as the work. Last updated: **2026-07-09** (S-01 done — EP-01 at 2/9).
 
 ---
 
@@ -24,7 +24,6 @@
 
 | Task | Title | Epic | Prio | Depends on |
 |---|---|---|---|---|
-| S-01 | SDK — bus DLQ + Prometheus metrics | EP-01 | P0 | S-00 |
 | S-02 | Infra security hardening (T-01…T-10) | EP-01 | P0 | S-01 |
 | S-03 | Service lockdowns + defect fixes | EP-01 | P0 | S-01 |
 | S-04 | MPI — matcher, benchmark, FHIR facade | EP-01 | P1 | S-03 |
@@ -55,6 +54,7 @@
 | Task | Title | Epic | Date | PR |
 |---|---|---|---|---|
 | S-00 | IP hygiene — bundle + quarantine study branch (`~/openhis-cds-study.bundle`, restore verified, no remote ref) | EP-01 | 2026-07-09 | local ops |
+| S-01 | SDK — bus DLQ + Prometheus metrics (imports T-07, part of T-04; 364 tests green) | EP-01 | 2026-07-09 | merge `d8d42b4` |
 
 ---
 
