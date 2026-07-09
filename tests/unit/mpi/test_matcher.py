@@ -316,28 +316,18 @@ def test_find_candidates_empty_pool_returns_empty():
 
 def test_find_candidates_pool_without_ids_does_not_self_filter_query():
     """
-    Regression guard: when a query patient has no id (e.g. an inbound candidate
-    from a sync event that hasn't been persisted yet), pool entries that also
-    lack an id must still be evaluated. Earlier `p.get("id") == pid` check could
-    silently drop every candidate when both sides were None.
-
-    NOTE: this is an aspirational test — see latent issue identified during
-    review on 2026-04-19. Currently `find_candidates` filters out pool entries
-    where `p.get("id") == query.get("id") == None`, which evicts everything.
-    Marked xfail until matcher.py is patched to guard `pid is not None`.
+    Regression guard (DEF-004): when a query patient has no id (e.g. an
+    inbound candidate from a sync event that hasn't been persisted yet),
+    pool entries that also lack an id must still be evaluated. The earlier
+    `p.get("id") == pid` check silently dropped every candidate when both
+    sides were None; the guard is now `pid is not None and ...`.
     """
     from matcher import find_candidates
     query = _patient()  # no id
     pool = [_patient(firstname="John", lastname="Doe",
                      birthdate="1980-01-01", sex="M")]  # no id, identical
     hits = find_candidates(query, pool, threshold=0.70)
-    if not hits:
-        pytest.xfail(
-            "Latent bug in matcher.find_candidates: when both query and pool "
-            "entries lack id, `None == None` filters every candidate. "
-            "Fix: change `if p.get('id') == pid` to "
-            "`if pid is not None and p.get('id') == pid`."
-        )
+    assert hits, "pool entries without ids must not be self-filtered"
     assert hits[0][1] >= 0.70
 
 
