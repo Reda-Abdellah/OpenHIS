@@ -34,18 +34,19 @@ Pre-requisites:
 2. Keycloak master admin credentials default to `admin/admin`. Override via
    `KEYCLOAK_MASTER_USER` / `KEYCLOAK_MASTER_PASS` if your stack was
    initialised differently.
-3. Scenario 6 (resilience) requires `docker ps` without sudo — add your user
-   to the `docker` group or run the suite as root. When docker is not
-   reachable, S6 cleanly skips with a clear message.
+3. Scenario 6 (resilience) requires `docker ps` without sudo — add your
+   user to the `docker` group or run the suite as root. When docker is
+   not reachable, the affected steps cleanly skip with a clear message.
 
 ## How it behaves by design
 
 - **Live-stack probe**: the session auto-skips if `http://localhost/health`
   is not 200. You'll see *skipped* for every test rather than a pile of
   false-positive failures.
-- **Auto-provisioning**: on first run, the suite creates two service-account
-  clients in Keycloak — `e2e-test-sa` (all roles) and `e2e-noauth-sa` (no
-  roles) — plus the protocol mappers the platform expects
+- **Auto-provisioning**: on first run, the suite creates three service-account
+  clients in Keycloak — `e2e-test-sa` (all roles), `e2e-noauth-sa` (no
+  roles) and `e2e-patient-sa` (`patient` role only, for clinical-gate 403
+  tests) — plus the protocol mappers the platform expects
   (`realm-roles` + `openhis-platform` audience). Subsequent runs reuse them.
 - **Fresh MRNs per test**: the `fresh_mrn` fixture returns a UUID-scoped
   `E2E-…` string; there is no DELETE route on `/mpi/api/patients`, so the
@@ -60,7 +61,7 @@ Pre-requisites:
 | Result | Count | Meaning |
 |---|---|---|
 | PASSED  | 53 | Behaviour verified end-to-end |
-| XFAILED | 11 | Blocked by known defect (DEF-001, 002, 006, 007, 008) or by the missing OpenMRS-resident demo identity (S9.9) — see [test-defect-report-2026-04-14.md](../../docs/task-planning/test-defect-report-2026-04-14.md) |
+| XFAILED | 9 | Blocked by known defect (DEF-002, 006, 007, 008) or by the missing OpenMRS-resident demo identity (S9.9) — DEF-001 is fixed and its xfail markers removed; refresh this tally on the next live run — see [test-defect-report-2026-04-14.md](../../docs/task_planning/test-defect-report-2026-04-14.md) |
 | SKIPPED | 3  | Scenario 6 — no docker access |
 | XPASSED | 0  | (zero is the goal — an XPASS means a defect was fixed; remove the xfail marker) |
 
@@ -84,11 +85,12 @@ Total runtime: ~13 seconds against a running stack.
 |---|---|---|
 | `admin_token` | session | JWT string — all roles + admin |
 | `noauth_token` | session | JWT string — no roles (for 403 tests) |
+| `patient_token` | session | JWT string — `patient` role only (for clinical-gate 403 tests, e.g. S4.9) |
 | `auth_hdrs` | function | `{"Authorization": "Bearer …"}` for httpx |
 | `http` | function | `httpx.Client` against the portal root |
 | `mpi_api` / `admin_api` / `hub_api` / `hl7_api` / `ris_api` / `ai_api` / `analytics_api` / `simulator_api` | function | `httpx.Client` rooted at the given service's `/api` prefix |
 | `portal_api` | function | `httpx.Client` rooted at `/patient-portal/api` (no Bearer header — portal owns its own session model) |
-| `orthanc` | function | `httpx.Client` against `/orthanc` (no auth) |
+| `orthanc` | function | `httpx.Client` against `/orthanc` (sends the admin bearer token — the nginx njs guard gates `/orthanc/` behind `auth_request /_auth/radiologist`) |
 | `fresh_mrn` | function | New `E2E-XXXXXXXXXX` MRN |
 | `docker_available` | session | `bool` — True iff `docker ps` works without sudo |
 | `wait_for_event(admin_client, type, *, timeout, since_id)` | helper | Poll `/admin/api/events/recent` |

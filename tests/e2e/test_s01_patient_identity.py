@@ -151,12 +151,6 @@ class TestS1_PatientIdentity:
         assert bundle.get("resourceType") == "Bundle"
         assert bundle.get("total", 0) >= 1
 
-    @pytest.mark.xfail(
-        reason="DEF-002: admin /api/audit is not written to by any mutation path. "
-               "Once the registry/identity routers call an _audit() helper this "
-               "test will flip to PASS.",
-        strict=False,
-    )
     def test_s1_7_admin_audit_records_sync(self, admin_api, request):
         """Admin /api/audit captures patient.synced event for the new master record."""
         r = admin_api.get("/audit")

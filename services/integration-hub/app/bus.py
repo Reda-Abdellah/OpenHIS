@@ -21,6 +21,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
+from openhis_sdk.bus import MAXLEN as BUS_MAXLEN
+
 from app.config import REDIS_URL
 
 STREAM = "openhis:events"
@@ -44,8 +46,10 @@ async def ensure_stream() -> None:
         return
     try:
         r = await get_client()
-        # Add a sentinel entry so the stream exists before groups are created
-        await r.xadd(STREAM, {"_init": "1"}, maxlen=1)
+        # mkstream=True below creates the stream if it does not exist yet.
+        # Never XADD here: a sentinel entry with a small maxlen would trim
+        # the shared 50k-capped stream on every hub restart, dropping the
+        # backlog of every lagging consumer group.
         for group in CONSUMER_GROUPS:
             try:
                 await r.xgroup_create(STREAM, group, id="0", mkstream=True)
@@ -75,7 +79,7 @@ async def publish(event_type: str, payload: dict[str, Any], source: str = "integ
                 "payload": json.dumps(payload),
                 "ts": datetime.now(timezone.utc).isoformat(),
             },
-            maxlen=10_000,   # keep last 10 k events; trim approximately
+            maxlen=BUS_MAXLEN,   # single authoritative cap — openhis_sdk.bus.MAXLEN
             approximate=True,
         )
         log.debug("Published %s → %s", event_type, entry_id)

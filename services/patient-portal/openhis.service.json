@@ -1,0 +1,17 @@
+{
+  "name": "patient-portal",
+  "display_name": "Patient Portal",
+  "port": 8010,
+  "profile": "analytics",
+  "nginx_path": "/patient-portal/",
+  "health_path": "/api/health",
+  "bus": {
+    "publishes": [],
+    "subscribes": []
+  },
+  "depends_on": ["keycloak"],
+  "env": {
+    "required": ["KEYCLOAK_TOKEN_URL", "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+  },
+  "description": "Patient-facing proxy: Keycloak password-grant login, session store, and scoped read-only views over clinical data."
+}

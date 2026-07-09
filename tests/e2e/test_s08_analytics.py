@@ -41,11 +41,6 @@ class TestS8_AnalyticsUI:
 
 class TestS8_AnalyticsFeatures:
 
-    @pytest.mark.xfail(
-        reason="DEF-007: analytics container runs without KEYCLOAK_URL, so "
-               "every feature route returns 503 before validating the token.",
-        strict=False,
-    )
     def test_s8_3_metrics_summary(self, analytics_api):
         r = analytics_api.get("/metrics/summary")
         assert r.status_code == 200
@@ -53,18 +48,15 @@ class TestS8_AnalyticsFeatures:
         for domain in ("patients", "lab", "imaging"):
             assert domain in body
 
-    @pytest.mark.xfail(reason="DEF-007", strict=False)
     def test_s8_4_metrics_trends(self, analytics_api):
         r = analytics_api.get("/metrics/trends")
         assert r.status_code == 200
         assert isinstance(r.json(), (list, dict))
 
-    @pytest.mark.xfail(reason="DEF-007", strict=False)
     def test_s8_5_metrics_refresh(self, analytics_api):
         r = analytics_api.post("/metrics/refresh")
         assert r.status_code in (200, 202)
 
-    @pytest.mark.xfail(reason="DEF-007", strict=False)
     def test_s8_6_export_patients(self, analytics_api):
         r = analytics_api.get("/export/patients")
         assert r.status_code == 200

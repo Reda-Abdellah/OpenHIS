@@ -4,8 +4,26 @@ Shared fixtures for cross-service integration tests.
 Strategy: load one service at a time with a fresh module namespace,
 then mock outbound HTTP calls with respx to capture/verify payloads.
 """
+import asyncio
 import os, sys, pytest
 from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _fresh_event_loop():
+    """Give every integration test a usable current event loop.
+
+    Tests here drive adapter coroutines via
+    ``asyncio.get_event_loop().run_until_complete(...)``. When the unit
+    suite runs first in the same pytest invocation, pytest-asyncio leaves
+    the main thread with no current loop and Python 3.11 raises
+    ``RuntimeError: There is no current event loop``.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield
+    loop.close()
+    asyncio.set_event_loop(None)
 
 ROOT = Path(__file__).parent.parent.parent
 HUB_PATH = str(ROOT / "services" / "integration-hub")
@@ -91,8 +109,15 @@ def hub_client(tmp_path, monkeypatch):
     monkeypatch.setenv("ODOO_DB",         "odoo")
     monkeypatch.setenv("POLL_INTERVAL_S", "99999")
 
-    if HUB_PATH not in sys.path:
-        sys.path.insert(0, HUB_PATH)
+    # Scrub other service paths: several services ship an `app/` package,
+    # and a leftover unit-suite path would shadow the hub's `app.main`
+    # when both suites run in one pytest invocation.
+    services_root = str(ROOT / "services")
+    sys.path[:] = [p for p in sys.path
+                   if not (p.startswith(services_root) and p != HUB_PATH)]
+    if HUB_PATH in sys.path:
+        sys.path.remove(HUB_PATH)
+    sys.path.insert(0, HUB_PATH)
     _clear_hub_modules()
 
     from app.main import app

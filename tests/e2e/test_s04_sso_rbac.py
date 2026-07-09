@@ -3,9 +3,10 @@ Scenario 4 — Single Sign-On & Role-Based Access Control
 
 Mirrors SCENARIO 4 in docs/verification_and_validation/v-and-v-scenario.md.
 
-Setup: the conftest auto-provisions two service-account clients
-  - `e2e-test-sa`   — all roles (admin/clinician/radiologist/lab-tech/...)
-  - `e2e-noauth-sa` — default roles only (no admin/clinician/etc.)
+Setup: the conftest auto-provisions three service-account clients
+  - `e2e-test-sa`    — all roles (admin/clinician/radiologist/lab-tech/...)
+  - `e2e-noauth-sa`  — default roles only (no admin/clinician/etc.)
+  - `e2e-patient-sa` — `patient` role only (for clinical-gate 403 tests)
 
 Covers:
   ✅ S4.1 — admin_token carries every expected realm role
@@ -14,6 +15,9 @@ Covers:
   ✅ S4.4 — no token at all returns 401 everywhere
   ✅ S4.5 — malformed bearer returns 401 (not 200, not 500)
   ✅ S4.6 — Keycloak OIDC discovery document is reachable from the portal
+  ✅ S4.7 — /orthanc/ njs gate: no token → 401 (fail closed)
+  ✅ S4.8 — /orthanc/ njs gate: admin token → 200 (admin passes every guard)
+  ✅ S4.9 — /orthanc/ njs gate: patient-role token → 403 (wrong role)
 """
 import pytest
 import httpx
@@ -77,6 +81,52 @@ class TestS4_AuthorizationOutcomes:
             timeout=5,
         )
         assert r.status_code == 401
+
+
+class TestS4_OrthancGate:
+    """
+    The nginx njs guard (`auth_request /_auth/radiologist` →
+    infra/nginx/njs/jwt-auth.js) is the ONLY auth layer in front of the
+    Orthanc DICOM store — regression-test its three outcomes directly.
+    """
+
+    def test_s4_7_orthanc_no_token_is_401(self):
+        r = httpx.get(f"{PORTAL}/orthanc/system", timeout=5)
+        assert r.status_code == 401, (
+            f"tokenless /orthanc/system returned {r.status_code} — "
+            "the njs radiologist gate is not enforcing auth"
+        )
+
+    def test_s4_8_orthanc_admin_token_is_200(self, admin_token):
+        r = httpx.get(
+            f"{PORTAL}/orthanc/system",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "Version" in body, f"unexpected /orthanc/system body: {body}"
+
+    def test_s4_9_orthanc_patient_role_token_is_403(self, patient_token):
+        claims = _decode_claims(patient_token)
+        roles = set(claims.get("roles", [])) | set(
+            claims.get("realm_access", {}).get("roles", [])
+        )
+        if roles & {"admin", "clinician", "radiologist"}:
+            pytest.skip(
+                f"e2e-patient-sa token unexpectedly carries gate-passing "
+                f"roles {roles} — cannot assert 403"
+            )
+        r = httpx.get(
+            f"{PORTAL}/orthanc/system",
+            headers={"Authorization": f"Bearer {patient_token}"},
+            timeout=10,
+        )
+        # Valid signature + wrong role must be 403 (not 401, never 200).
+        assert r.status_code == 403, (
+            f"patient-role token got {r.status_code} on /orthanc/system; "
+            "expected 403 from the radiologist gate"
+        )
 
 
 class TestS4_KeycloakDiscovery:

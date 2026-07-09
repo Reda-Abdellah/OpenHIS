@@ -7,13 +7,17 @@ self-exclusion in find_candidates).
 
 Score weights (per matcher.py docstring):
   MRN exact match   → 1.0  (immediate certain match)
-  firstname         → 0.25 (Jaro-Winkler similarity)
-  lastname          → 0.35 (Jaro-Winkler similarity)
+  firstname         → 0.25 (Jaro-Winkler similarity, phonetic floor)
+  lastname          → 0.35 (Jaro-Winkler similarity, phonetic floor)
   birthdate exact   → 0.30
   sex exact         → 0.10
   max without MRN   → 0.99 (capped to distinguish from MRN match)
 
-Threshold for duplicate flag: 0.70
+Name handling (T-16, see docs/adr/0006-mpi-matcher-threshold.md):
+  diacritics are transliterated ("René" → "rene"), and Metaphone-equal
+  spellings are floored at PHONETIC_FLOOR (0.85).
+
+Threshold for duplicate flag: 0.75 (override via MPI_MATCH_THRESHOLD).
 """
 import sys
 from pathlib import Path
@@ -85,6 +89,77 @@ def test_name_similarity_is_case_and_punctuation_insensitive():
     assert _name_similarity("John-Doe", "johndoe") == 1.0
 
 
+# ── T-16 name handling: diacritics + phonetic floor ──────────────────────────
+# Decision record: docs/adr/0006-mpi-matcher-threshold.md
+
+
+def test_name_similarity_diacritics_transliterated_not_dropped():
+    """Accented spellings of the same name are exact after normalisation.
+
+    Before T-16, `_norm` deleted any non-[a-z0-9] character, so "René"
+    became "ren" and was penalised by edit distance for a purely
+    orthographic difference.
+    """
+    from matcher import _name_similarity, _norm
+    assert _norm("René") == "rene"
+    assert _name_similarity("René", "Rene") == 1.0
+    assert _name_similarity("José", "Jose") == 1.0
+    assert _name_similarity("Müller", "Muller") == 1.0
+    assert _name_similarity("García", "Garcia") == 1.0
+
+
+def test_name_similarity_catherine_katherine_at_least_phonetic_floor():
+    """Catherine/Katherine share a Metaphone code (K0RN): even if the
+    edit-distance signal degraded, the phonetic floor guarantees ≥ 0.85."""
+    from matcher import _name_similarity, PHONETIC_FLOOR
+    assert _name_similarity("Catherine", "Katherine") >= PHONETIC_FLOOR
+
+
+def test_name_similarity_phonetic_floor_pins_low_jw_pairs():
+    """Metaphone-equal pairs whose raw Jaro-Winkler falls below the floor
+    are pinned at exactly PHONETIC_FLOOR (Youssef/Yusuf JW ≈ 0.81)."""
+    from matcher import _name_similarity, PHONETIC_FLOOR
+    assert _name_similarity("Youssef", "Yusuf") == PHONETIC_FLOOR
+    assert _name_similarity("Mostafa", "Mustapha") == PHONETIC_FLOOR
+
+
+def test_match_threshold_default_is_075():
+    """T-16 raised the default duplicate-flag threshold from 0.70 to 0.75
+    (ADR-0006); the benchmark CI gate also asserts this."""
+    import matcher
+    assert matcher.MATCH_THRESHOLD == 0.75
+
+
+def test_match_threshold_env_override(monkeypatch):
+    """MPI_MATCH_THRESHOLD overrides the default at import time.
+
+    A Youssef/Yusuf pair with no sex on record scores
+    0.85*0.25 + 0.35 + 0.30 = 0.8625 — flagged at the 0.75 default,
+    excluded once the deployment pins the threshold at 0.90.
+    """
+    import importlib
+
+    import matcher
+
+    query = _patient(id="A", firstname="Youssef", sex=None)
+    pool = [_patient(id="B", firstname="Yusuf", sex=None)]
+
+    # Default (0.75): the pair is flagged.
+    assert matcher.MATCH_THRESHOLD == 0.75
+    assert len(matcher.find_candidates(query, pool)) == 1
+
+    monkeypatch.setenv("MPI_MATCH_THRESHOLD", "0.90")
+    try:
+        importlib.reload(matcher)
+        assert matcher.MATCH_THRESHOLD == 0.90
+        assert matcher.find_candidates(query, pool) == []
+    finally:
+        # Restore the module-level default for the rest of the session.
+        monkeypatch.delenv("MPI_MATCH_THRESHOLD", raising=False)
+        importlib.reload(matcher)
+    assert matcher.MATCH_THRESHOLD == 0.75
+
+
 # ── compute_match_score ───────────────────────────────────────────────────────
 
 
@@ -142,12 +217,12 @@ def test_compute_match_score_completely_different_is_low():
 
 
 def test_compute_match_score_typo_close_above_threshold():
-    """One-letter typo on firstname should still cross the 0.70 dup threshold."""
-    from matcher import compute_match_score
+    """One-letter typo on firstname should still cross the dup threshold (0.75)."""
+    from matcher import compute_match_score, MATCH_THRESHOLD
     a = _patient(firstname="John")
     b = _patient(firstname="Jon")
     score = compute_match_score(a, b)
-    assert score >= 0.70
+    assert score >= MATCH_THRESHOLD
 
 
 def test_compute_match_score_birthdate_match_contributes_030():

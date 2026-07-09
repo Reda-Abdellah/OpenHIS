@@ -10,8 +10,8 @@ Covers:
   ✅ S7.4 — /hl7/api/messages/stats aggregates inbound/outbound/today/by_type
   ✅ S7.5 — HL7 gateway SPA loads at /hl7/
   ✅ S7.6 — MLLP socket accepts a connection on port 2575 (if reachable)
-  ❌ S7.7 — outbound message history captures patient_id / patient_name
-            (xfail: DEF-008 — PID parse is skipped on the outbound store path)
+  ✅ S7.7 — outbound message history captures patient_id / patient_name
+            (DEF-008 fixed — outbound store path now uses the shared PID parser)
 """
 import socket
 from contextlib import closing
@@ -124,12 +124,6 @@ class TestS7_HL7_MLLP:
 
 class TestS7_HL7_KnownDefects:
 
-    @pytest.mark.xfail(
-        reason="DEF-008: outbound /api/send/adt and /api/send/oru persist "
-               "the row with patient_id='' and patient_name=None. The PID "
-               "parser is not called on the outbound store path.",
-        strict=False,
-    )
     def test_s7_7_outbound_captures_patient_identifier(self, hl7_api, request):
         adt_id = request.config.cache.get("s7/adt_id", None)
         assert adt_id

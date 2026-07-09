@@ -12,7 +12,9 @@
   "depends_on": ["redis", "postgres"],
   "env": {
     "required": [
-      "KEYCLOAK_URL",
+      "KEYCLOAK_URL"
+    ],
+    "optional": [
       "REDIS_URL",
       "MPI_DATABASE_URL"
     ]

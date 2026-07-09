@@ -61,7 +61,7 @@ def get_stats():
             "SELECT msg_type, COUNT(*) AS cnt FROM messages "
             "GROUP BY msg_type ORDER BY cnt DESC"
         ).fetchall())
-        today    = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+        today    = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
         today_ct = db.execute(
             "SELECT COUNT(*) FROM messages WHERE created_at >= ?", (today,)
         ).fetchone()[0]

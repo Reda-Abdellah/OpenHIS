@@ -15,13 +15,25 @@ CREATE TABLE IF NOT EXISTS messages (
     raw           TEXT NOT NULL,
     status        TEXT DEFAULT 'received',
     error_msg     TEXT,
-    created_at    TEXT DEFAULT (datetime('now'))
+    created_at    TEXT DEFAULT (datetime('now')),
+    ack_status    TEXT,
+    ack_at        TEXT,
+    ref_id        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_msg_dir    ON messages(direction, created_at);
 CREATE INDEX IF NOT EXISTS idx_msg_type   ON messages(msg_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_msg_status ON messages(status);
 CREATE INDEX IF NOT EXISTS idx_msg_ctrl   ON messages(control_id);
 """
+
+# Ack-tracking columns (outbound messages that require an acknowledgment)
+# were added after first ship: CREATE TABLE IF NOT EXISTS won't migrate an
+# existing DB file, so init_db() back-fills them with guarded ALTERs.
+_MIGRATIONS = (
+    ("ack_status", "ALTER TABLE messages ADD COLUMN ack_status TEXT"),
+    ("ack_at",     "ALTER TABLE messages ADD COLUMN ack_at TEXT"),
+    ("ref_id",     "ALTER TABLE messages ADD COLUMN ref_id TEXT"),
+)
 
 
 @contextmanager
@@ -43,6 +55,13 @@ def get_db():
 def init_db():
     with get_db() as db:
         db.executescript(SCHEMA)
+        existing = {row[1] for row in db.execute("PRAGMA table_info(messages)").fetchall()}
+        for column, ddl in _MIGRATIONS:
+            if column not in existing:
+                db.execute(ddl)
+        # Created here (not in SCHEMA): on a pre-migration DB the column only
+        # exists after the ALTERs above have run.
+        db.execute("CREATE INDEX IF NOT EXISTS idx_msg_ref ON messages(ref_id)")
 
 
 def row_to_dict(row):

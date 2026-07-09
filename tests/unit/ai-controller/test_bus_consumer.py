@@ -240,13 +240,22 @@ async def test_consume_loop_disabled_without_redis_url(fresh_db, monkeypatch):
     await bus_consumer.consume_loop()
 
 
-# ── _process_message ───────────────────────────────────────────────────────────
+# ── SDK dispatch (replaces the old local _process_message) ─────────────────────
 
 @pytest.mark.asyncio
-async def test_process_message_unknown_event_type_ignored(fresh_db):
+async def test_sdk_dispatch_unknown_event_type_ignored(fresh_db):
+    """Unknown event types are ignored by the SDK consumer without raising."""
     import bus_consumer
+    from openhis_sdk.bus import BusConsumer
+
+    consumer = BusConsumer(
+        redis_url="",
+        group=bus_consumer.GROUP,
+        consumer=bus_consumer.CONSUMER,
+        handlers=bus_consumer._HANDLERS,
+    )
     # Should not raise even for unknown event types
-    await bus_consumer._process_message(
+    await consumer._process(
         "1-1",
         {"type": "pharmacy.order.sent", "payload": '{"id": "rx-001"}', "source": "odoo"},
     )

@@ -3,32 +3,60 @@ Deterministic patient matching algorithm.
 
 Score weights:
   MRN exact match   → 1.0  (immediate certain match)
-  firstname         → 0.25  (Jaro-Winkler similarity)
-  lastname          → 0.35  (Jaro-Winkler similarity)
+  firstname         → 0.25  (Jaro-Winkler similarity, phonetic floor)
+  lastname          → 0.35  (Jaro-Winkler similarity, phonetic floor)
   birthdate exact   → 0.30
   sex exact         → 0.10
   max without MRN   → 0.99 (never reaches 1.0 to distinguish from MRN match)
 
-Threshold for duplicate flag: 0.70
+Name handling (T-16):
+  - Diacritics are transliterated, not dropped ("René" → "rene", not "ren"),
+    so accented spellings of the same name score 1.0.
+  - Phonetic secondary signal: when two names sound identical (Metaphone)
+    but are spelled differently (Catherine/Katherine), the similarity is
+    floored at PHONETIC_FLOOR instead of relying on edit distance alone.
+
+Threshold for duplicate flag: 0.75 (override via MPI_MATCH_THRESHOLD).
 """
+import os
 import re
+import unicodedata
 from typing import List, Tuple
 
 import jellyfish
+
+# Raised from 0.70 (T-16): at 0.70, two patients sharing only birthdate,
+# sex and a vaguely similar firstname could be flagged, flooding the
+# review queue with false positives.
+MATCH_THRESHOLD = float(os.environ.get("MPI_MATCH_THRESHOLD", "0.75"))
+
+# Similarity floor applied when Metaphone codes agree but spelling differs.
+PHONETIC_FLOOR = 0.85
 
 
 def _norm(s) -> str:
     if not s:
         return ""
-    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+    # Transliterate diacritics (é→e, ñ→n) before stripping non-alphanumerics,
+    # otherwise accented letters disappear entirely from the comparison key.
+    s = unicodedata.normalize("NFKD", str(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def _name_similarity(a: str, b: str) -> float:
-    """Jaro-Winkler similarity on normalised name strings."""
+    """Jaro-Winkler similarity on normalised names, floored by phonetics."""
     a, b = _norm(a), _norm(b)
     if not a or not b:
         return 0.0
-    return round(jellyfish.jaro_winkler_similarity(a, b), 4)
+    score = jellyfish.jaro_winkler_similarity(a, b)
+    if score < PHONETIC_FLOOR:
+        try:
+            if jellyfish.metaphone(a) == jellyfish.metaphone(b):
+                score = PHONETIC_FLOOR
+        except Exception:
+            pass  # phonetics are a bonus signal only — never fail a match on it
+    return round(score, 4)
 
 
 def compute_match_score(a: dict, b: dict) -> float:
@@ -60,7 +88,7 @@ def compute_match_score(a: dict, b: dict) -> float:
 def find_candidates(
     patient: dict,
     pool: List[dict],
-    threshold: float = 0.70
+    threshold: float = MATCH_THRESHOLD
 ) -> List[Tuple[dict, float]]:
     """Return (candidate, score) pairs above threshold, excluding self."""
     pid = patient.get("id")

@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,34 @@ JOBS_VOLUME      = os.environ.get("JOBS_VOLUME_NAME", "openhis_ai-jobs")
 DOCKER_NETWORK   = os.environ.get("DOCKER_NETWORK", "openhis_openhis-net")
 CONTAINER_TIMEOUT = int(os.environ.get("CONTAINER_TIMEOUT_S", "300"))
 OPENELIS_URL     = os.environ.get("OPENELIS_URL", "")
+
+# Container hardening (T-02). Only images on the allowlist may be spawned,
+# and every pipeline container runs with hard resource limits.
+# The default covers all four seeded pipelines (database.py): the two imaging
+# POCs plus the bus-triggered clinical POCs (lab-risk, emr-alert).
+POC_ALLOWED_IMAGES: frozenset[str] = frozenset(
+    img.strip()
+    for img in os.environ.get(
+        "POC_ALLOWED_IMAGES",
+        "openhis/poc-xray:latest,openhis/poc-ct:latest,"
+        "openhis/poc-lab-risk:latest,openhis/poc-emr-alert:latest",
+    ).split(",")
+    if img.strip()
+)
+POC_MEM_LIMIT    = os.environ.get("POC_MEM_LIMIT", "2g")
+POC_PIDS_LIMIT   = int(os.environ.get("POC_PIDS_LIMIT", "256"))
+POC_CPU_LIMIT    = float(os.environ.get("POC_CPU_LIMIT", "2"))
+CONTAINER_LOG_TAIL = 1000
+
+# job_id becomes a path segment under JOBS_DATA_DIR — keep it filename-safe.
+_JOB_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def _validate_job_id(job_id: str) -> str:
+    """Reject job ids that could escape JOBS_DATA_DIR (path traversal)."""
+    if not _JOB_ID_RE.fullmatch(job_id or ""):
+        raise RuntimeError(f"invalid job_id: {job_id!r}")
+    return job_id
 
 
 def _now_iso() -> str:
@@ -126,6 +155,7 @@ async def run_job(job_id: str):
 
 async def _prepare_input(job_id: str):
     """Imaging pipeline: download DICOM instances from Orthanc."""
+    _validate_job_id(job_id)
     with get_db() as db:
         job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
 
@@ -184,6 +214,7 @@ async def _prepare_clinical_input(job_id: str):
     For lab_result pipelines, optionally enriches the payload with the full FHIR
     DiagnosticReport fetched from OpenELIS. Falls back gracefully if unreachable.
     """
+    _validate_job_id(job_id)
     with get_db() as db:
         job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
         pipeline = dict(
@@ -240,11 +271,17 @@ async def _fetch_fhir_resource(url: str) -> dict:
 
 
 def _run_container_sync(job_id: str) -> tuple[str, str, int]:
+    _validate_job_id(job_id)
     with get_db() as db:
         job = dict(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
         img = dict(db.execute(
             "SELECT docker_image FROM pipelines WHERE id=?", (job["pipeline_id"],)
         ).fetchone())["docker_image"]
+
+    if img not in POC_ALLOWED_IMAGES:
+        raise RuntimeError(
+            f"image not in allowlist: {img!r} (set POC_ALLOWED_IMAGES to extend)"
+        )
 
     client    = docker.from_env()
     container = client.containers.run(
@@ -254,10 +291,16 @@ def _run_container_sync(job_id: str) -> tuple[str, str, int]:
         network=DOCKER_NETWORK,
         detach=True,
         remove=False,
+        mem_limit=POC_MEM_LIMIT,
+        memswap_limit=POC_MEM_LIMIT,
+        pids_limit=POC_PIDS_LIMIT,
+        nano_cpus=int(POC_CPU_LIMIT * 1e9),
+        security_opt=["no-new-privileges"],
+        cap_drop=["ALL"],
     )
     try:
         result = container.wait(timeout=CONTAINER_TIMEOUT)
-        logs   = container.logs().decode("utf-8", errors="replace")
+        logs   = container.logs(tail=CONTAINER_LOG_TAIL).decode("utf-8", errors="replace")
         return container.id, logs, result["StatusCode"]
     finally:
         try:

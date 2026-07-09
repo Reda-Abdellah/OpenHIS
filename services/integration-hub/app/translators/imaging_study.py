@@ -3,7 +3,7 @@ import datetime
 def to_fhir_imaging_study(orthanc_meta: dict, patient_fhir_id: str) -> dict:
     tags = orthanc_meta.get("MainDicomTags", {})
     study_tags = orthanc_meta.get("StudyMainDicomTags", {})
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "resourceType": "ImagingStudy",
         "id": study_tags.get("StudyInstanceUID", orthanc_meta.get("ParentStudy", "unknown")),

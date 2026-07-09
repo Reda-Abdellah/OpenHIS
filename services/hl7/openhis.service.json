@@ -7,7 +7,21 @@
   "health_path": "/api/health",
   "bus": {
     "publishes": [],
-    "subscribes": []
+    "subscribes": [
+      "lab_result.ready"
+    ]
+  },
+  "env": {
+    "required": [
+      "KEYCLOAK_TOKEN_URL",
+      "KEYCLOAK_CLIENT_ID",
+      "KEYCLOAK_CLIENT_SECRET"
+    ],
+    "optional": [
+      "INTEGRATION_HUB_URL",
+      "ORU_MLLP_HOST",
+      "ORU_MLLP_PORT"
+    ]
   },
   "depends_on": [],
   "description": "Accepts and emits HL7 v2 messages (ADT, ORU, ORM) via MLLP on port 2575."

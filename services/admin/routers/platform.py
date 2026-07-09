@@ -7,10 +7,17 @@ GET /api/platform/ram        — total RAM estimate for active profiles
 """
 import os
 import yaml
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from database import get_db, rows_to_list
+from jwt_auth import require_roles
 
-router = APIRouter(prefix="/api/platform", tags=["platform"])
+# T-03: deployment topology / profile inventory is operator-only intel —
+# admin role required on all routes in this router.
+router = APIRouter(
+    prefix="/api/platform",
+    tags=["platform"],
+    dependencies=[Depends(require_roles("admin"))],
+)
 
 # Paths are resolved relative to the project root (two levels up from this file)
 _HERE = os.path.dirname(__file__)

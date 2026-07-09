@@ -36,9 +36,12 @@ async def lifespan(app: FastAPI):
 
 
 from jwt_auth import JWTMiddleware
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="Patient Portal", version="1.0.0", root_path=ROOT_PATH, lifespan=lifespan)
 app.add_middleware(JWTMiddleware)
+app.add_middleware(MetricsMiddleware, service="patient-portal")
+app.include_router(metrics_router)
 app.include_router(auth.router)
 app.include_router(me.router)
 

@@ -27,11 +27,28 @@ async def lifespan(app: FastAPI):
     init_db()
     from routers.registry import seed_base_services
     seed_base_services()
+    # DEF-002: bridge bus events (patient.synced) into the admin audit log.
+    # Guarded on REDIS_URL so unit tests / minimal stacks boot without Redis.
+    bus_task = None
+    if os.environ.get("REDIS_URL"):
+        import bus_consumer
+        bus_task = asyncio.create_task(bus_consumer.build_consumer().run())
+        log.info("Admin bus consumer started (patient.synced -> audit_log)")
     log.info("Admin Dashboard v2.0 ready (Keycloak-only auth)")
     yield
+    if bus_task is not None:
+        bus_task.cancel()
+        try:
+            await bus_task
+        except asyncio.CancelledError:
+            pass
 
+
+from openhis_sdk.metrics import MetricsMiddleware, metrics_router
 
 app = FastAPI(title="Admin Dashboard", version="2.0.0", root_path=ROOT_PATH, lifespan=lifespan)
+app.add_middleware(MetricsMiddleware, service="admin")
+app.include_router(metrics_router)
 
 app.include_router(services.router)
 app.include_router(config.router)

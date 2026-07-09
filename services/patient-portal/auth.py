@@ -7,7 +7,7 @@ SESSION_TTL_HOURS = int(__import__('os').environ.get('SESSION_TTL_HOURS', '24'))
 
 def create_session(patient_id: str, patient_mrn: str, patient_name: str) -> str:
     token     = str(uuid.uuid4())
-    now       = datetime.datetime.utcnow()
+    now       = datetime.datetime.now(datetime.timezone.utc)
     expires   = (now + datetime.timedelta(hours=SESSION_TTL_HOURS)
                  ).isoformat(timespec='seconds')
     with get_db() as db:
@@ -20,7 +20,7 @@ def create_session(patient_id: str, patient_mrn: str, patient_name: str) -> str:
 
 
 def validate_session(token: str) -> dict | None:
-    now = datetime.datetime.utcnow().isoformat(timespec='seconds')
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
     with get_db() as db:
         row = db.execute(
             "SELECT * FROM sessions WHERE id=? AND expires_at>?",
@@ -38,7 +38,7 @@ def delete_session(token: str):
 
 
 def purge_expired():
-    now = datetime.datetime.utcnow().isoformat(timespec='seconds')
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
     with get_db() as db:
         db.execute("DELETE FROM sessions WHERE expires_at<?", (now,))
 

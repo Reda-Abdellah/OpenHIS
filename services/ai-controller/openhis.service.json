@@ -10,5 +10,9 @@
     "subscribes": ["lab_result.ready", "patient.synced"]
   },
   "depends_on": ["redis"],
+  "env": {
+    "required": ["KEYCLOAK_URL"],
+    "optional": ["POC_ALLOWED_IMAGES", "POC_MEM_LIMIT", "POC_CPU_LIMIT", "POC_PIDS_LIMIT"]
+  },
   "description": "AI pipeline orchestration. Runs containerised models on imaging (DICOM), lab results, and EMR events. Subscribes to bus events to auto-trigger clinical pipelines."
 }

@@ -1,15 +1,15 @@
 import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from database import get_db, rows_to_list, row_to_dict
-from matcher import find_candidates
-from openhis_sdk.auth import require_token
+from matcher import MATCH_THRESHOLD, find_candidates
+from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/matching", tags=["matching"])
 
-_THRESHOLD = 0.70
+_THRESHOLD = MATCH_THRESHOLD
 
 
-@router.get("/candidates", dependencies=[Depends(require_token)])
+@router.get("/candidates", dependencies=[Depends(require_roles("clinician", "admin"))])
 def list_candidates(status: str = "pending"):
     with get_db() as db:
         rows = db.execute(
@@ -26,10 +26,10 @@ def list_candidates(status: str = "pending"):
     return rows_to_list(rows)
 
 
-@router.post("/run", dependencies=[Depends(require_token)])
+@router.post("/run", dependencies=[Depends(require_roles("clinician", "admin"))])
 def run_matching():
     """Scan all active patients and create match_candidates above threshold."""
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         patients = rows_to_list(db.execute(
             "SELECT * FROM master_patients WHERE status='active'"
@@ -49,7 +49,7 @@ def run_matching():
     return {"candidates_created": created, "patients_scanned": len(patients)}
 
 
-@router.post("/candidates/{cid}/resolve", dependencies=[Depends(require_token)])
+@router.post("/candidates/{cid}/resolve", dependencies=[Depends(require_roles("clinician", "admin"))])
 def resolve_candidate(cid: int, body: dict):
     """
     Resolve a match candidate.
@@ -61,7 +61,7 @@ def resolve_candidate(cid: int, body: dict):
     reviewed_by = body.get("reviewed_by", "reviewer")
     if decision not in ("confirmed_match", "confirmed_no_match"):
         raise HTTPException(400, "decision must be 'confirmed_match' or 'confirmed_no_match'")
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     with get_db() as db:
         row = db.execute("SELECT * FROM match_candidates WHERE id=?", (cid,)).fetchone()
         if not row:

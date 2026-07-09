@@ -19,19 +19,11 @@ class TestHealth:
         omrs = "http://openmrs-hub-test:9998"
         oe   = "http://openelis-hub-test:9998"
         odoo = "http://odoo-hub-test:9998"
-        # NOTE: health_check() acquires a Keycloak token before probing each
-        # upstream.  The token endpoint must be mocked here because the root
-        # conftest sets KEYCLOAK_TOKEN_URL to a non-resolvable test address.
-        # See defect report: health_check should not require a Keycloak token
-        # (Keycloak outage would mask real upstream availability).
-        import os
-        token_url = os.environ["KEYCLOAK_TOKEN_URL"]
+        # DEF-001 fixed: health_check() probes unauthenticated liveness
+        # endpoints — no Keycloak token mock is needed (or allowed) here.
         with respx.mock:
-            respx.post(token_url).mock(
-                return_value=httpx.Response(200, json={"access_token": "test-tok", "expires_in": 3600})
-            )
-            respx.get(f"{omrs}/openmrs/ws/fhir2/R4/metadata").mock(
-                return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
+            respx.get(f"{omrs}/openmrs/health/started").mock(
+                return_value=httpx.Response(200, text="started")
             )
             respx.get(f"{oe}/OpenELIS-Global/fhir/metadata").mock(
                 return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
@@ -41,6 +33,48 @@ class TestHealth:
             )
             r = client.get("/api/health")
         assert r.json()["status"] == "ok"
+
+    def test_health_ok_when_keycloak_down(self, client):
+        """DEF-001 regression: hub health must not depend on Keycloak.
+
+        Only the upstream liveness probes are mocked. The root conftest sets
+        KEYCLOAK_TOKEN_URL to a non-resolvable address and respx.mock raises
+        on any unmocked request — so if health_check() ever fetches a service
+        token again, the probe fails and this test catches it as "degraded".
+        """
+        omrs = "http://openmrs-hub-test:9998"
+        oe   = "http://openelis-hub-test:9998"
+        odoo = "http://odoo-hub-test:9998"
+        with respx.mock:
+            respx.get(f"{omrs}/openmrs/health/started").mock(
+                return_value=httpx.Response(200, text="started")
+            )
+            respx.get(f"{oe}/OpenELIS-Global/fhir/metadata").mock(
+                return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
+            )
+            respx.get(f"{odoo}/web/health").mock(
+                return_value=httpx.Response(200, json={"status": "pass"})
+            )
+            r = client.get("/api/health")
+        assert r.json()["status"] == "ok"
+
+    def test_health_probe_sends_no_authorization_header(self, client):
+        """The DEF-001 fix contract: liveness probes carry no Authorization
+        header and no Basic-auth credentials."""
+        omrs = "http://openmrs-hub-test:9998"
+        oe   = "http://openelis-hub-test:9998"
+        with respx.mock:
+            omrs_route = respx.get(f"{omrs}/openmrs/health/started").mock(
+                return_value=httpx.Response(200, text="started")
+            )
+            oe_route = respx.get(f"{oe}/OpenELIS-Global/fhir/metadata").mock(
+                return_value=httpx.Response(200, json={"resourceType": "CapabilityStatement"})
+            )
+            client.get("/api/health")
+        assert omrs_route.called and oe_route.called
+        for route in (omrs_route, oe_route):
+            for call in route.calls:
+                assert "authorization" not in call.request.headers
 
     def test_health_degraded_when_upstream_down(self, client):
         with respx.mock:

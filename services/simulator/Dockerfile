@@ -1,3 +1,8 @@
+# Build context is the REPO ROOT (not this directory) so the shared SDK can
+# be copied in — same pattern as services/ai-controller/Dockerfile:
+#   docker build -f services/simulator/Dockerfile .
+# compose/profiles/imaging.yml must use:
+#   build: { context: ${PWD}, dockerfile: services/simulator/Dockerfile }
 FROM python:3.11-slim
 
 RUN apt-get update \
@@ -6,10 +11,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY libs/openhis_sdk /openhis_sdk
+RUN pip install --no-cache-dir -e /openhis_sdk
+
+COPY services/simulator/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY services/simulator/ .
 
 EXPOSE 8001
 

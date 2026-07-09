@@ -2,9 +2,13 @@
 Phase 5 — Analytics Tests
 Covers: health, summary (empty + seeded), per-domain, trends,
         CSV export, refresh trigger, TAT computation, bar-chart
-        data shaping, pruning guard.
+        data shaping, pruning guard, startup env guard (DEF-007).
 """
 import datetime
+import json
+from pathlib import Path
+
+import pytest
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -140,6 +144,60 @@ class TestRefresh:
         r = client.post("/api/metrics/refresh")
         assert r.status_code == 202
         assert r.json()["status"] == "queued"
+
+
+# ── Startup env guard (DEF-007) ───────────────────────────────────────────────
+class TestEnvGuard:
+    """The service contract requires a fail-fast guard on KEYCLOAK_URL et al."""
+
+    REQUIRED = ["KEYCLOAK_URL", "KEYCLOAK_TOKEN_URL",
+                "KEYCLOAK_CLIENT_ID", "KEYCLOAK_CLIENT_SECRET"]
+
+    def test_guard_lists_keycloak_url(self):
+        import main
+        assert "KEYCLOAK_URL" in main._REQUIRED_ENV
+
+    def test_missing_env_reports_unset_keycloak_url(self, monkeypatch):
+        import main
+        monkeypatch.delenv("KEYCLOAK_URL", raising=False)
+        assert "KEYCLOAK_URL" in main._missing_env()
+
+    def test_missing_env_treats_empty_as_missing(self, monkeypatch):
+        import main
+        monkeypatch.setenv("KEYCLOAK_URL", "")
+        assert "KEYCLOAK_URL" in main._missing_env()
+
+    def test_missing_env_empty_when_all_set(self, monkeypatch):
+        import main
+        for var in self.REQUIRED:
+            monkeypatch.setenv(var, "stub-value")
+        assert main._missing_env() == []
+
+    def test_check_env_exits_when_keycloak_url_missing(self, monkeypatch):
+        import main
+        monkeypatch.delenv("KEYCLOAK_URL", raising=False)
+        with pytest.raises(SystemExit) as exc:
+            main._check_env()
+        assert "KEYCLOAK_URL" in str(exc.value.code)
+
+    def test_check_env_passes_when_all_set(self, monkeypatch):
+        import main
+        for var in self.REQUIRED:
+            monkeypatch.setenv(var, "stub-value")
+        main._check_env()   # must not raise
+
+    def test_app_boots_when_keycloak_url_set(self, client):
+        # `client` enters the lifespan via TestClient → _check_env() already
+        # ran with the non-empty KEYCLOAK_URL stub from conftest.
+        r = client.get("/api/health")
+        assert r.status_code == 200
+        assert r.json()["service"] == "analytics"
+
+    def test_guard_matches_service_manifest(self):
+        import main
+        manifest_path = Path(main.__file__).parent / "openhis.service.json"
+        manifest = json.loads(manifest_path.read_text())
+        assert set(manifest["env"]["required"]) == set(main._REQUIRED_ENV)
 
 
 # ── Collector smoke test ──────────────────────────────────────────────────────

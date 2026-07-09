@@ -2,7 +2,7 @@ import datetime
 
 def to_fhir_diagnostic_report_lab(payload: dict) -> dict:
     """Convert LIS final result payload → FHIR DiagnosticReport."""
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     observations = []
     for i, r in enumerate(payload.get("results", [])):
         observations.append({
@@ -34,7 +34,7 @@ def to_fhir_diagnostic_report_lab(payload: dict) -> dict:
 
 def to_fhir_diagnostic_report_radiology(payload: dict) -> dict:
     """Convert RIS final radiology report → FHIR DiagnosticReport."""
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "resourceType": "DiagnosticReport",
         "id": f"rad-{payload.get('report_id')}",

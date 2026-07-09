@@ -330,8 +330,13 @@ async def test_sdk_consumer_ignores_unknown_event_types():
 
 
 @pytest.mark.asyncio
-async def test_sdk_consumer_swallows_handler_exceptions():
-    """A failing handler must not crash the consumer (logged-and-continue)."""
+async def test_sdk_consumer_propagates_handler_exceptions():
+    """
+    A failing handler re-raises out of _process so the consumer loop can
+    leave the entry pending instead of acking it (ack-on-success semantics,
+    see ADR 0005). The loop-level DLQ behaviour is covered in
+    tests/unit/sdk/test_bus.py.
+    """
     from openhis_sdk.bus import BusConsumer
 
     async def raises(_payload):
@@ -343,8 +348,8 @@ async def test_sdk_consumer_swallows_handler_exceptions():
         consumer="mpi-test",
         handlers={"patient.registered": raises},
     )
-    # Should not raise
-    await consumer._process(
-        "1-1",
-        {"type": "patient.registered", "payload": "{}"},
-    )
+    with pytest.raises(RuntimeError, match="boom"):
+        await consumer._process(
+            "1-1",
+            {"type": "patient.registered", "payload": "{}"},
+        )

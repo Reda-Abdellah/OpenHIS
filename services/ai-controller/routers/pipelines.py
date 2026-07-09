@@ -1,14 +1,16 @@
 import json
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, field_validator
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Union, List
 from database import get_db, rows_to_list
+from jwt_auth import require_roles
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
 
 class PipelineCreate(BaseModel):
-    id: str
+    # id becomes a path segment and a docker env value — keep it filename-safe.
+    id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     name: str
     description: str = ""
     docker_image: str
@@ -26,7 +28,7 @@ class PipelineCreate(BaseModel):
         return v
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("admin", "radiologist"))])
 def list_pipelines():
     with get_db() as db:
         rows = db.execute("""
@@ -38,7 +40,7 @@ def list_pipelines():
     return rows_to_list(rows)
 
 
-@router.get("/{pipeline_id}")
+@router.get("/{pipeline_id}", dependencies=[Depends(require_roles("admin", "radiologist"))])
 def get_pipeline(pipeline_id: str):
     with get_db() as db:
         row = db.execute("SELECT * FROM pipelines WHERE id=?", (pipeline_id,)).fetchone()
@@ -47,7 +49,7 @@ def get_pipeline(pipeline_id: str):
         return dict(row)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles("admin"))])
 def create_pipeline(body: PipelineCreate):
     import sqlite3
     with get_db() as db:
@@ -66,7 +68,7 @@ def create_pipeline(body: PipelineCreate):
     return dict(row)
 
 
-@router.patch("/{pipeline_id}")
+@router.patch("/{pipeline_id}", dependencies=[Depends(require_roles("admin"))])
 def update_pipeline(pipeline_id: str, body: dict):
     allowed = {"name", "description", "docker_image", "version", "enabled",
                "source_type", "output_types", "config_json", "input_schema"}
@@ -79,7 +81,8 @@ def update_pipeline(pipeline_id: str, body: dict):
     return {"updated": pipeline_id}
 
 
-@router.delete("/{pipeline_id}", status_code=204)
+@router.delete("/{pipeline_id}", status_code=204,
+               dependencies=[Depends(require_roles("admin"))])
 def delete_pipeline(pipeline_id: str):
     with get_db() as db:
         db.execute("DELETE FROM pipelines WHERE id=?", (pipeline_id,))
