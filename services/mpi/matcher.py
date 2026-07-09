@@ -94,7 +94,7 @@ def find_candidates(
     pid = patient.get("id")
     results = []
     for p in pool:
-        if p.get("id") == pid:
+        if pid is not None and p.get("id") == pid:
             continue
         score = compute_match_score(patient, p)
         if score >= threshold:

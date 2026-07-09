@@ -12,6 +12,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 - MPI FHIR R4 facade: PDQm-flavored `Patient` search plus IHE PIXm-style `$ihe-pix` cross-reference query (`services/mpi/routers/fhir.py`)
 - CI-independent deny-by-default auth harness (`pytest tests/auth`): every native service booted with real RS256 JWT validation and asserted for the full 401/403/2xx triple
 - Bus payload-contract tests pinning the exact field sets of `lab_order.routed` and `lab_result.ready`
+- MPI matching accuracy benchmark (`pytest tests/benchmarks`): precision/recall regression floors on a corpus of real-world name variants (diacritics, Arabic/French transliterations); methodology and figures in `docs/benchmarks/mpi-matching.md`
 - `openhis_sdk.metrics`: Prometheus metrics for native services — `MetricsMiddleware` records `openhis_http_requests_total` and `openhis_http_request_duration_seconds` labeled by service/method/route-template/status; `metrics_router` exposes `GET /metrics` (JWT-exempt, in-network scrape only); pull-based `openhis_dlq_depth{stream}` gauge XLENs `openhis:events:dlq` at scrape time; `prometheus_client` backend with a zero-dependency text-exposition fallback; example alert rules in `infra/prometheus/alerts-example.yml`
 - `integration-hub` service: bidirectional FHIR R4 sync between OpenMRS, OpenELIS, and Odoo
 - Keycloak SSO with JWT middleware across all services
@@ -27,6 +28,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 - Tests reorganized into `tests/unit/`, `tests/integration/`, and `tests/smoke/`
 
 ### Fixed
+- DEF-004: MPI `matcher.find_candidates` no longer self-filters every candidate when neither the query nor the pool entries carry an id (guard is now `pid is not None and p.get("id") == pid`)
 - DEF-001: integration-hub adapter health checks no longer require a Keycloak token — upstream liveness is probed unauthenticated, so "Keycloak down" is no longer misreported as "upstream down"
 - DEF-007: analytics service no longer refuses every feature call with "KEYCLOAK_URL missing"
 - DEF-008: outbound HL7 messages now persist `patient_id`/`patient_name` via the shared PID parser (ADT/ORU/ORM send routes and the bus-consumer outbound path)

@@ -113,7 +113,7 @@ xfail marker was removed. Status: fixed in code 2026-06-12 — pending live
 
 ---
 
-### DEF-004 — `matcher.find_candidates` self-filters when ids are absent
+### DEF-004 — `matcher.find_candidates` self-filters when ids are absent  *(FIXED 2026-07-09 — guard `pid is not None` added; xfail promoted to a hard assertion)*
 
 **Affected service:** `services/mpi/`
 **Files:** `matcher.py:66-69`
