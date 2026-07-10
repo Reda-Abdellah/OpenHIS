@@ -252,6 +252,11 @@ class BusConsumer:
             except asyncio.CancelledError:
                 log.info("Bus consumer stopping")
                 break
+            except aioredis.TimeoutError:
+                # An empty blocking read timing out is not an error — some
+                # redis-py versions surface XREADGROUP's block= as a socket
+                # read timeout instead of returning an empty result.
+                continue
             except Exception as exc:
                 log.error("Bus consumer error: %s — retrying in 5 s", exc)
                 await asyncio.sleep(5)

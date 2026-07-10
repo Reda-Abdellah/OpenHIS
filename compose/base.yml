@@ -146,6 +146,9 @@ services:
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: integration-hub-sa
       KEYCLOAK_CLIENT_SECRET: ${INTEGRATION_HUB_KC_CLIENT_SECRET:-integration-hub-sa-secret}
+      # Tokens carry aud=openhis-platform (realm mapper) — without this the
+      # SDK would expect aud=<client_id> and reject every valid token.
+      KEYCLOAK_AUDIENCE: openhis-platform
       ODOO_ADMIN_PASS: ${ODOO_ADMIN_PASS:-admin}
       POLL_INTERVAL_S: "60"
       AUDIT_DB_PATH: /data/hub-audit.db
@@ -188,6 +191,7 @@ services:
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: hl7-sa
       KEYCLOAK_CLIENT_SECRET: ${HL7_KC_CLIENT_SECRET:-hl7-sa-secret}
+      KEYCLOAK_AUDIENCE: openhis-platform
       MLLP_ENABLED: "true"
       MLLP_HOST: "0.0.0.0"
       MLLP_PORT: "2575"

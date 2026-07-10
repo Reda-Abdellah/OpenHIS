@@ -31,7 +31,7 @@ TIMEOUT = httpx.Timeout(8.0)
 
 
 async def _auth_headers() -> dict:
-    from token import get_service_token
+    from sa_token import get_service_token
     token = await get_service_token()
     return {**_HDR, "Authorization": f"Bearer {token}"}
 

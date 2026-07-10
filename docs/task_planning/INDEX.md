@@ -2,7 +2,7 @@
 
 > Single source of truth for **status**. Task definitions live in the plan
 > files; conventions in [README.md](README.md). Update this file in the same
-> PR as the work. Last updated: **2026-07-09** (EP-01 complete 9/9 — next up: V-01 live validation).
+> PR as the work. Last updated: **2026-07-10** (V-01 done: e2e 0 failed on the live stack; DEF-011/DEF-012 opened → D-01/D-02).
 
 ---
 
@@ -11,7 +11,7 @@
 | ID | Epic | Outcome | Plan | Status |
 |---|---|---|---|---|
 | EP-01 | **Salvage platform work from study branch** | Every non-CDS improvement of the June-2026 wave merged to `master`; zero BioGML/CDS artefact imported; study branch retired | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase S | `DONE 2026-07-09` (9/9) |
-| EP-02 | **Live validation — zero open defects** | Full-stack e2e green, all `xfail` markers for fixed defects removed, defect registry at 0 open | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase V | `TODO` |
+| EP-02 | **Live validation — zero open defects** | Full-stack e2e green, all `xfail` markers for fixed defects removed, defect registry at 0 open | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase V | `WIP` — V-01 done (e2e 0 failed); D-01/D-02 remain for the two defects it surfaced |
 | EP-03 | **First public release `v0.1.0-alpha`** | Tag + GHCR images + `openhis-opm` on PyPI + quickstart demo | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase R | `TODO` |
 | EP-04 | **Audit remediation backlog** | Remaining T-tasks not covered by the salvage (T-12…T-15, T-17…T-35) triaged and executed | [REMEDIATION_PLAN.md](REMEDIATION_PLAN.md) | `TODO` — schedule after EP-01, many T-tasks land via S-01…S-05 |
 | EP-05 | **Product backlog (OBJ 1–8)** | Long-term objectives: compliance (OBJ 5), open-source readiness (OBJ 6), observability (OBJ 8)… | [4_TODO_list.md](4_TODO_list.md) | `TODO` — unscheduled reservoir |
@@ -24,7 +24,8 @@
 
 | Task | Title | Epic | Prio | Depends on |
 |---|---|---|---|---|
-| V-01 | Full-stack e2e pass, close the defects | EP-02 | P0 | S-03, S-05 |
+| D-01 | Fix DEF-011 — machine-token access to OpenMRS FHIR under oauth2login (resource-server filter or gated FHIR path) | EP-02 | P1 | — |
+| D-02 | Fix DEF-012 — ship a backing FHIR store (HAPI) in the laboratory profile and point `fhirstore.uri` at it | EP-02 | P1 | — |
 | R-01 | Tag `v0.1.0-alpha` | EP-03 | P1 | V-01 |
 | R-02 | Publish Docker images to GHCR | EP-03 | P1 | R-01 |
 | R-03 | Publish `openhis-opm` to PyPI | EP-03 | P1 | R-01 |
@@ -55,6 +56,7 @@
 | S-06 | Backup & restore tooling (`make backup`/`restore`, completeness self-test, dry-run exercised) | EP-01 | 2026-07-09 | merge `b09b3ac` |
 | S-07 | OPM PyPI packaging (`opm --version` OK) + quickstart + ROADMAP rewritten without CDS + design notes | EP-01 | 2026-07-09 | merge `3bafcc2` |
 | S-08 | Root reconciliation (README/CLAUDE.md stripped), repo-wide CDS gate clean, study branch deleted (bundle kept) — 738 tests green, 0 xfail | EP-01 | 2026-07-09 | merge `d1dfef7`+ |
+| V-01 | Live e2e validation — **64 passed, 0 failed, 5 xfail** on the full clinical stack; DEF-001/002/007/008 closed live, DEF-010 code-complete (hub consumer shipped); found & fixed: compose audience vars, nginx `$remote_user` crash, `token.py` stdlib shadowing (T-17), redis-py ≥6 timeout, analytics API↔V&V drift; opened DEF-011/DEF-012 | EP-02 | 2026-07-10 | see merge |
 
 ---
 
@@ -62,14 +64,16 @@
 
 | ID | Summary | Status on `master` | Fix arrives via |
 |---|---|---|---|
-| DEF-001 | Adapter health checks require a Keycloak token | `FIXED IN CODE 2026-07-09 — pending V-01` | S-03 |
-| DEF-002 | Admin registry mutations not audited | `FIXED IN CODE 2026-07-09 — pending V-01` | S-03 |
+| DEF-001 | Adapter health checks require a Keycloak token | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
+| DEF-002 | Admin registry mutations not audited | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
 | DEF-003 | MPI unit tests require live PostgreSQL | `FIXED IN CI 2026-07-09` — Postgres sidecar + anti-silent-skip guard | S-05 |
 | DEF-004 | MPI `find_candidates` self-filters without ids | `FIXED 2026-07-09` — guard `pid is not None`, xfail promoted | S-04 |
 | DEF-006 | OpenELIS 302 redirect loop | `RESOLVED 2026-04-19` | — |
-| DEF-007 | Analytics refuses every call: "KEYCLOAK_URL missing" | `FIXED IN CODE 2026-07-09 — pending V-01` | S-03 |
-| DEF-008 | HL7 outbound: patient identifiers not persisted | `FIXED IN CODE 2026-07-09 — pending V-01` | S-03 |
-| DEF-010 | Hub has no `patient.synced` consumer → MPI patients not pushed to OpenELIS | `FIXED IN CODE 2026-07-09 — pending V-01` | S-03 |
+| DEF-007 | Analytics refuses every call: "KEYCLOAK_URL missing" | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
+| DEF-008 | HL7 outbound: patient identifiers not persisted | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
+| DEF-010 | Hub has no `patient.synced` consumer → MPI patients not pushed to OpenELIS | `FIXED IN CODE 2026-07-10` — consumer shipped, live-observed to the OE write; final confirmation blocked by DEF-012 | V-01 |
+| DEF-011 | hub↔OpenMRS FHIR sync rejected under oauth2login SSO (302 → login for bearer AND Basic) | `OPEN` — surfaced by V-01 | D-01 |
+| DEF-012 | OpenELIS FHIR façade 500s on every search/write without a backing FHIR store | `OPEN` — surfaced by V-01 | D-02 |
 
 `OPEN` = broken on `master` today (e2e `xfail` markers reference these IDs).
 Closing a defect requires V-01's live validation, not just merged code.

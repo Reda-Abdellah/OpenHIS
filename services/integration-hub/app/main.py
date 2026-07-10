@@ -33,13 +33,19 @@ async def lifespan(app: FastAPI):
     registry.load()
     await init_audit_db()
     await worker.bus.ensure_stream()
-    task = asyncio.create_task(worker.poll_loop())
+    from app.bus_consumer import consume_loop
+    tasks = [
+        asyncio.create_task(worker.poll_loop()),
+        asyncio.create_task(consume_loop()),
+    ]
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await worker.bus.close()
 
 

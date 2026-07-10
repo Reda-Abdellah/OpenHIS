@@ -278,10 +278,12 @@ http {
             # Orthanc itself has AuthenticationEnabled=false in dev: this
             # gate is the ONLY auth layer in front of the DICOM store.
             auth_request       /_auth/radiologist;
-            auth_request_set   $remote_user  $sent_http_x_remote_user;
-            auth_request_set   $remote_roles $sent_http_x_remote_roles;
-            proxy_set_header   X-Remote-User  $remote_user;
-            proxy_set_header   X-Remote-Roles $remote_roles;
+            # NB: $remote_user is an nginx built-in (Basic auth) — a custom
+            # name is required or nginx fails with "duplicate variable".
+            auth_request_set   $auth_user  $sent_http_x_remote_user;
+            auth_request_set   $auth_roles $sent_http_x_remote_roles;
+            proxy_set_header   X-Remote-User  $auth_user;
+            proxy_set_header   X-Remote-Roles $auth_roles;
             proxy_pass         http://orthanc/;
             proxy_set_header   Host               $host;
             proxy_set_header   X-Real-IP          $remote_addr;

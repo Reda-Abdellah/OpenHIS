@@ -11,7 +11,9 @@ dependencies = [
     "fastapi>=0.110",
     "httpx>=0.27",
     "python-jose[cryptography]>=3.3",
-    "redis[hiredis]>=5.0",
+    # <6: redis-py >=6 applies XREADGROUP's block= as a hard socket read
+    # timeout, so every empty blocking read raises TimeoutError.
+    "redis[hiredis]>=5.0,<6",
     "python-json-logger>=3.0",
     # openhis_sdk.metrics primary backend (zero-dep fallback keeps the SDK
     # importable without it)

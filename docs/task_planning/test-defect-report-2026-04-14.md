@@ -59,7 +59,7 @@ Exercising each tile from the portal (`localhost/`) with an
 
 ## Defects in Service Logic
 
-### DEF-001 — `health_check()` adapters require a Keycloak token  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
+### DEF-001 — `health_check()` adapters require a Keycloak token  *(CLOSED — validated live 2026-07-10, V-01)*
 
 **Affected service:** `services/integration-hub/`  
 **Files:** `app/services/openmrs.py`, `app/services/openelis.py`  
@@ -86,7 +86,7 @@ code 2026-06-12 — pending live `make e2e` confirmation.
 
 ---
 
-### DEF-002 — Admin registry mutations are not audited  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
+### DEF-002 — Admin registry mutations are not audited  *(CLOSED — validated live 2026-07-10, V-01)*
 
 **Affected service:** `services/admin/`  
 **Files:** `routers/registry.py`, `routers/audit.py`  
@@ -177,7 +177,59 @@ Smoke-level check still TODO: `GET /OpenELIS-Global/fhir/metadata`
 
 ---
 
-### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS  *(PARTIALLY FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
+### DEF-011 — hub↔OpenMRS FHIR sync rejected under oauth2login SSO  *(OPEN — surfaced by V-01 live validation 2026-07-10)*
+
+**Affected services:** `integration-hub` ↔ OpenMRS (emr profile)
+**Symptom:** Every hub FHIR call to OpenMRS (`GET/POST /openmrs/ws/fhir2/R4/*`)
+returns `302 → /openmrs/oauth2login` — with the hub's Keycloak bearer token
+AND with Basic `admin` credentials. The OpenMRS→OpenELIS order routing
+(`omrs→oe`) and the report push (`oe→omrs`, `report-final` webhook) therefore
+never produce an ok-audit row.
+**Root cause:** the `oauth2login` module (1.5.0) replaces OpenMRS
+authentication entirely with the browser OIDC login flow. It is a *login*
+module, not a resource server: it neither validates bearer tokens nor lets
+Basic auth through for REST/FHIR, so no machine-to-machine call can pass.
+The June-2026 hub refactor switched the adapters from Basic to Keycloak
+bearer tokens under the assumption the module would accept them — that
+assumption was never live-validated until V-01.
+**Fix direction (to design):** either (a) an OpenMRS-side token filter that
+introspects Keycloak bearer tokens for `/ws/fhir2/*` (resource-server
+behavior), or (b) a module configuration exempting the FHIR path for an
+allowlisted machine identity, network-restricted to `openhis-net`.
+**Test status:** `tests/e2e/test_s02_lab_flow.py` S2.4/S2.5/S2.6 carry
+`xfail(DEF-011)` markers; they auto-promote when the fix lands.
+
+---
+
+### DEF-012 — OpenELIS FHIR façade 500s on every search/write without a backing FHIR store  *(OPEN — surfaced by V-01 live validation 2026-07-10)*
+
+**Affected services:** OpenELIS (laboratory profile) ↔ `integration-hub`
+**Symptom:** `GET /OpenELIS-Global/fhir/Patient` (any search form: bare list,
+`identifier=`, `family=`) returns `500 OperationOutcome "Error searching
+Patients"`. OE logs show `FhirUtil.forwardSearchToFhirStore: I/O error while
+calling FHIR store: null`. `/fhir/metadata` still returns 200.
+**Root cause:** OpenELIS Global 2's FHIR module is a façade over an external
+FHIR store: every search/write is forwarded to
+`org.openelisglobal.fhirstore.uri`. That property is empty in
+`infra/openelis/extra.properties.j2` (restored from the pre-June baseline
+during the salvage). The study branch pointed it at a HAPI `fhir-local`
+container — stripped as CDS plumbing, but it is in fact a hard requirement
+for OE's FHIR surface to function at all.
+**Blocks:** live confirmation of DEF-010 (the hub's patient.synced → OE
+upsert chain is implemented and observably runs — consumer fires, MPI reads
+return 200, the OE POST is attempted and retried per ADR-0005 — but the OE
+write itself 500s).
+**Fix direction:** reintroduce a HAPI FHIR JPA container in the laboratory
+profile as *platform* infrastructure (OE's FHIR store), point
+`fhirstore.uri` at it in `extra.properties.j2`, and restrict its nginx route
+to the compose subnet. This is the study branch's `fhir-local` design minus
+the CDS framing.
+**Test status:** `tests/e2e/test_s01_patient_identity.py::test_s1_6` carries
+`xfail(DEF-012)`; auto-promotes when the store lands.
+
+---
+
+### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS  *(FIXED IN CODE 2026-07-10 — hub consumer implemented and live-observed up to the OE write; final confirmation blocked by DEF-012)*
 
 **Affected service:** `services/integration-hub/app/worker.py`
 **Surfaced while resolving:** DEF-006 (OpenELIS redirect loop) on 2026-04-19.
@@ -220,7 +272,7 @@ xfailed under this defect.
 
 ---
 
-### DEF-007 — Analytics service refuses every feature call: "KEYCLOAK_URL missing"  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
+### DEF-007 — Analytics service refuses every feature call: "KEYCLOAK_URL missing"  *(CLOSED — validated live 2026-07-10, V-01)*
 
 **Affected service:** `services/analytics/`
 **Observed on:** 2026-04-19, live stack.
@@ -260,7 +312,7 @@ recreated to pick up the new env wiring).
 
 ---
 
-### DEF-008 — HL7 outbound messages: patient identifiers not persisted  *(FIXED IN CODE 2026-06-12 — pending live e2e confirmation)*
+### DEF-008 — HL7 outbound messages: patient identifiers not persisted  *(CLOSED — validated live 2026-07-10, V-01)*
 
 **Affected service:** `services/hl7/`
 **Observed on:** 2026-04-19, live stack.

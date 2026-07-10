@@ -10,6 +10,8 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 @router.get("/{domain}", dependencies=[Depends(require_roles("admin"))])
 def export_domain(domain: str, limit: int = 90):
     """Download all snapshots for a domain as CSV (newest first)."""
+    from routers.metrics import _resolve
+    domain = _resolve(domain)
     with get_db() as db:
         rows = db.execute(
             "SELECT data, captured_at FROM snapshots WHERE domain=? "

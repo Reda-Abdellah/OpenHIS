@@ -129,7 +129,11 @@ def lookup(
     raise HTTPException(404, "No matching patient found")
 
 
-@router.get("/{pid}", dependencies=[Depends(require_roles("clinician", "radiologist", "lab-tech", "admin"))])
+@router.get("/{pid}", dependencies=[Depends(require_roles(
+    "clinician", "radiologist", "lab-tech", "admin",
+    # internal-sync: the integration-hub's patient.synced consumer resolves
+    # the master record before pushing it to OpenELIS (DEF-010).
+    "internal-sync"))])
 def get_patient(pid: str):
     with get_db() as db:
         row = db.execute(f"{_MP_SQL} WHERE m.id=?", (pid,)).fetchone()
