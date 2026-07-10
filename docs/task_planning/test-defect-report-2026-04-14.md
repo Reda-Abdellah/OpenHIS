@@ -201,7 +201,7 @@ allowlisted machine identity, network-restricted to `openhis-net`.
 
 ---
 
-### DEF-012 — OpenELIS FHIR façade 500s on every search/write without a backing FHIR store  *(OPEN — surfaced by V-01 live validation 2026-07-10)*
+### DEF-012 — OpenELIS FHIR façade 500s on every search/write without a backing FHIR store  *(CLOSED — oe-fhir-store HAPI shipped in the laboratory profile, validated live 2026-07-10)*
 
 **Affected services:** OpenELIS (laboratory profile) ↔ `integration-hub`
 **Symptom:** `GET /OpenELIS-Global/fhir/Patient` (any search form: bare list,
@@ -229,7 +229,7 @@ the CDS framing.
 
 ---
 
-### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS  *(FIXED IN CODE 2026-07-10 — hub consumer implemented and live-observed up to the OE write; final confirmation blocked by DEF-012)*
+### DEF-010 — Hub has no `patient.synced` bus consumer; MPI-created patients are not pushed to OpenELIS  *(CLOSED — validated live 2026-07-10: consumer → MPI resolve → OE upsert lands in clinlims; e2e S1.6 asserts it)*
 
 **Affected service:** `services/integration-hub/app/worker.py`
 **Surfaced while resolving:** DEF-006 (OpenELIS redirect loop) on 2026-04-19.

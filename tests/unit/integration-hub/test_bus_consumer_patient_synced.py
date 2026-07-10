@@ -103,6 +103,28 @@ def test_mpi_event_upserts_into_openelis(consumer, monkeypatch):
     assert any(a[0] == "patient_synced" and a[3] == "mpi→oe" for a in audits)
 
 
+def test_already_mapped_master_is_skipped_not_duplicated(consumer, monkeypatch):
+    """OE re-keys identifiers, so a re-emitted event must not re-create."""
+    audits = _silence_audit(monkeypatch, consumer)
+    upserts = []
+
+    async def fake_mapped(master_id):
+        return "oe-9"
+
+    async def fake_upsert(patient):
+        upserts.append(patient)
+        return "oe-dup"
+
+    monkeypatch.setattr(consumer, "_get_mapped_oe_id", fake_mapped)
+    monkeypatch.setattr(consumer.openelis, "upsert_patient", fake_upsert)
+
+    asyncio.run(consumer._handle_patient_synced(
+        {"master_id": "m-1", "mrn": "MRN-42", "source": "mpi"}))
+
+    assert upserts == [], "a mapped master_id must never be re-upserted"
+    assert any("already synced" in (a[5] if len(a) > 5 else "") for a in audits)
+
+
 def test_mpi_unavailable_raises_for_redelivery(consumer, monkeypatch):
     async def fake_mpi_get(path):
         return None

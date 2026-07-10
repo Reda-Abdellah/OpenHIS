@@ -19,6 +19,7 @@ x-openhis:
   nginx_routes:
     - { path: /OpenELIS-Global/, upstream: "openelis:8080" }
     - { path: /openelis-fhir/,   upstream: "openelis:8080" }
+    - { path: /oe-fhir-store/,   upstream: "oe-fhir-store:8080" }
 
 networks:
   openhis-net:
@@ -29,6 +30,45 @@ volumes:
   openelis-lucene:
 
 services:
+
+  # ── OpenELIS backing FHIR store — HAPI FHIR JPA Server (DEF-012) ────────
+  # OpenELIS Global 2's FHIR module is a façade over an external FHIR
+  # store: every /fhir search and write is forwarded to
+  # org.openelisglobal.fhirstore.uri (see infra/openelis/
+  # extra.properties.j2). Without this server every Patient search 500s.
+  #
+  # OE addresses it through nginx (http://localhost/oe-fhir-store/fhir)
+  # because its JVM resolves only `localhost` (jdk.net.hosts.file →
+  # host-gateway); the nginx route is subnet-restricted.
+  #
+  # In-memory H2: the store holds FHIR *projections* of clinlims data —
+  # the OpenELIS Postgres remains the system of record. For deployments
+  # that must survive restarts, switch to a Postgres-backed HAPI.
+  # ─────────────────────────────────────────────────────────────────────────
+  oe-fhir-store:
+    image: hapiproject/hapi:v8.6.5-1
+    environment:
+      hapi.fhir.fhir_version: R4
+      # Publish the public URL (via nginx) so OE can follow
+      # CapabilityStatement/Bundle "link" hrefs it cannot resolve by
+      # container hostname.
+      hapi.fhir.server_address: http://localhost/oe-fhir-store/fhir
+      spring.datasource.url: "jdbc:h2:mem:hapi-oe;DB_CLOSE_DELAY=-1"
+      spring.datasource.driver-class-name: org.h2.Driver
+      # OE writes resources that reference entities living only in
+      # clinlims — don't reject them.
+      hapi.fhir.allow_external_references: "true"
+      hapi.fhir.enforce_referential_integrity_on_write: "false"
+      hapi.fhir.enforce_referential_integrity_on_delete: "false"
+      hapi.fhir.allow_multiple_delete: "true"
+    networks: [openhis-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/fhir/metadata >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   openelis-db:
     image: itechuw/openelis-global-2-database:latest
@@ -60,6 +100,9 @@ services:
       openelis-db:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      # FHIR hooks register against the backing store at context init.
+      oe-fhir-store:
         condition: service_healthy
     extra_hosts:
       - "localhost:host-gateway"
