@@ -1,8 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 from openhis_sdk.auth import require_token
+import bus
+
+log = logging.getLogger("mpi.crossref")
 
 router = APIRouter(prefix="/api/crossref", tags=["crossref"])
 
@@ -43,12 +48,32 @@ def create_xref(body: XRefCreate):
                  body.mrn, body.assigning_authority)
             )
             xref_id = cur.fetchone()["id"]
-            return row_to_dict(db.execute(
+            created = row_to_dict(db.execute(
                 "SELECT * FROM cross_references WHERE id=?", (xref_id,)
             ).fetchone())
         except Exception:
             raise HTTPException(409,
                 f"Cross-reference ({body.system}:{body.system_id}) already registered")
+    # A new cross-reference changes the patient's downstream identity —
+    # re-emit patient.synced so the hub re-upserts with the full identifier
+    # set (DEF-010). Fire-and-forget: publish failures never fail the API.
+    try:
+        mrn = body.mrn
+        if not mrn:
+            with get_db() as db:
+                row = db.execute(
+                    "SELECT mrn FROM master_patients WHERE id=?", (body.master_id,)
+                ).fetchone()
+                mrn = row["mrn"] if row else ""
+        bus.publish("patient.synced", {
+            "master_id": body.master_id,
+            "mrn":       mrn or "",
+            "source":    "mpi",
+        })
+    except Exception:
+        log.warning("patient.synced publish failed after xref create",
+                    extra={"master_id": body.master_id}, exc_info=True)
+    return created
 
 
 @router.delete("/{xref_id}", status_code=204, dependencies=[Depends(require_token)])

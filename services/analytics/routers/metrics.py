@@ -5,7 +5,15 @@ from database import get_db
 from openhis_sdk.auth import require_roles
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
-KNOWN_DOMAINS = {'ehr', 'orders', 'billing', 'ai', 'mpi'}
+KNOWN_DOMAINS = {'ehr', 'orders', 'lis', 'billing', 'ai', 'mpi'}
+
+# Canonical V&V vocabulary (docs/verification_and_validation, S8) → storage
+# domain. The summary exposes both so dashboards can use either name.
+ALIASES = {'patients': 'ehr', 'lab': 'lis', 'imaging': 'orders'}
+
+
+def _resolve(domain: str) -> str:
+    return ALIASES.get(domain, domain)
 
 
 def _latest(db, domain: str):
@@ -22,11 +30,14 @@ def _latest(db, domain: str):
 @router.get("/summary", dependencies=[Depends(require_roles("clinician", "admin"))])
 def get_summary():
     with get_db() as db:
-        return {d: _latest(db, d) for d in KNOWN_DOMAINS}
+        out = {d: _latest(db, d) for d in KNOWN_DOMAINS}
+        out.update({alias: _latest(db, target) for alias, target in ALIASES.items()})
+        return out
 
 
 @router.get("/trends", dependencies=[Depends(require_roles("clinician", "admin"))])
-def get_trends(domain: str, metric: str, limit: int = 20):
+def get_trends(domain: str = "ehr", metric: str = "total_patients", limit: int = 20):
+    domain = _resolve(domain)
     with get_db() as db:
         rows = db.execute(
             "SELECT data, captured_at FROM snapshots WHERE domain=? "
@@ -46,6 +57,7 @@ def get_trends(domain: str, metric: str, limit: int = 20):
 
 @router.get("/{domain}", dependencies=[Depends(require_roles("clinician", "admin"))])
 def get_domain(domain: str):
+    domain = _resolve(domain)
     if domain not in KNOWN_DOMAINS:
         raise HTTPException(404, f"Unknown domain {domain!r}. Known: {sorted(KNOWN_DOMAINS)}")
     with get_db() as db:

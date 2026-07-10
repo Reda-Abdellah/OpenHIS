@@ -49,7 +49,7 @@ async def _fhir_count(client: httpx.AsyncClient, url: str, headers: dict,
 
 
 async def collect_all() -> dict:
-    from token import get_service_token
+    from sa_token import get_service_token
     result = {}
     token  = await get_service_token()
     auth_hdr = {"Authorization": f"Bearer {token}"}

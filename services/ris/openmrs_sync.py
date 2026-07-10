@@ -175,7 +175,7 @@ async def _sync_once(client: httpx.AsyncClient) -> int:
 
 async def sync_loop() -> None:
     """Background task — runs forever, sleeping POLL_INTERVAL_S between cycles."""
-    from token import get_service_token
+    from sa_token import get_service_token
     log.info(
         "OpenMRS→RIS sync started (interval=%ds fhir=%s)",
         POLL_INTERVAL_S, FHIR_BASE,

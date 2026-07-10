@@ -56,6 +56,13 @@ class TestS2_LabFlow:
         assert r.json()["status"] == "queued"
         request.config.cache.set("s2/report_id", 99001)
 
+    @pytest.mark.xfail(
+        reason="DEF-011: the oauth2login module hijacks ALL OpenMRS REST/FHIR "
+               "authentication — the hub's bearer token (and Basic auth) get "
+               "302-redirected to /openmrs/oauth2login, so the DiagnosticReport "
+               "push can neither succeed nor land on the retry queue cleanly.",
+        strict=False,
+    )
     def test_s2_4_audit_captures_report_final_event(self, hub_api, request):
         """
         The hub's audit log or retry queue should reflect the queued FINAL
@@ -91,6 +98,13 @@ class TestS2_LabFlow:
 
 class TestS2_KnownDefects:
 
+    @pytest.mark.xfail(
+        reason="DEF-011: hub↔OpenMRS FHIR sync rejected under oauth2login SSO "
+               "(302 → login page for bearer AND Basic) — no ServiceRequest "
+               "can be polled from OpenMRS until the module accepts machine "
+               "tokens or a dedicated FHIR auth path exists.",
+        strict=False,
+    )
     def test_s2_5_openmrs_to_openelis_service_request(self, hub_api):
         r = hub_api.get("/audit", params={"limit": 50})
         events = r.json().get("events", [])
@@ -102,6 +116,11 @@ class TestS2_KnownDefects:
             for e in events
         )
 
+    @pytest.mark.xfail(
+        reason="DEF-011: the oe→omrs push needs OpenMRS to accept the hub's "
+               "machine token — see test_s2_5.",
+        strict=False,
+    )
     def test_s2_6_openelis_to_openmrs_diagnostic_report(self, hub_api):
         """
         The hub polls OpenELIS for completed reports and pushes them to

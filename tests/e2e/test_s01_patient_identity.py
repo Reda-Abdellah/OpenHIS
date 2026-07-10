@@ -125,31 +125,48 @@ class TestS1_PatientIdentity:
     # ── Known-defect xfails (flip to PASS when fixed) ────────────────────────
 
     @pytest.mark.xfail(
-        reason="DEF-010: the hub subscribes to OpenMRS poll loop only; "
-               "MPI-created patients emit `patient.synced` on the bus but "
-               "the hub has no consumer, so they are never pushed to OE. "
-               "DEF-006 (redirect loop) is resolved; the FHIR endpoint is "
-               "reachable under /OpenELIS-Global/fhir/ with Basic auth.",
+        reason="DEF-012: OpenELIS's FHIR façade forwards every search/write "
+               "to org.openelisglobal.fhirstore.uri, which is unset — all "
+               "Patient searches 500. The hub-side DEF-010 chain (consumer → "
+               "MPI resolve → OE upsert attempt + retry) is implemented and "
+               "observable in the hub audit/logs; this test auto-promotes "
+               "when the laboratory profile ships a backing FHIR store.",
         strict=False,
     )
     def test_s1_6_openelis_roundtrip(self, mpi_api, request):
-        """Patient created in MPI appears in OpenELIS via the hub's FHIR adapter."""
+        """Patient created in MPI appears in OpenELIS via the hub's FHIR adapter.
+
+        DEF-010 closure: the hub's patient.synced consumer resolves the MPI
+        record (+ cross-references) and upserts it into OpenELIS. The push is
+        asynchronous (bus consumer, block up to 5 s + OE write), so poll.
+        """
         omrs = request.config.cache.get("s1/omrs_uuid", None)
         assert omrs
-        import httpx, os
-        r = httpx.get(
-            "http://localhost/OpenELIS-Global/fhir/Patient",
-            params={"identifier": omrs},
-            auth=(
-                os.environ.get("OPENELIS_USER", "admin"),
-                os.environ.get("OPENELIS_PASSWORD", "adminADMIN!"),
-            ),
-            timeout=10, follow_redirects=False,
+        import httpx, os, time
+        deadline = time.time() + 20
+        last = None
+        while time.time() < deadline:
+            r = httpx.get(
+                "http://localhost/OpenELIS-Global/fhir/Patient",
+                params={"identifier": omrs},
+                auth=(
+                    os.environ.get("OPENELIS_USER", "admin"),
+                    os.environ.get("OPENELIS_PASSWORD", "adminADMIN!"),
+                ),
+                timeout=10, follow_redirects=False,
+            )
+            last = r
+            if r.status_code == 200 and r.json().get("total", 0) >= 1:
+                break
+            time.sleep(1)
+        assert last is not None and last.status_code == 200, (
+            f"OpenELIS FHIR search failed: {last.status_code} {last.text[:200]}"
         )
-        assert r.status_code == 200, f"OpenELIS FHIR search failed: {r.status_code} {r.text[:200]}"
-        bundle = r.json()
+        bundle = last.json()
         assert bundle.get("resourceType") == "Bundle"
-        assert bundle.get("total", 0) >= 1
+        assert bundle.get("total", 0) >= 1, (
+            "MPI patient never reached OpenELIS (DEF-010 regression)"
+        )
 
     def test_s1_7_admin_audit_records_sync(self, admin_api, request):
         """Admin /api/audit captures patient.synced event for the new master record."""

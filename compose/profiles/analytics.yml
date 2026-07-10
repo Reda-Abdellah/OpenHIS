@@ -40,6 +40,8 @@ services:
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: analytics-sa
       KEYCLOAK_CLIENT_SECRET: ${ANALYTICS_KC_CLIENT_SECRET:-analytics-sa-secret}
+      # Tokens carry aud=openhis-platform (realm mapper) — see base.yml note.
+      KEYCLOAK_AUDIENCE: openhis-platform
       COLLECT_INTERVAL_MIN: ${COLLECT_INTERVAL_MIN:-5}
     volumes:
       - analytics-data:/data
@@ -67,6 +69,7 @@ services:
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/keycloak/realms/openhis/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: patient-portal-sa
       KEYCLOAK_CLIENT_SECRET: ${PATIENT_PORTAL_KC_CLIENT_SECRET:-patient-portal-sa-secret}
+      KEYCLOAK_AUDIENCE: openhis-platform
     volumes:
       - portal-sessions:/data
     networks: [openhis-net]
