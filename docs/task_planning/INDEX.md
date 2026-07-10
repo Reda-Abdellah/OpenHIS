@@ -2,7 +2,7 @@
 
 > Single source of truth for **status**. Task definitions live in the plan
 > files; conventions in [README.md](README.md). Update this file in the same
-> PR as the work. Last updated: **2026-07-10** (D-01 done — EP-02 complete: **zero open defects**; next: EP-03 release).
+> PR as the work. Last updated: **2026-07-10** (R-01 done — v0.6.0-alpha tagged locally; push master + tag to fire GHCR/PyPI/Release).
 
 ---
 
@@ -24,10 +24,9 @@
 
 | Task | Title | Epic | Prio | Depends on |
 |---|---|---|---|---|
-| R-01 | Tag `v0.1.0-alpha` | EP-03 | P1 | V-01 |
-| R-02 | Publish Docker images to GHCR | EP-03 | P1 | R-01 |
-| R-03 | Publish `openhis-opm` to PyPI | EP-03 | P1 | R-01 |
-| R-04 | Record quickstart demo | EP-03 | P2 | R-01 |
+| R-02 | Publish Docker images to GHCR — release.yml fires on tag push (`git push origin v0.6.0-alpha`) | EP-03 | P1 | tag push |
+| R-03 | Publish `openhis-opm` to PyPI — job ready (Trusted Publishing); one-time setup on pypi.org: project `openhis-opm`, workflow `release.yml`, environment `pypi` (+ create the GitHub environment) | EP-03 | P1 | tag push |
+| R-04 | Record quickstart demo (human: film `opm init` → `make up` → portal tour, docs/quickstart.md as script) | EP-03 | P2 | — |
 
 ### 🟡 In progress
 
@@ -57,6 +56,7 @@
 | V-01 | Live e2e validation — **64 passed, 0 failed, 5 xfail** on the full clinical stack; DEF-001/002/007/008 closed live, DEF-010 code-complete (hub consumer shipped); found & fixed: compose audience vars, nginx `$remote_user` crash, `token.py` stdlib shadowing (T-17), redis-py ≥6 timeout, analytics API↔V&V drift; opened DEF-011/DEF-012 | EP-02 | 2026-07-10 | see merge |
 | D-02 | OpenELIS backing FHIR store (`oe-fhir-store` HAPI, laboratory profile) — DEF-012 **and** DEF-010 closed live; e2e S1.6 passes hard (65 passed, 0 failed); also fixed empty-body-201 parse + master→oe dedup map in the hub | EP-02 | 2026-07-10 | see merge |
 | D-01 | DEF-011 closed — oauth2login's `OAuth2ServiceAccountFilter` accepts bearer JWTs once the matching OpenMRS user exists: new `openmrs-init` one-shot provisions `service-account-integration-hub-sa` (SQL, idempotent); lab-result reads moved to the OE FHIR store; e2e S2.4 & S2.6 pass live end-to-end — **67 passed, 0 failed, 2 seed-gap xfail** | EP-02 | 2026-07-10 | see merge |
+| R-01 | `v0.6.0-alpha` cut — CHANGELOG frozen with release summary, annotated tag created locally, opm 0.6.0-alpha.1, release.yml upgraded (section-only notes + PyPI Trusted Publishing job); fires on `git push origin v0.6.0-alpha` | EP-03 | 2026-07-10 | merge `2e1f65a` |
 
 ---
 
