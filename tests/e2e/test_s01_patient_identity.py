@@ -124,49 +124,56 @@ class TestS1_PatientIdentity:
 
     # ── Known-defect xfails (flip to PASS when fixed) ────────────────────────
 
-    @pytest.mark.xfail(
-        reason="DEF-012: OpenELIS's FHIR façade forwards every search/write "
-               "to org.openelisglobal.fhirstore.uri, which is unset — all "
-               "Patient searches 500. The hub-side DEF-010 chain (consumer → "
-               "MPI resolve → OE upsert attempt + retry) is implemented and "
-               "observable in the hub audit/logs; this test auto-promotes "
-               "when the laboratory profile ships a backing FHIR store.",
-        strict=False,
-    )
-    def test_s1_6_openelis_roundtrip(self, mpi_api, request):
-        """Patient created in MPI appears in OpenELIS via the hub's FHIR adapter.
+    def test_s1_6_openelis_roundtrip(self, hub_api, request):
+        """Patient created in MPI reaches OpenELIS via the hub (DEF-010).
 
-        DEF-010 closure: the hub's patient.synced consumer resolves the MPI
-        record (+ cross-references) and upserts it into OpenELIS. The push is
-        asynchronous (bus consumer, block up to 5 s + OE write), so poll.
+        The hub's patient.synced consumer resolves the MPI record (+
+        cross-references) and upserts it into OpenELIS. The push is
+        asynchronous (bus consumer, block up to 5 s + OE write), so poll
+        the hub audit log for THIS run's master_id (OE re-keys posted
+        identifiers to pat_guid/pat_uuid in its FHIR projection, so a
+        search by our external identifier can never match — the audit row
+        is the run-specific proof, the demographic search below the
+        integration-level one).
         """
-        omrs = request.config.cache.get("s1/omrs_uuid", None)
-        assert omrs
+        pid = request.config.cache.get("s1/patient_id", None)
+        assert pid
         import httpx, os, time
-        deadline = time.time() + 20
-        last = None
-        while time.time() < deadline:
-            r = httpx.get(
-                "http://localhost/OpenELIS-Global/fhir/Patient",
-                params={"identifier": omrs},
-                auth=(
-                    os.environ.get("OPENELIS_USER", "admin"),
-                    os.environ.get("OPENELIS_PASSWORD", "adminADMIN!"),
-                ),
-                timeout=10, follow_redirects=False,
+        deadline = time.time() + 25
+        synced = False
+        while time.time() < deadline and not synced:
+            r = hub_api.get("/audit", params={"limit": 100})
+            assert r.status_code == 200
+            synced = any(
+                e.get("event_type", e.get("action", "")).startswith("patient_synced")
+                and e.get("resource_id") == pid
+                and e.get("direction") == "mpi→oe"
+                and e.get("status") == "ok"
+                for e in r.json().get("events", [])
             )
-            last = r
-            if r.status_code == 200 and r.json().get("total", 0) >= 1:
-                break
-            time.sleep(1)
-        assert last is not None and last.status_code == 200, (
-            f"OpenELIS FHIR search failed: {last.status_code} {last.text[:200]}"
+            if not synced:
+                time.sleep(1)
+        assert synced, (
+            "no mpi→oe patient_synced audit row for this master_id within 25s "
+            "(DEF-010 regression)"
         )
-        bundle = last.json()
-        assert bundle.get("resourceType") == "Bundle"
-        assert bundle.get("total", 0) >= 1, (
-            "MPI patient never reached OpenELIS (DEF-010 regression)"
+
+        # Integration-level proof: OpenELIS's FHIR façade actually serves
+        # the pushed demographics (requires the oe-fhir-store backing
+        # server — DEF-012).
+        r = httpx.get(
+            "http://localhost/OpenELIS-Global/fhir/Patient",
+            params={"family": "Durand"},
+            auth=(
+                os.environ.get("OPENELIS_USER", "admin"),
+                os.environ.get("OPENELIS_PASSWORD", "adminADMIN!"),
+            ),
+            timeout=10, follow_redirects=False,
         )
+        assert r.status_code == 200, (
+            f"OpenELIS FHIR search failed: {r.status_code} {r.text[:200]}"
+        )
+        assert r.json().get("total", 0) >= 1
 
     def test_s1_7_admin_audit_records_sync(self, admin_api, request):
         """Admin /api/audit captures patient.synced event for the new master record."""

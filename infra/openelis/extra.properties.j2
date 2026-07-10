@@ -2,9 +2,13 @@
 # All properties commented out in the bundled application.properties that Spring
 # beans require (no default value in @Value annotation).
 
-# FHIR store — empty string → FhirConfig injects empty Optional/String →
-# RegisterFhirHooksTask.startTask() skips FHIR hook registration (isPresent=false).
-org.openelisglobal.fhirstore.uri=
+# FHIR store — OpenELIS's FHIR module is a façade over this external store
+# (DEF-012): every /fhir search and write is forwarded here
+# (FhirUtil.forwardSearchToFhirStore). Backed by the oe-fhir-store HAPI
+# container (compose/profiles/laboratory.yml), addressed via nginx because
+# OE's JVM resolves only `localhost` (jdk.net.hosts.file → host-gateway).
+# Emptying this makes every FHIR search/write 500.
+org.openelisglobal.fhirstore.uri=http://localhost/oe-fhir-store/fhir/
 
 # FHIR subscriber — fhirSubscriber field is Optional<String>; empty → no network call.
 org.openelisglobal.fhir.subscriber=

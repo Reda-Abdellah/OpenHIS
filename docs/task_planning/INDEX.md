@@ -2,7 +2,7 @@
 
 > Single source of truth for **status**. Task definitions live in the plan
 > files; conventions in [README.md](README.md). Update this file in the same
-> PR as the work. Last updated: **2026-07-10** (V-01 done: e2e 0 failed on the live stack; DEF-011/DEF-012 opened → D-01/D-02).
+> PR as the work. Last updated: **2026-07-10** (D-02 done: DEF-010 & DEF-012 closed live; only DEF-011 remains open → D-01).
 
 ---
 
@@ -25,7 +25,6 @@
 | Task | Title | Epic | Prio | Depends on |
 |---|---|---|---|---|
 | D-01 | Fix DEF-011 — machine-token access to OpenMRS FHIR under oauth2login (resource-server filter or gated FHIR path) | EP-02 | P1 | — |
-| D-02 | Fix DEF-012 — ship a backing FHIR store (HAPI) in the laboratory profile and point `fhirstore.uri` at it | EP-02 | P1 | — |
 | R-01 | Tag `v0.1.0-alpha` | EP-03 | P1 | V-01 |
 | R-02 | Publish Docker images to GHCR | EP-03 | P1 | R-01 |
 | R-03 | Publish `openhis-opm` to PyPI | EP-03 | P1 | R-01 |
@@ -57,6 +56,7 @@
 | S-07 | OPM PyPI packaging (`opm --version` OK) + quickstart + ROADMAP rewritten without CDS + design notes | EP-01 | 2026-07-09 | merge `3bafcc2` |
 | S-08 | Root reconciliation (README/CLAUDE.md stripped), repo-wide CDS gate clean, study branch deleted (bundle kept) — 738 tests green, 0 xfail | EP-01 | 2026-07-09 | merge `d1dfef7`+ |
 | V-01 | Live e2e validation — **64 passed, 0 failed, 5 xfail** on the full clinical stack; DEF-001/002/007/008 closed live, DEF-010 code-complete (hub consumer shipped); found & fixed: compose audience vars, nginx `$remote_user` crash, `token.py` stdlib shadowing (T-17), redis-py ≥6 timeout, analytics API↔V&V drift; opened DEF-011/DEF-012 | EP-02 | 2026-07-10 | see merge |
+| D-02 | OpenELIS backing FHIR store (`oe-fhir-store` HAPI, laboratory profile) — DEF-012 **and** DEF-010 closed live; e2e S1.6 passes hard (65 passed, 0 failed); also fixed empty-body-201 parse + master→oe dedup map in the hub | EP-02 | 2026-07-10 | see merge |
 
 ---
 
@@ -71,9 +71,9 @@
 | DEF-006 | OpenELIS 302 redirect loop | `RESOLVED 2026-04-19` | — |
 | DEF-007 | Analytics refuses every call: "KEYCLOAK_URL missing" | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
 | DEF-008 | HL7 outbound: patient identifiers not persisted | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
-| DEF-010 | Hub has no `patient.synced` consumer → MPI patients not pushed to OpenELIS | `FIXED IN CODE 2026-07-10` — consumer shipped, live-observed to the OE write; final confirmation blocked by DEF-012 | V-01 |
+| DEF-010 | Hub has no `patient.synced` consumer → MPI patients not pushed to OpenELIS | `CLOSED 2026-07-10` — validated live, e2e S1.6 asserts the full chain | D-02 |
 | DEF-011 | hub↔OpenMRS FHIR sync rejected under oauth2login SSO (302 → login for bearer AND Basic) | `OPEN` — surfaced by V-01 | D-01 |
-| DEF-012 | OpenELIS FHIR façade 500s on every search/write without a backing FHIR store | `OPEN` — surfaced by V-01 | D-02 |
+| DEF-012 | OpenELIS FHIR façade 500s on every search/write without a backing FHIR store | `CLOSED 2026-07-10` — `oe-fhir-store` HAPI shipped in the laboratory profile | D-02 |
 
 `OPEN` = broken on `master` today (e2e `xfail` markers reference these IDs).
 Closing a defect requires V-01's live validation, not just merged code.

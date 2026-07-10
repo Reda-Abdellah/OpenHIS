@@ -73,7 +73,22 @@ async def upsert_patient(patient: dict) -> Optional[str]:
             else:
                 r2 = await c.post(f"{_FHIR}/Patient", json=patient, headers=hdrs)
                 r2.raise_for_status()
-                oe_id = r2.json().get("id")
+                # OE's façade returns 201 with an EMPTY body — the created
+                # resource id only rides in the Location header (when at
+                # all). Treating that as a failure made the bus consumer
+                # retry and create duplicates.
+                oe_id = None
+                if r2.content:
+                    try:
+                        oe_id = r2.json().get("id")
+                    except ValueError:
+                        pass
+                if not oe_id:
+                    loc = r2.headers.get("Location") or r2.headers.get("Content-Location") or ""
+                    parts = [p for p in loc.split("/") if p]
+                    if "Patient" in parts and len(parts) > parts.index("Patient") + 1:
+                        oe_id = parts[parts.index("Patient") + 1]
+                oe_id = oe_id or "created"
                 log.info(f"OpenELIS Patient/{oe_id} created (identifier={value})")
                 return oe_id
     except Exception as e:
