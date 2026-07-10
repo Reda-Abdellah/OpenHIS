@@ -2,7 +2,7 @@
 
 > Single source of truth for **status**. Task definitions live in the plan
 > files; conventions in [README.md](README.md). Update this file in the same
-> PR as the work. Last updated: **2026-07-10** (D-02 done: DEF-010 & DEF-012 closed live; only DEF-011 remains open → D-01).
+> PR as the work. Last updated: **2026-07-10** (D-01 done — EP-02 complete: **zero open defects**; next: EP-03 release).
 
 ---
 
@@ -11,7 +11,7 @@
 | ID | Epic | Outcome | Plan | Status |
 |---|---|---|---|---|
 | EP-01 | **Salvage platform work from study branch** | Every non-CDS improvement of the June-2026 wave merged to `master`; zero BioGML/CDS artefact imported; study branch retired | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase S | `DONE 2026-07-09` (9/9) |
-| EP-02 | **Live validation — zero open defects** | Full-stack e2e green, all `xfail` markers for fixed defects removed, defect registry at 0 open | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase V | `WIP` — V-01 done (e2e 0 failed); D-01/D-02 remain for the two defects it surfaced |
+| EP-02 | **Live validation — zero open defects** | Full-stack e2e green, all `xfail` markers for fixed defects removed, defect registry at 0 open | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase V | `DONE 2026-07-10` — **0 open defects**; remaining e2e xfails are seed gaps, not defects |
 | EP-03 | **First public release `v0.1.0-alpha`** | Tag + GHCR images + `openhis-opm` on PyPI + quickstart demo | [PLAN-2026-07](PLAN-2026-07-salvage-and-release.md) Phase R | `TODO` |
 | EP-04 | **Audit remediation backlog** | Remaining T-tasks not covered by the salvage (T-12…T-15, T-17…T-35) triaged and executed | [REMEDIATION_PLAN.md](REMEDIATION_PLAN.md) | `TODO` — schedule after EP-01, many T-tasks land via S-01…S-05 |
 | EP-05 | **Product backlog (OBJ 1–8)** | Long-term objectives: compliance (OBJ 5), open-source readiness (OBJ 6), observability (OBJ 8)… | [4_TODO_list.md](4_TODO_list.md) | `TODO` — unscheduled reservoir |
@@ -24,7 +24,6 @@
 
 | Task | Title | Epic | Prio | Depends on |
 |---|---|---|---|---|
-| D-01 | Fix DEF-011 — machine-token access to OpenMRS FHIR under oauth2login (resource-server filter or gated FHIR path) | EP-02 | P1 | — |
 | R-01 | Tag `v0.1.0-alpha` | EP-03 | P1 | V-01 |
 | R-02 | Publish Docker images to GHCR | EP-03 | P1 | R-01 |
 | R-03 | Publish `openhis-opm` to PyPI | EP-03 | P1 | R-01 |
@@ -57,6 +56,7 @@
 | S-08 | Root reconciliation (README/CLAUDE.md stripped), repo-wide CDS gate clean, study branch deleted (bundle kept) — 738 tests green, 0 xfail | EP-01 | 2026-07-09 | merge `d1dfef7`+ |
 | V-01 | Live e2e validation — **64 passed, 0 failed, 5 xfail** on the full clinical stack; DEF-001/002/007/008 closed live, DEF-010 code-complete (hub consumer shipped); found & fixed: compose audience vars, nginx `$remote_user` crash, `token.py` stdlib shadowing (T-17), redis-py ≥6 timeout, analytics API↔V&V drift; opened DEF-011/DEF-012 | EP-02 | 2026-07-10 | see merge |
 | D-02 | OpenELIS backing FHIR store (`oe-fhir-store` HAPI, laboratory profile) — DEF-012 **and** DEF-010 closed live; e2e S1.6 passes hard (65 passed, 0 failed); also fixed empty-body-201 parse + master→oe dedup map in the hub | EP-02 | 2026-07-10 | see merge |
+| D-01 | DEF-011 closed — oauth2login's `OAuth2ServiceAccountFilter` accepts bearer JWTs once the matching OpenMRS user exists: new `openmrs-init` one-shot provisions `service-account-integration-hub-sa` (SQL, idempotent); lab-result reads moved to the OE FHIR store; e2e S2.4 & S2.6 pass live end-to-end — **67 passed, 0 failed, 2 seed-gap xfail** | EP-02 | 2026-07-10 | see merge |
 
 ---
 
@@ -72,7 +72,7 @@
 | DEF-007 | Analytics refuses every call: "KEYCLOAK_URL missing" | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
 | DEF-008 | HL7 outbound: patient identifiers not persisted | `CLOSED 2026-07-10` — validated live (V-01) | S-03 |
 | DEF-010 | Hub has no `patient.synced` consumer → MPI patients not pushed to OpenELIS | `CLOSED 2026-07-10` — validated live, e2e S1.6 asserts the full chain | D-02 |
-| DEF-011 | hub↔OpenMRS FHIR sync rejected under oauth2login SSO (302 → login for bearer AND Basic) | `OPEN` — surfaced by V-01 | D-01 |
+| DEF-011 | hub↔OpenMRS FHIR sync rejected under oauth2login SSO (302 → login for bearer AND Basic) | `CLOSED 2026-07-10` — SA user provisioned by `openmrs-init`; bearer path validated live | D-01 |
 | DEF-012 | OpenELIS FHIR façade 500s on every search/write without a backing FHIR store | `CLOSED 2026-07-10` — `oe-fhir-store` HAPI shipped in the laboratory profile | D-02 |
 
 `OPEN` = broken on `master` today (e2e `xfail` markers reference these IDs).

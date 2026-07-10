@@ -177,7 +177,7 @@ Smoke-level check still TODO: `GET /OpenELIS-Global/fhir/metadata`
 
 ---
 
-### DEF-011 — hub↔OpenMRS FHIR sync rejected under oauth2login SSO  *(OPEN — surfaced by V-01 live validation 2026-07-10)*
+### DEF-011 — hub↔OpenMRS FHIR sync rejected under oauth2login SSO  *(CLOSED — validated live 2026-07-10, D-01)*
 
 **Affected services:** `integration-hub` ↔ OpenMRS (emr profile)
 **Symptom:** Every hub FHIR call to OpenMRS (`GET/POST /openmrs/ws/fhir2/R4/*`)
@@ -192,7 +192,23 @@ Basic auth through for REST/FHIR, so no machine-to-machine call can pass.
 The June-2026 hub refactor switched the adapters from Basic to Keycloak
 bearer tokens under the assumption the module would accept them — that
 assumption was never live-validated until V-01.
-**Fix direction (to design):** either (a) an OpenMRS-side token filter that
+**Fix applied (D-01, 2026-07-10):** the oauth2login module ALREADY ships a
+machine-token path — `OAuth2ServiceAccountFilter` validates
+`Authorization: Bearer <JWT>` signatures against `oauth2.properties`
+`keysUrl` — but requires a pre-existing OpenMRS user matching the token's
+`preferred_username` (`service-account-<client>` for Keycloak
+client-credentials tokens). A new one-shot `openmrs-init` container
+(emr profile) idempotently provisions that user
+(`infra/openmrs/init/10-service-accounts.sql`, password-less like the
+built-in `daemon`). Additionally, lab-result reads moved to OpenELIS's
+backing FHIR store (its own servlet doesn't serve DiagnosticReport), so
+the full oe→omrs chain now runs: e2e S2.4 and S2.6 pass live (seeded
+report → hub poll → OpenMRS push → audit `result_routed ok`).
+Residual (not defects): fhir2 does not support POST ServiceRequest
+(S2.5 stays a documented seed-gap xfail) and pushed codes must map to
+dictionary concepts.
+
+**Original fix direction (for reference):** either (a) an OpenMRS-side token filter that
 introspects Keycloak bearer tokens for `/ws/fhir2/*` (resource-server
 behavior), or (b) a module configuration exempting the FHIR path for an
 allowlisted machine identity, network-restricted to `openhis-net`.

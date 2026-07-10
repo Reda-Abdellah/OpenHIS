@@ -54,15 +54,10 @@ class TestS2_LabFlow:
         })
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "queued"
+        # The report-final handler audits with the ORDER id, not the report id.
         request.config.cache.set("s2/report_id", 99001)
+        request.config.cache.set("s2/order_id", 42001)
 
-    @pytest.mark.xfail(
-        reason="DEF-011: the oauth2login module hijacks ALL OpenMRS REST/FHIR "
-               "authentication — the hub's bearer token (and Basic auth) get "
-               "302-redirected to /openmrs/oauth2login, so the DiagnosticReport "
-               "push can neither succeed nor land on the retry queue cleanly.",
-        strict=False,
-    )
     def test_s2_4_audit_captures_report_final_event(self, hub_api, request):
         """
         The hub's audit log or retry queue should reflect the queued FINAL
@@ -70,10 +65,12 @@ class TestS2_LabFlow:
         succeeding (that depends on OpenMRS availability) — only that the
         hub ingested the request.
         """
-        report_id = request.config.cache.get("s2/report_id", None)
+        report_id = request.config.cache.get("s2/order_id", None)
         assert report_id
 
-        deadline = time.monotonic() + 6
+        # The push retries in-process (3 × ~1-2 s backoff) before the
+        # failure audit row lands — give it 20 s.
+        deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             r = hub_api.get("/audit", params={"limit": 50})
             assert r.status_code == 200
@@ -99,10 +96,11 @@ class TestS2_LabFlow:
 class TestS2_KnownDefects:
 
     @pytest.mark.xfail(
-        reason="DEF-011: hub↔OpenMRS FHIR sync rejected under oauth2login SSO "
-               "(302 → login page for bearer AND Basic) — no ServiceRequest "
-               "can be polled from OpenMRS until the module accepts machine "
-               "tokens or a dedicated FHIR auth path exists.",
+        reason="Seed gap: DEF-011 is fixed (the worker's OpenMRS poll now "
+               "authenticates), but OpenMRS's fhir2 module does not support "
+               "POST ServiceRequest, so the suite cannot create the active "
+               "lab order this test needs. Auto-promotes on a stack where a "
+               "clinician (or a REST-order seeding step) has placed an order.",
         strict=False,
     )
     def test_s2_5_openmrs_to_openelis_service_request(self, hub_api):
@@ -116,22 +114,109 @@ class TestS2_KnownDefects:
             for e in events
         )
 
-    @pytest.mark.xfail(
-        reason="DEF-011: the oe→omrs push needs OpenMRS to accept the hub's "
-               "machine token — see test_s2_5.",
-        strict=False,
-    )
-    def test_s2_6_openelis_to_openmrs_diagnostic_report(self, hub_api):
+    def test_s2_6_openelis_to_openmrs_diagnostic_report(self, hub_api, auth_hdrs):
         """
-        The hub polls OpenELIS for completed reports and pushes them to
-        OpenMRS. Assert the `oe→omrs` step produced an audit row.
+        The hub polls OpenELIS's FHIR store for final reports and pushes
+        them to OpenMRS (bearer machine token — DEF-011 fixed).
+
+        Self-sufficient: seeds a final DiagnosticReport into the store
+        (OpenELIS's own FHIR servlet doesn't handle DiagnosticReport —
+        the LIS writes results to the store, so seeding there is exactly
+        what a completed OE result looks like to the hub), triggers a
+        poll cycle, then waits for the `oe→omrs` audit row. The seeded
+        code must be a concept OpenMRS's dictionary knows (CIEL CBC),
+        otherwise the fhir2 push is rejected with 422.
         """
-        r = hub_api.get("/audit", params={"limit": 100})
-        events = r.json().get("events", [])
-        # Worker writes direction="oe→omrs" on successful report routing.
-        assert any(
-            e["resource_type"] == "DiagnosticReport"
-            and e["direction"] == "oe→omrs"
-            and e["status"] == "ok"
-            for e in events
-        ), "no oe→omrs DiagnosticReport audit row found"
+        import httpx, os, time
+
+        # The push target validates both the code (must map to a dictionary
+        # concept) and the subject (must be a real OpenMRS patient), so the
+        # seed needs an OpenMRS-resident patient. Create one with the hub's
+        # own machine identity (bearer path provisioned by openmrs-init);
+        # skip when the deployment doesn't use the dev-default secret.
+        secret = os.environ.get(
+            "INTEGRATION_HUB_KC_CLIENT_SECRET", "integration-hub-sa-secret")
+        tok_r = httpx.post(
+            "http://localhost/keycloak/realms/openhis/protocol/openid-connect/token",
+            data={"grant_type": "client_credentials",
+                  "client_id": "integration-hub-sa", "client_secret": secret},
+            timeout=10,
+        )
+        if tok_r.status_code != 200:
+            pytest.skip("cannot mint integration-hub-sa token (non-dev secret?)")
+        machine_hdrs = {
+            "Authorization": f"Bearer {tok_r.json()['access_token']}",
+            "Content-Type": "application/fhir+json",
+        }
+
+        # OpenMRS's required identifier type uses a LuhnMod30 check digit.
+        alpha = "0123456789ACDEFGHJKLMNPRTUVWXY"
+
+        def _mod30(s: str) -> str:
+            total = 0
+            for i, ch in enumerate(reversed(s.upper())):
+                v = alpha.index(ch)
+                v = v * 2 if i % 2 == 0 else v
+                total += v // 30 + v % 30
+            return alpha[(30 - total % 30) % 30]
+
+        base = f"E2E{int(time.time()) % 10_000_000}"
+        patient = {
+            "resourceType": "Patient",
+            "name": [{"family": "S26Probe", "given": ["E2E"]}],
+            "gender": "female", "birthDate": "1985-05-05",
+            "identifier": [{"use": "official",
+                            "type": {"text": "OpenMRS ID"},
+                            "value": base + _mod30(base)}],
+        }
+        p_r = httpx.post(
+            "http://localhost/openmrs/ws/fhir2/R4/Patient",
+            json=patient, headers=machine_hdrs, timeout=60,
+        )
+        assert p_r.status_code == 201, (
+            f"OpenMRS patient seed failed: {p_r.status_code} {p_r.text[:200]}"
+        )
+        subject_uuid = p_r.json()["id"]
+
+        cbc_uuid = "1019AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # CIEL: Complete blood count
+        marker = f"e2e-s26-{int(time.time())}"
+        dr = {
+            "resourceType": "DiagnosticReport",
+            "status": "final",
+            "code": {"coding": [{"code": cbc_uuid}], "text": marker},
+            "subject": {"reference": f"Patient/{subject_uuid}"},
+        }
+        r = httpx.post(
+            "http://localhost/oe-fhir-store/fhir/DiagnosticReport",
+            json=dr, headers={"Content-Type": "application/fhir+json"},
+            timeout=15,
+        )
+        assert r.status_code == 201, f"store seed failed: {r.status_code} {r.text[:200]}"
+        seeded_id = r.json()["id"]
+
+        # Kick sync cycles instead of waiting for the 60 s poll timer. A
+        # first push attempt can fail transiently (e.g. OpenMRS bearer
+        # warm-up) and land on the hub retry queue (base backoff 15 s,
+        # drained on each cycle) — so keep triggering and allow 90 s.
+        # Success surfaces as either the direct `result_routed` row or a
+        # `retry_ok` row; both carry the same resource/direction/status.
+        deadline = time.monotonic() + 90
+        last_trigger = 0.0
+        while time.monotonic() < deadline:
+            if time.monotonic() - last_trigger > 10:
+                hub_api.post("/atomfeed/trigger")
+                last_trigger = time.monotonic()
+            r = hub_api.get("/audit", params={"limit": 100})
+            events = r.json().get("events", [])
+            if any(
+                e["resource_type"] == "DiagnosticReport"
+                and e.get("resource_id") == seeded_id
+                and e["direction"] == "oe→omrs"
+                and e["status"] == "ok"
+                for e in events
+            ):
+                return
+            time.sleep(2)
+        pytest.fail(
+            f"no oe→omrs ok audit row for seeded DiagnosticReport {seeded_id} within 90s"
+        )
