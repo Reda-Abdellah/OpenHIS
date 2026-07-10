@@ -7,6 +7,20 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.6.0-alpha] — 2026-07-10
+
+First public alpha. The platform runs a full clinical stack (OpenMRS,
+OpenELIS, Orthanc/OHIF, Odoo) behind one command, with a hardened
+integration spine (FHIR R4 + Redis Streams), a measured MPI, a
+deny-by-default auth harness, live-validated end-to-end scenarios and
+**zero open defects** in the registry (DEF-001…DEF-012 all closed or
+resolved). Not production-certified — deploy inside a trusted network
+and read docs/explaining_the_project/security.md first.
+
 ### Added
 - integration-hub context surface (`GET /api/context/diagnostic-report/{oe_id}`): hub-mediated, audit-logged OpenELIS read for native services, gated with the `internal-sync` machine role — used by the hl7 `lab_result.ready` consumer to build outbound ORU^R01 without direct OpenELIS access
 - MPI FHIR R4 facade: PDQm-flavored `Patient` search plus IHE PIXm-style `$ihe-pix` cross-reference query (`services/mpi/routers/fhir.py`)

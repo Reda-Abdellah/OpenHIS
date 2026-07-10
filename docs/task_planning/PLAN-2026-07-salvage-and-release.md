@@ -128,7 +128,7 @@ imported.
 
 ## Phase R — First public release (EP-03)
 
-### R-01: Tag `v0.1.0-alpha`
+### R-01: Tag `v0.6.0-alpha` (v0.1.0 was superseded by the pre-existing 0.5.0 changelog history)
 **Depends on:** V-01 — CHANGELOG release section, annotated tag, GitHub release notes.
 ### R-02: Publish Docker images to GHCR on tag (via `release.yml`).
 ### R-03: Publish `openhis-opm` to PyPI.
