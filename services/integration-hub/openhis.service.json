@@ -6,10 +6,19 @@
   "nginx_path": "/integration-hub/",
   "health_path": "/api/health",
   "bus": {
-    "publishes": ["patient.registered", "lab_order.routed", "lab_result.ready", "odoo.patient.synced"],
-    "subscribes": ["patient.synced"]
+    "publishes": [
+      "patient.registered",
+      "lab_order.routed",
+      "lab_result.ready",
+      "odoo.patient.synced"
+    ],
+    "subscribes": [
+      "patient.synced"
+    ]
   },
-  "depends_on": ["redis"],
+  "depends_on": [
+    "redis"
+  ],
   "env": {
     "required": [
       "KEYCLOAK_TOKEN_URL",
@@ -23,7 +32,10 @@
       "ODOO_URL",
       "ODOO_DB",
       "ODOO_ADMIN_PASS"
+    ],
+    "optional": [
+      "OPENELIS_FHIR_STORE_URL"
     ]
   },
-  "description": "Polling sync engine: OpenMRS ↔ OpenELIS via FHIR R4 with retry queue and audit log."
+  "description": "Polling sync engine: OpenMRS \u2194 OpenELIS via FHIR R4 with retry queue and audit log."
 }

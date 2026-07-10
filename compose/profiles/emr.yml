@@ -52,6 +52,24 @@ services:
       retries: 12
       start_period: 30s
 
+  # One-shot: provisions machine service-account users (D-01/DEF-011) —
+  # oauth2login's bearer filter requires a pre-existing OpenMRS user
+  # matching the token's preferred_username. Idempotent, runs after
+  # OpenMRS has built its schema; exits when done.
+  openmrs-init:
+    image: mysql:8.0
+    depends_on:
+      openmrs:
+        condition: service_healthy
+    entrypoint: ["sh", "-c",
+      "mysql -h openmrs-db -u root -p\"$$MYSQL_ROOT_PASSWORD\" openmrs < /init/10-service-accounts.sql && echo 'openmrs-init: service accounts provisioned'"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OPENMRS_DB_ROOT_PASSWORD:-openmrs_root}
+    volumes:
+      - ../infra/openmrs/init:/init:ro
+    networks: [openhis-net]
+    restart: "no"
+
   openmrs:
     image: openmrs/openmrs-reference-application-3-backend:nightly
     depends_on:

@@ -9,6 +9,7 @@ is an upstream roadmap item and would belong in a realm-aware resource
 server, not here.
 """
 import logging
+import os
 from typing import Optional
 import httpx
 from app.config import OPENELIS_URL, OPENELIS_USER, OPENELIS_PASSWORD
@@ -131,16 +132,25 @@ async def create_service_request(sr: dict) -> Optional[str]:
         return None
 
 
+# OpenELIS's own FHIR servlet handles only [Observation, Organization,
+# Patient, Practitioner] — DiagnosticReports produced by the LIS surface
+# ONLY on its backing FHIR store (write-through by RegisterFhirHooksTask;
+# see compose/profiles/laboratory.yml::oe-fhir-store). Reads of lab
+# results therefore target the store directly; it is unauthenticated but
+# reachable only inside the compose network (nginx route is
+# subnet-restricted).
+_STORE = os.environ.get("OPENELIS_FHIR_STORE_URL", "http://oe-fhir-store:8080/fhir")
+
+
 async def get_diagnostic_report(oe_id: str) -> Optional[dict]:
-    """Fetch a DiagnosticReport by OpenELIS id, or None on any failure.
+    """Fetch a DiagnosticReport by id from OpenELIS's FHIR store, or None.
 
     Fail-soft read used by the hub's /api/context surface (audited,
     hub-mediated reads for native services — no direct OpenELIS access).
     """
     try:
-        hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
-            r = await c.get(f"{_FHIR}/DiagnosticReport/{oe_id}", headers=hdrs)
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{_STORE}/DiagnosticReport/{oe_id}")
             if r.status_code == 404:
                 return None
             r.raise_for_status()
@@ -151,13 +161,11 @@ async def get_diagnostic_report(oe_id: str) -> Optional[dict]:
 
 
 async def get_completed_reports(count: int = 50) -> list[dict]:
-    """Fetch final DiagnosticReports from OpenELIS for back-routing to OpenMRS."""
+    """Fetch final DiagnosticReports from OpenELIS's FHIR store."""
     try:
-        hdrs = await _auth_headers()
-        async with httpx.AsyncClient(timeout=15, auth=_AUTH) as c:
-            r = await c.get(f"{_FHIR}/DiagnosticReport",
-                            params={"status": "final", "_count": count},
-                            headers=hdrs)
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{_STORE}/DiagnosticReport",
+                            params={"status": "final", "_count": count})
             r.raise_for_status()
             return [e["resource"] for e in r.json().get("entry", [])]
     except Exception as e:
