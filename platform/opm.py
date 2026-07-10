@@ -25,7 +25,7 @@ import yaml
 
 #: Single source of truth for the package version — pyproject.toml reads it
 #: via [tool.hatch.version] path = "opm.py".
-__version__ = "0.1.0"
+__version__ = "0.6.0-alpha.1"
 
 # ── Path resolution ────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).parent.parent

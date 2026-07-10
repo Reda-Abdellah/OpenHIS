@@ -55,7 +55,38 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # ── Create GitHub Release with auto-generated notes ─────────────────────────
+  # ── Publish openhis-opm to PyPI ─────────────────────────────────────────────
+  # Uses PyPI Trusted Publishing (OIDC) — configure the publisher once on
+  # pypi.org (project: openhis-opm, workflow: release.yml, environment:
+  # pypi) before the first tag. continue-on-error keeps the rest of the
+  # release flowing until that one-time setup is done.
+  publish-pypi:
+    name: Publish openhis-opm to PyPI
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          python -m build platform/ --outdir dist/
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  # ── Create GitHub Release with the released section's notes ─────────────────
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -68,9 +99,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Extract this release's CHANGELOG section
+        # First versioned section (skipping [Unreleased]) up to the next one.
+        run: |
+          awk '/^## \[/ && !/Unreleased/ {n++} n==1' CHANGELOG.md > RELEASE_NOTES.md
+          head -8 RELEASE_NOTES.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          body_path: CHANGELOG.md
+          body_path: RELEASE_NOTES.md
           fail_on_unmatched_files: false
