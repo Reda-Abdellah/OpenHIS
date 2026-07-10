@@ -128,15 +128,19 @@ class TestHubLabResultRouting:
     """Integration Hub routes completed OpenELIS results back to OpenMRS."""
 
     def test_hub_openelis_get_completed_reports(self, hub_client):
-        """OpenELIS service layer fetches final DiagnosticReports."""
+        """OpenELIS service layer fetches final DiagnosticReports.
+
+        Reads target the backing FHIR store, not OE's own servlet — the
+        LIS writes DiagnosticReports only to the store (D-01/DEF-012).
+        """
         import asyncio
 
         with respx.mock:
             _mock_keycloak_token(respx)
-            respx.get(f"{OE_FHIR}/DiagnosticReport").mock(
+            from app.services import openelis
+            respx.get(f"{openelis._STORE}/DiagnosticReport").mock(
                 return_value=httpx.Response(200, json=FHIR_DR_BUNDLE)
             )
-            from app.services import openelis
             reports = asyncio.get_event_loop().run_until_complete(
                 openelis.get_completed_reports()
             )
